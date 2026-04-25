@@ -133,40 +133,34 @@ fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
 }
 
 /// Multi-lane `Avg fill` for DOT: comma list when `edges.len() <=` [`MAX_INLINE_AVG_FILL_LANES`], else
-/// a single `mean, N ch` line (see module constant).
+/// a single `mean, N ch` line (see module constant). Omits the line entirely when no lane has a sample (`None`).
 fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.clear();
     if edges.is_empty() {
         return;
     }
     if edges.len() > MAX_INLINE_AVG_FILL_LANES {
-        out.push_str("Avg fill: ");
         let n = edges.len();
-        match mean_avg_fill_from_edge_slice(edges) {
-            Some(m) => {
-                let _ = write!(out, "{}% (mean, {} ch)", m, n);
-            }
-            None => {
-                let _ = write!(out, "— ({} ch)", n);
-            }
+        if let Some(m) = mean_avg_fill_from_edge_slice(edges) {
+            let _ = write!(out, "Avg fill: {}% (mean, {} ch)\n", m, n);
         }
     } else {
-        out.push_str("Avg fill: ");
-        let mut first = true;
+        let mut started = false;
         for e in edges {
-            if !first {
-                out.push_str(", ");
-            }
-            first = false;
-            match e.stats_computer.avg_filled_whole_percent() {
-                Some(n) => {
-                    let _ = write!(out, "{}%", n);
+            if let Some(n) = e.stats_computer.avg_filled_whole_percent() {
+                if !started {
+                    out.push_str("Avg fill: ");
+                    started = true;
+                } else {
+                    out.push_str(", ");
                 }
-                None => out.push('—'),
+                let _ = write!(out, "{}%", n);
             }
         }
+        if started {
+            out.push('\n');
+        }
     }
-    out.push('\n');
 }
 
 /// Integer mean of `Some` percent values; `None` if there are no samples.
@@ -189,14 +183,9 @@ fn append_channel_fill_tooltip(
     saturation_score: f64,
 ) {
     if stats.show_avg_filled {
-        tooltip.push_str("\n ");
-        match stats.avg_filled_whole_percent() {
-            Some(n) => {
-                let _ = write!(tooltip, "Avg fill: {}%\n", n);
-            }
-            None => {
-                tooltip.push_str("Avg fill: —\n");
-            }
+        if let Some(n) = stats.avg_filled_whole_percent() {
+            tooltip.push_str("\n ");
+            let _ = write!(tooltip, "Avg fill: {}%\n", n);
         }
     } else {
         let _ = write!(
@@ -720,35 +709,35 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 }
             }
             if edges.iter().any(|pe| pe.show_avg_filled_any) {
-                header.push_str("\nAvg fill: ");
+                frames.dot_scratch.clear();
                 if total_channels > MAX_INLINE_AVG_FILL_LANES {
-                    let mean = mean_avg_fill_percent(
+                    if let Some(m) = mean_avg_fill_percent(
                         edges
                             .iter()
                             .flat_map(|pe| pe.avg_fill_per_lane.iter()),
-                    );
-                    match mean {
-                        Some(n) => {
-                            let _ = write!(header, "{}% (mean, {} ch)", n, total_channels);
-                        }
-                        None => {
-                            let _ = write!(header, "— ({} ch)", total_channels);
-                        }
+                    ) {
+                        let _ = write!(
+                            frames.dot_scratch,
+                            "{}% (mean, {} ch)",
+                            m, total_channels
+                        );
                     }
                 } else {
-                    let mut first_avg = true;
+                    let mut started = false;
                     for o in edges.iter().flat_map(|pe| pe.avg_fill_per_lane.iter()) {
-                        if !first_avg {
-                            header.push_str(", ");
-                        }
-                        first_avg = false;
-                        match o {
-                            Some(n) => {
-                                let _ = write!(header, "{}%", n);
+                        if let Some(n) = o {
+                            if !started {
+                                started = true;
+                            } else {
+                                frames.dot_scratch.push_str(", ");
                             }
-                            None => header.push('—'),
+                            let _ = write!(frames.dot_scratch, "{}%", n);
                         }
                     }
+                }
+                if !frames.dot_scratch.is_empty() {
+                    header.push_str("\nAvg fill: ");
+                    header.push_str(&frames.dot_scratch);
                 }
             }
             if !p_key.type_name.is_empty() {
@@ -2045,6 +2034,315 @@ mod dot_tests {
         assert!(
             !result.contains("Instant fill:"),
             "should not show Instant fill when avg fill is enabled: {}",
+            result
+        );
+    }
+
+    /// No rolling-window sample: omit `Avg fill` entirely (no `-` placeholder).
+    #[test]
+    fn test_edge_tooltip_omits_avg_fill_when_no_window_sample() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut stats = ChannelStatsComputer::default();
+        stats.capacity = 100;
+        stats.show_total = true;
+        stats.show_avg_filled = true;
+        stats.refresh_rate_in_bits = 0;
+        stats.window_bucket_in_bits = 0;
+        stats.total_consumed = 0;
+        stats.saturation_score = 0.0;
+
+        let edge = Edge {
+            id: 0,
+            from: Some(from),
+            to: Some(to),
+            color: "green",
+            sidecar: false,
+            pen_width: "1".to_string(),
+            saturation_score: 0.0,
+            ctl_labels: vec![],
+            stats_computer: stats,
+            display_label: "edge".to_string(),
+            metric_text: String::new(),
+            partner: None,
+            bundle_index: None,
+        };
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges: vec![edge],
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            !result.contains("Avg fill:"),
+            "must not print Avg fill placeholder when no sample: {}",
+            result
+        );
+    }
+
+    /// Partner rollup: all lanes lack `current_filled` → no `Avg fill` line on the edge label.
+    #[test]
+    fn test_partner_rollup_no_avg_fill_when_all_samples_missing() {
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let lane0 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        let lane1 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+
+        let edges = vec![
+            Edge {
+                id: 0,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.1,
+                ctl_labels: vec![],
+                stats_computer: lane0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+            Edge {
+                id: 1,
+                from: Some(from),
+                to: Some(to),
+                color: "red",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.4,
+                ctl_labels: vec![],
+                stats_computer: lane1,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+        ];
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            !result.contains("Avg fill:"),
+            "rollup must omit Avg fill when every lane lacks a sample: {}",
+            result
+        );
+    }
+
+    /// Partner rollup: one lane has a sample, one does not → single percent, no comma placeholder.
+    #[test]
+    fn test_partner_rollup_avg_fill_skips_none_lane() {
+        use crate::actor_stats::ChannelBlock;
+
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut lane0 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        lane0.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 10_000,
+            sum_of_squares: 0,
+        });
+
+        let lane1 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+
+        let edges = vec![
+            Edge {
+                id: 0,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.1,
+                ctl_labels: vec![],
+                stats_computer: lane0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+            Edge {
+                id: 1,
+                from: Some(from),
+                to: Some(to),
+                color: "red",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.4,
+                ctl_labels: vec![],
+                stats_computer: lane1,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+        ];
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            result.contains("Avg fill: 10%"),
+            "expected single sampled lane only: {}",
+            result
+        );
+        assert!(
+            !result.contains("Avg fill: 10%,"),
+            "must not emit trailing comma for missing second lane: {}",
             result
         );
     }
