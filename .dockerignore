@@ -4,4 +4,6 @@ target/
 .gitignore
 .dockerignore
 Dockerfile
+**/graph.dot
+
 
