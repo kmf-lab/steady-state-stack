@@ -244,7 +244,7 @@ impl ActorStatsComputer {
                 unit: "",
                 _prometheus_labels: &self.prometheus_labels,
                 int_only: true,
-                fixed_digits: 4
+                fixed_digits: 0
             };
             compute_labels(config, current_mcpu, labels, &self.std_dev_mcpu, &self.percentiles_mcpu, metric_text, &mut rolling_stats);
         }
