@@ -62,7 +62,15 @@ pub(crate) mod aeron_utils {
         aeron_context.set_aeron_dir("C:\\Temp\\aeron".parse().unwrap());
 
         let start = Instant::now();
+        let mut last_failure: String = String::from("CNC did not become ready");
         loop {
+            if start.elapsed() >= max_wait {
+                warn!(
+                    "Aeron context unavailable after {:?}: {}. Is the Aeron media driver running? (check CNC / aeron dir, e.g. /dev/shm/aeron-default on Linux)",
+                    max_wait, last_failure
+                );
+                return None;
+            }
             match Aeron::new(aeron_context.clone()) {
                 Ok(aeron) => {
                     let cnc_path = PathBuf::from(aeron.context().cnc_file_name());
@@ -74,21 +82,22 @@ pub(crate) mod aeron_utils {
                                 );
                             return Some(Arc::new(Mutex::new(aeron)));
                         } else {
-                            warn!("CNC file version marker not set. Retrying...");
+                            last_failure =
+                                "CNC file version marker not set (driver still starting?)".to_string();
+                            debug!("{}. Retrying in {:?}...", last_failure, retry_interval);
                         }
                     } else {
-                        warn!("CNC file unstable. Retrying...");
+                        last_failure = "CNC file unstable (still changing)".to_string();
+                        debug!("{}. Retrying in {:?}...", last_failure, retry_interval);
                     }
+                    std::thread::sleep(retry_interval);
                 }
                 Err(e) => {
-                    warn!(
-                    "Failed to create Aeron context: {:?}. Retrying in {:?}...",
-                    e, retry_interval
-                );
-                    if start.elapsed() > max_wait {
-                        trace!("Giving up after {:?}", max_wait);
-                        return None;
-                    }
+                    last_failure = format!("{:?}", e);
+                    debug!(
+                        "Failed to create Aeron context: {:?}. Retrying in {:?}...",
+                        e, retry_interval
+                    );
                     std::thread::sleep(retry_interval);
                 }
             }

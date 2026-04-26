@@ -652,6 +652,7 @@ pub(crate) mod monitor_tests {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
+            aeron_init_for_tests: true,
             use_internal_behavior: true,
             shutdown_barrier: None,
 
@@ -1167,6 +1168,7 @@ pub(crate) mod monitor_tests {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
+            aeron_init_for_tests: true,
             use_internal_behavior: true,
             shutdown_barrier: None,
 

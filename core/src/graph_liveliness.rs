@@ -913,7 +913,16 @@ impl Graph {
     ///
     /// An optional reference to the media driver, or `None` if unavailable.
     pub fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Self::aeron_media_driver_internal(&self.aeron)
+        Self::aeron_media_driver_internal(&self.aeron, self.is_for_testing)
+    }
+
+    /// Retry budget for [`aeron_context_with_retry`] when the graph or actor was built for testing.
+    pub(crate) fn aeron_init_timeouts(for_tests: bool) -> (Duration, Duration) {
+        if for_tests {
+            (Duration::from_secs(2), Duration::from_millis(100))
+        } else {
+            (Duration::from_secs(60), Duration::from_millis(50))
+        }
     }
 
     /// Internal helper to retrieve or initialize the Aeron media driver.
@@ -923,12 +932,19 @@ impl Graph {
     /// # Arguments
     ///
     /// * `holder` - THE `OnceLock` containing the media driver instance.
+    /// * `for_tests` - When true, use a short wait/retry budget suitable for unit tests without a media driver.
     ///
     /// # Returns
     ///
     /// An optional reference to the media driver.
-    pub(crate) fn aeron_media_driver_internal(holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>) -> Option<Arc<Mutex<Aeron>>> {
-        holder.get_or_init(|| aeron_context_with_retry(Context::new(), Duration::from_secs(60), Duration::from_millis(50))).clone()
+    pub(crate) fn aeron_media_driver_internal(
+        holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>,
+        for_tests: bool,
+    ) -> Option<Arc<Mutex<Aeron>>> {
+        let (max_wait, retry_interval) = Self::aeron_init_timeouts(for_tests);
+        holder
+            .get_or_init(|| aeron_context_with_retry(Context::new(), max_wait, retry_interval))
+            .clone()
     }
 
     /// Sets the logging level for the graph's operations.
@@ -1008,6 +1024,7 @@ impl Graph {
             team_id: 0,
             show_thread_info: false,
             aeron_meda_driver: self.aeron.clone(),
+            aeron_init_for_tests: true,
             use_internal_behavior: true,
             shutdown_barrier: self.shutdown_barrier.clone(),
         }

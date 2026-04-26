@@ -124,6 +124,7 @@ impl SteadyActorShadow {
             is_running_iteration_count: 0,
             regeneration: self.regeneration,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
+            aeron_init_for_tests: self.aeron_init_for_tests,
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
 

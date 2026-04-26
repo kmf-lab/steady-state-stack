@@ -614,6 +614,8 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     show_thread_info: bool,
     /// Lazily initialized Aeron media driver.
     aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    /// Short Aeron init retry budget when graph/actor is for testing.
+    aeron_init_for_tests: bool,
     /// Flag indicating whether to prevent simulation.
     never_simulate: bool,
     /// Optional barrier for synchronizing shutdown.
@@ -635,6 +637,7 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             node_tx_rx: self.node_tx_rx.clone(),
             show_thread_info: self.show_thread_info,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
+            aeron_init_for_tests: self.aeron_init_for_tests,
             never_simulate: self.never_simulate,
             shutdown_barrier: self.shutdown_barrier.clone(),
         }
@@ -1317,6 +1320,7 @@ impl ActorBuilder {
             build_actor_exec: NonSendWrapper::new(dyn_call),
             show_thread_info: self.show_thread_info,
             aeron_meda_driver: self.aeron_meda_driver,
+            aeron_init_for_tests: self.is_for_test,
             never_simulate: self.never_simulate,
             shutdown_barrier: self.shutdown_barrier,
         }
@@ -1481,6 +1485,7 @@ fn build_actor_context<I: ?Sized>(
         frame_rate_ms,
         show_thread_info: builder_source.show_thread_info,
         aeron_meda_driver: builder_source.aeron_meda_driver.clone(),
+        aeron_init_for_tests: builder_source.aeron_init_for_tests,
         use_internal_behavior,
         shutdown_barrier: builder_source.shutdown_barrier.clone(),
     }
@@ -1555,6 +1560,7 @@ mod test_actor_builder {
             node_tx_rx: None,
             show_thread_info: false,
             aeron_meda_driver: OnceLock::new(),
+            aeron_init_for_tests: true,
             never_simulate: false,
             shutdown_barrier: None,
         };

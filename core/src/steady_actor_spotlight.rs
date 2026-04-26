@@ -89,6 +89,8 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) is_running_iteration_count: u64,
     pub(crate) _team_id: usize,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    /// When true, Aeron client init uses a short retry budget (see [`Graph::aeron_init_timeouts`]).
+    pub(crate) aeron_init_for_tests: bool,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
     pub(crate) regeneration: u32,
@@ -152,7 +154,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }
 
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {

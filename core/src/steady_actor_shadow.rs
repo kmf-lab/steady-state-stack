@@ -59,6 +59,8 @@ pub struct SteadyActorShadow {
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    /// When true, Aeron client init uses a short retry budget (see [`Graph::aeron_init_timeouts`]).
+    pub(crate) aeron_init_for_tests: bool,
     /// Controls whether the internal simulation behavior is applied instead of actual commands.
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
@@ -84,6 +86,7 @@ impl Clone for SteadyActorShadow {
             team_id: self.team_id,
             show_thread_info: self.show_thread_info,
             aeron_meda_driver: self.aeron_meda_driver.clone(),
+            aeron_init_for_tests: self.aeron_init_for_tests,
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
         }
@@ -100,7 +103,7 @@ impl SteadyActor for SteadyActorShadow {
     }
 
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
-        Graph::aeron_media_driver_internal(&self.aeron_meda_driver)
+        Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }
 
     async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<SteadyActorShadow>>) -> Result<(), Box<dyn Error>> {
