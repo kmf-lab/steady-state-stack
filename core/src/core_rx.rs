@@ -9,7 +9,7 @@ use async_ringbuf::consumer::AsyncConsumer;
 use futures_timer::Delay;
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
-use crate::{steady_config, Rx, MONITOR_NOT};
+use crate::{steady_config, Rx, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::distributed::aqueduct_stream::{StreamControlItem};
 use crate::steady_rx::RxDone;
 use futures_util::FutureExt;
@@ -366,22 +366,11 @@ pub trait RxCore {
 /// This implementation provides the reception functionality for a standard channel, supporting
 /// synchronous and asynchronous message receiving, zero-copy operations, and telemetry integration.
 impl<T> RxCore for Rx<T> {
-    /// The type of message item stored in the channel, matching the channel’s generic type.
     type MsgItem = T;
-
-    /// The type of message that is taken out of the channel, identical to `MsgItem`.
     type MsgOut = T;
-
-    /// The type used to peek at a message, a reference to `T`.
     type MsgPeek<'a> = &'a T where T: 'a;
-
-    /// The type used to count messages, set to `usize` for standard channels.
     type MsgSize = usize;
-
-    /// The type for a slice of messages to be peeked at, a pair of references to arrays of `T`.
     type SliceSource<'a> = (&'a [T], &'a [T]) where Self: 'a;
-
-    /// The type for the target slice where messages are copied, a mutable reference to an array of `T`.
     type SliceTarget<'b> = &'b mut [T] where T: 'b;
 
     fn is_closed_and_empty(&mut self) -> bool {
@@ -591,11 +580,6 @@ mod core_rx_async_tests {
     use crate::{ActorIdentity, SendSaturation};
     use crate::*;
 
-    /// Helper function to set up a channel for tests.
-    ///
-    /// This function creates a channel with the specified capacity and optionally populates it
-    /// with initial data. It returns the sender and receiver wrapped in mutexes for shared access,
-    /// along with the graph instance used for testing.
     fn setup_channel<T: Clone + Send + 'static>(
         capacity: usize,
         data: Option<Vec<T>>,
@@ -618,9 +602,6 @@ mod core_rx_async_tests {
         (tx, rx, graph)
     }
 
-    /// Tests peeking with a timeout on an empty channel.
-    ///
-    /// Verifies that the peek operation times out correctly and returns `None` when no data is available.
     #[test]
     fn test_peek_async_timeout_empty() {
         let (_tx, rx, graph) = setup_channel::<i32>(1, None);
@@ -636,9 +617,6 @@ mod core_rx_async_tests {
         assert!(start.elapsed() >= Duration::from_millis(100), "Timeout duration should be at least 100ms");
     }
 
-    /// Tests peeking with data already present in the channel.
-    ///
-    /// Ensures that the peek operation immediately returns the available message.
     #[test]
     fn test_peek_async_timeout_with_data() {
         let (_tx, rx, _) = setup_channel(1, Some(vec![42]));
@@ -647,9 +625,6 @@ mod core_rx_async_tests {
         assert_eq!(peeked, Some(&42), "Peek should return the available data");
     }
 
-    /// Tests peeking during a shutdown scenario.
-    ///
-    /// Verifies that the peek operation returns `None` after the channel is shut down.
     #[test]
     fn test_peek_async_timeout_shutdown() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -660,9 +635,6 @@ mod core_rx_async_tests {
         assert!(peeked.is_none(), "Peek should return None after shutdown");
     }
 
-    /// Tests waiting for available units.
-    ///
-    /// Ensures that the wait operation completes when the required number of units becomes available.
     #[test]
     fn test_wait_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -675,10 +647,6 @@ mod core_rx_async_tests {
         assert!(core_exec::block_on(wait_future), "Wait should return true when units become available");
     }
 
-    /// Tests waiting for the channel to close or for units to become available.
-    ///
-    /// Verifies that the wait operation returns `false` when the channel is closed without the
-    /// required units being available.
     #[test]
     fn test_wait_closed_or_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -695,11 +663,9 @@ mod core_rx_async_tests {
         let (tx, rx, _graph) = setup_channel::<i32>(4, None);
         let mut rx_guard = rx.try_lock().expect("");
         
-        // Test shared_advance_index overflow
         let done = rx_guard.shared_advance_index(10);
         assert_eq!(done, RxDone::Normal(0));
 
-        // Test shared_avail_units wrap-around
         core_exec::block_on(async {
             let mut tx_guard = tx.lock().await;
             for i in 0..4 { tx_guard.shared_try_send(i).unwrap(); }
@@ -713,19 +679,16 @@ mod core_rx_async_tests {
             tx_guard.shared_try_send(4).unwrap();
             tx_guard.shared_try_send(5).unwrap();
         });
-        // Indices should have wrapped
         assert_eq!(rx_guard.shared_avail_units(), 4);
 
-        // Test is_closed_and_empty branches
         assert!(!rx_guard.is_closed_and_empty());
         rx_guard.shared_advance_index(4);
-        assert!(!rx_guard.is_closed_and_empty()); // Empty but not closed
+        assert!(!rx_guard.is_closed_and_empty());
         
         let mut tx_guard = tx.try_lock().expect("");
         tx_guard.mark_closed();
         drop(tx_guard);
         
-        // Now it should be closed and empty
         assert!(rx_guard.is_closed_and_empty());
     }
 
@@ -738,7 +701,6 @@ mod core_rx_async_tests {
             .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
 
         if let Some(ref mut tel) = actor.telemetry.send_rx {
-            // This should trigger the warning branch in telemetry_inc
             rx_guard.telemetry_inc(RxDone::Stream(1, 10), tel);
         }
     }
@@ -748,19 +710,130 @@ mod core_rx_async_tests {
         let (_tx, rx, _) = setup_channel::<i32>(1, Some(vec![42]));
         let mut rx_guard = rx.try_lock().expect("");
         
-        // First peek
         core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
         assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 1);
         
-        // Second peek (same take_count)
         core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
         assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 2);
         
-        // Take it
         rx_guard.shared_try_take().unwrap();
         
-        // Peek again (empty)
         core_exec::block_on(rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(10))));
         assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_wait_avail_units_shutdown() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = rx.try_lock().expect("");
+
+        let (send_shutdown, recv_shutdown) = futures::channel::oneshot::channel::<()>();
+        rx_guard.oneshot_shutdown = recv_shutdown;
+        drop(send_shutdown);
+
+        let result = core_exec::block_on(rx_guard.shared_wait_avail_units(1));
+        assert!(!result, "Wait should return false when shutdown fires");
+    }
+
+    #[test]
+    fn test_wait_shutdown_or_avail_units_shutdown() {
+        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = rx.try_lock().expect("");
+
+        let (send_shutdown, recv_shutdown) = futures::channel::oneshot::channel::<()>();
+        rx_guard.oneshot_shutdown = recv_shutdown;
+        drop(send_shutdown);
+
+        let result = core_exec::block_on(rx_guard.shared_wait_shutdown_or_avail_units(1));
+        assert!(!result, "Wait should return false when shutdown fires");
+    }
+
+    #[test]
+    fn test_try_take_empty() {
+        let (_tx, rx, _) = setup_channel::<i32>(1, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        assert!(rx_guard.shared_try_take().is_none(), "try_take should return None on empty channel");
+    }
+
+    #[test]
+    fn test_advance_index_valid() {
+        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![10, 20, 30]));
+        let mut rx_guard = rx.try_lock().expect("");
+        let done = rx_guard.shared_advance_index(2);
+        assert_eq!(done, RxDone::Normal(2));
+        assert_eq!(rx_guard.shared_avail_units(), 1);
+    }
+
+    #[test]
+    fn test_take_slice_empty() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        let mut buf = [0i32; 2];
+        let done = rx_guard.shared_take_slice(&mut buf);
+        assert_eq!(done, RxDone::Normal(0));
+    }
+
+    #[test]
+    fn test_peek_slice_empty() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        let (a, b) = rx_guard.shared_peek_slice();
+        assert!(a.is_empty());
+        assert!(b.is_empty());
+    }
+
+    #[test]
+    fn test_validate_capacity_items() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let rx_guard = rx.try_lock().expect("");
+        assert_eq!(rx_guard.shared_validate_capacity_items(10), 4);
+        assert_eq!(rx_guard.shared_validate_capacity_items(2), 2);
+    }
+
+    #[test]
+    fn test_avail_items_count() {
+        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
+        let mut rx_guard = rx.try_lock().expect("");
+        assert_eq!(rx_guard.shared_avail_items_count(), 2);
+    }
+
+    #[test]
+    fn test_capacity_for() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let rx_guard = rx.try_lock().expect("");
+        assert!(rx_guard.shared_capacity_for(4));
+        assert!(!rx_guard.shared_capacity_for(5));
+    }
+
+    #[test]
+    fn test_avail_units_for() {
+        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
+        let mut rx_guard = rx.try_lock().expect("");
+        assert!(rx_guard.shared_avail_units_for(2));
+        assert!(!rx_guard.shared_avail_units_for(3));
+    }
+
+    #[test]
+    fn test_log_periodic() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        rx_guard.last_error_send = Instant::now() - Duration::from_secs((steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS + 1) as u64);
+        assert!(rx_guard.log_periodic());
+        assert!(!rx_guard.log_periodic());
+    }
+
+    #[test]
+    fn test_monitor_not() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let mut rx_guard = rx.try_lock().expect("");
+        rx_guard.monitor_not();
+        assert_eq!(rx_guard.local_monitor_index, MONITOR_NOT);
+    }
+
+    #[test]
+    fn test_one() {
+        let (_tx, rx, _) = setup_channel::<i32>(4, None);
+        let rx_guard = rx.try_lock().expect("");
+        assert_eq!(rx_guard.one(), 1);
     }
 }

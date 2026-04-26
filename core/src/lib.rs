@@ -251,6 +251,11 @@ pub type SteadyContext = SteadyActorShadow;
 /// This module provides tools for highlighting or managing actor execution.
 pub mod steady_actor_spotlight;
 
+/// Core logic shared between shadow and spotlight actors.
+///
+/// This module defines the `SteadyActorCore` struct and its methods, which are
+/// used by both `SteadyActorShadow` and `SteadyActorSpotlight` to avoid code duplication.
+mod steady_actor_core;
 
 /// Tests for executor abstractions.
 ///

@@ -80,8 +80,6 @@ pub trait TxCore {
     /// Returns true if the size will fit into the capacity
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
 
-
-
     /// Checks if the channel is full.
     ///
     /// Returns `true` if the channel has reached its capacity and cannot accept more messages.
@@ -99,8 +97,6 @@ pub trait TxCore {
 
     /// Return true if this message size will fit in the vacant space
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool;
-
-
 
     /// Waits for either shutdown or for a specified number of units to become vacant.
     ///
@@ -485,7 +481,9 @@ impl<T> TxCore for Tx<T> {
                     None => Duration::from_secs(60 * 60 * 24 * 7)
                 };
 
-                let shutdown_fut = &mut self.oneshot_shutdown;//.fuse();
+                // CRITICAL FIX: Use .fuse() on the shutdown future to ensure select!
+                // correctly tracks termination and avoids spurious readiness.
+                let shutdown_fut = (&mut self.oneshot_shutdown).fuse();
                 let wait_fut     = self.tx.wait_vacant(1).fuse();
                 let timeout_fut  = Delay::new(timeout_duration).fuse();
 
@@ -808,12 +806,26 @@ mod core_tx_rx_tests {
         assert_eq!(guard.done_one(&9), TxDone::Normal(9));
     }
 
-    /// Helper function to create a new `Tx<u8>` for testing purposes.
-    fn new_tx() -> Tx<u8> {
+    /// Helper function to create a new `Tx<u8>` and keep the graph alive for the duration of the test.
+    /// Returns the channel, graph, and a sender that must be kept alive to prevent premature shutdown.
+    fn new_tx() -> (Tx<u8>, Graph, futures::channel::oneshot::Sender<()>) {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = graph.channel_builder();
-        let (tx, _rx) = builder.eager_build_internal();
-        tx
+        let (mut tx, _rx) = builder.eager_build_internal();
+        // Create a oneshot whose sender we keep; the receiver never resolves until we drop it.
+        let (dummy_sender, never_resolve) = futures::channel::oneshot::channel::<()>();
+        tx.oneshot_shutdown = never_resolve;
+        (tx, graph, dummy_sender)
+    }
+
+    /// Helper function to create a new `Tx<u8>` and keep its associated `Rx<u8>` alive.
+    fn new_tx_with_rx() -> (Tx<u8>, Rx<u8>, Graph, futures::channel::oneshot::Sender<()>) {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = graph.channel_builder();
+        let (mut tx, rx) = builder.eager_build_internal();
+        let (dummy_sender, never_resolve) = futures::channel::oneshot::channel::<()>();
+        tx.oneshot_shutdown = never_resolve;
+        (tx, rx, graph, dummy_sender)
     }
 
     /// Tests `done_one` and `shared_mark_closed` for `Tx<u8>`.
@@ -822,7 +834,7 @@ mod core_tx_rx_tests {
     /// behaves correctly on first and subsequent calls.
     #[test]
     fn done_one_and_shared_mark_closed() {
-        let mut tx = new_tx();
+        let (mut tx, _graph, _sender) = new_tx();
         assert_eq!(tx.done_one(&42u8), TxDone::Normal(1));
         tx.shared_mark_closed();
         tx.shared_mark_closed();
@@ -834,7 +846,7 @@ mod core_tx_rx_tests {
     /// processes the operation correctly.
     #[test]
     fn shared_send_iter_until_full_and_warn_after_close() {
-        let mut tx = new_tx();
+        let (mut tx, _graph, _sender) = new_tx();
         let pushed = tx.shared_send_iter_until_full([7u8, 8u8].into_iter());
         assert_eq!(pushed, 2);
         tx.shared_mark_closed();
@@ -848,7 +860,7 @@ mod core_tx_rx_tests {
     /// under normal conditions.
     #[test]
     fn shared_try_send_and_async_variants() {
-        let mut tx = new_tx();
+        let (mut tx, _graph, _sender) = new_tx();
         let ident = ActorIdentity::new(0, "me", None);
         assert_eq!(tx.shared_try_send(99u8), Ok(TxDone::Normal(1)));
         let outcome = block_on(tx.shared_send_async_core(5u8, ident, SendSaturation::AwaitForRoom, None));
@@ -863,14 +875,14 @@ mod core_tx_rx_tests {
 
     #[test]
     fn test_tx_core_state_boundaries() {
-        let mut tx = new_tx();
+        let (mut tx, _graph, _sender) = new_tx();
         
         // Test shared_advance_index overflow
         let done = tx.shared_advance_index(100);
         assert_eq!(done, TxDone::Normal(tx.shared_capacity()));
 
         // Test shared_vacant_units wrap-around
-        let mut tx = new_tx();
+        let (mut tx, _graph, _sender) = new_tx();
         let cap = tx.shared_capacity();
         assert_eq!(tx.shared_vacant_units(), cap);
         tx.shared_send_iter_until_full((0..cap as u8).into_iter());
@@ -886,4 +898,132 @@ mod core_tx_rx_tests {
 
     }
 
+    /// Tests saturation policies: WarnThenAwait and DebugWarnThenAwait on a full channel.
+    #[test]
+    fn test_send_async_saturation_policies() {
+        let (mut tx, _graph, _sender) = new_tx();
+        let ident = ActorIdentity::new(0, "saturation", None);
+
+        // Fill the channel (capacity = 64).
+        let cap = tx.shared_capacity();
+        let fill = (0..cap as u8).collect::<Vec<_>>();
+        tx.shared_send_iter_until_full(fill.into_iter());
+        assert!(tx.shared_is_full());
+
+        // Give the executor a moment to settle any pending wakeups.
+        std::thread::sleep(Duration::from_millis(1));
+
+        // WarnThenAwait with a short timeout => should timeout (or closed if shutdown fires first).
+        let outcome_warn = block_on(tx.shared_send_async_core(
+            255u8,
+            ident,
+            SendSaturation::WarnThenAwait,
+            Some(Duration::from_millis(100)),
+        ));
+        assert!(
+            matches!(outcome_warn, SendOutcome::Timeout(255) | SendOutcome::Closed(255)),
+            "expected SendOutcome::Timeout(255) or Closed(255), got {:?}",
+            outcome_warn
+        );
+
+        // DebugWarnThenAwait with a short timeout => should timeout (or closed if shutdown fires first).
+        let outcome_debug = block_on(tx.shared_send_async_core(
+            128u8,
+            ident,
+            SendSaturation::DebugWarnThenAwait,
+            Some(Duration::from_millis(100)),
+        ));
+        assert!(
+            matches!(outcome_debug, SendOutcome::Timeout(128) | SendOutcome::Closed(128)),
+            "expected SendOutcome::Timeout(128) or Closed(128), got {:?}",
+            outcome_debug
+        );
+    }
+
+    /// Tests ReturnBlockedMsg saturation on a full channel.
+    #[test]
+    fn test_send_async_saturation_returns_blocked() {
+        let (mut tx, _graph, _sender) = new_tx();
+        let ident = ActorIdentity::new(0, "blocked", None);
+
+        let cap = tx.shared_capacity();
+        let fill = (0..cap as u8).collect::<Vec<_>>();
+        tx.shared_send_iter_until_full(fill.into_iter());
+        assert!(tx.shared_is_full());
+
+        #[allow(deprecated)]
+        let outcome = block_on(tx.shared_send_async_core(
+            255u8,
+            ident,
+            SendSaturation::ReturnBlockedMsg,
+            Some(Duration::from_millis(10)),
+        ));
+        assert!(matches!(outcome, SendOutcome::Blocked(255)), "expected Blocked(255), got {:?}", outcome);
+    }
+
+    /// Tests that if the shutdown oneshot fires during the send wait, Closed is returned.
+    #[test]
+    fn test_send_async_saturation_closes_on_shutdown() {
+        let (mut tx, _graph, sender) = new_tx();
+        let ident = ActorIdentity::new(0, "closed_shutdown", None);
+
+        let cap = tx.shared_capacity();
+        let fill = (0..cap as u8).collect::<Vec<_>>();
+        tx.shared_send_iter_until_full(fill.into_iter());
+        assert!(tx.shared_is_full());
+
+        // Drop the sender to trigger shutdown.
+        drop(sender);
+
+        let outcome = block_on(tx.shared_send_async_core(
+            100u8,
+            ident,
+            SendSaturation::AwaitForRoom,
+            Some(Duration::from_secs(10)),
+        ));
+        assert!(matches!(outcome, SendOutcome::Closed(100)), "expected Closed(100), got {:?}", outcome);
+    }
+
+    /// Tests that when room becomes available after a wait, AwaitForRoom succeeds.
+    #[test]
+    fn test_send_async_saturation_awaits_room_and_succeeds() {
+        // Create a channel and keep its receiver so we can make room.
+        let (mut tx, mut rx, _graph, _sender) = new_tx_with_rx();
+        let ident = ActorIdentity::new(0, "room_available", None);
+
+        // Fill to capacity.
+        let cap = tx.shared_capacity();
+        let fill = (0..cap as u8).collect::<Vec<_>>();
+        tx.shared_send_iter_until_full(fill.into_iter());
+        assert!(tx.shared_is_full());
+
+        // Spawn a background task that will take one message after a short delay.
+        let take_future = async move {
+            std::thread::sleep(Duration::from_millis(20));
+            rx.shared_try_take();
+        };
+        crate::core_exec::spawn_detached(take_future);
+
+        // AwaitForRoom with a generous timeout – should succeed once room appears.
+        let outcome = block_on(tx.shared_send_async_core(
+            42u8,
+            ident,
+            SendSaturation::AwaitForRoom,
+            Some(Duration::from_secs(1)),
+        ));
+        assert!(matches!(outcome, SendOutcome::Success), "expected Success after room becomes available, got {:?}", outcome);
+    }
+
+    /// Tests that telemetry_inc with MONITOR_NOT does not panic and logs an error.
+    #[test]
+    fn test_tx_telemetry_inc_monitor_not() {
+        let (mut tx, _graph, _sender) = new_tx();
+        // Set local_monitor_index to MONITOR_NOT to trigger the error branch
+        tx.local_monitor_index = MONITOR_NOT;
+        // Create a SteadyTelemetrySend with a dummy channel
+        let (dummy_tx, _dummy_rx) = ChannelBuilder::default().with_capacity(1).eager_build::<[usize; 4]>();
+        let mut tel = SteadyTelemetrySend::new(dummy_tx, [0; 4], [0; 4], Instant::now());
+        tx.telemetry_inc(TxDone::Normal(5), &mut tel);
+        // The error is logged but no panic
+    }
 }

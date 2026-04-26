@@ -246,3 +246,53 @@ pub fn steady_rx_bundle_active<T, const GIRTH: usize>(
 ) -> SteadyRxBundle<T, GIRTH> {
     Arc::new(inner)
 }
+
+#[cfg(test)]
+mod macros_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+
+    #[test]
+    fn test_steady_tx_bundle() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (tx0, _rx0) = builder.build_channel::<u8>();
+        let (tx1, _rx1) = builder.build_channel::<u8>();
+        let inner: [LazySteadyTx<u8>; 2] = [tx0, tx1];
+        let bundle: LazySteadyTxBundle<u8, 2> = steady_tx_bundle(inner);
+        assert_eq!(bundle.len(), 2);
+    }
+
+    #[test]
+    fn test_steady_rx_bundle() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (_tx0, rx0) = builder.build_channel::<u8>();
+        let (_tx1, rx1) = builder.build_channel::<u8>();
+        let inner: [LazySteadyRx<u8>; 2] = [rx0, rx1];
+        let bundle: LazySteadyRxBundle<u8, 2> = steady_rx_bundle(inner);
+        assert_eq!(bundle.len(), 2);
+    }
+
+    #[test]
+    fn test_steady_tx_bundle_active() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (tx0, _rx0) = builder.build_channel::<u8>();
+        let (tx1, _rx1) = builder.build_channel::<u8>();
+        let active0 = tx0.clone();
+        let active1 = tx1.clone();
+        let inner: [SteadyTx<u8>; 2] = [active0, active1];
+        let bundle: SteadyTxBundle<u8, 2> = steady_tx_bundle_active(inner);
+        assert_eq!(bundle.len(), 2);
+    }
+
+    #[test]
+    fn test_steady_rx_bundle_active() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (_tx0, rx0) = builder.build_channel::<u8>();
+        let (_tx1, rx1) = builder.build_channel::<u8>();
+        let active0 = rx0.clone();
+        let active1 = rx1.clone();
+        let inner: [SteadyRx<u8>; 2] = [active0, active1];
+        let bundle: SteadyRxBundle<u8, 2> = steady_rx_bundle_active(inner);
+        assert_eq!(bundle.len(), 2);
+    }
+}

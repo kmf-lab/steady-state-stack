@@ -1,10 +1,7 @@
-//! The `commander_context` module defines `SteadyContext` and its implementation
-//! of the `SteadyCommander` trait, providing the execution context for actors
-//! including state management, telemetry channels, and lifecycle controls.
 use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use async_lock::Barrier;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use std::any::Any;
 use std::error::Error;
@@ -15,17 +12,17 @@ use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
 use futures_timer::Delay;
 use futures_util::future::{FusedFuture, Shared};
-use ringbuf::consumer::Consumer;
-use ringbuf::traits::Observer;
-use ringbuf::producer::Producer;
-use std::task::Poll;
 use aeron::aeron::Aeron;
-use log::{info, warn};
+use log::warn;
+use ringbuf::traits::Observer;
+use ringbuf::consumer::Consumer;
+use ringbuf::producer::Producer;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
 use crate::steady_actor::{BlockingCallFuture, SendOutcome};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
+use crate::steady_actor_core::SteadyActorCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
@@ -34,7 +31,6 @@ use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::logging_util::steady_logger;
-use crate::yield_now::yield_now;
 use crate::core_exec;
 
 /// Context for managing actor state and interactions within the Steady framework.
@@ -49,8 +45,6 @@ pub struct SteadyActorShadow {
     pub(crate) actor_metadata: Arc<ActorMetaData>,
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// A shared future that resolves when a shutdown is requested.
-    /// Using `Shared` allows multiple generations of an actor (after restarts)
-    /// to await the same signal without consuming it.
     pub(crate) oneshot_shutdown: Shared<oneshot::Receiver<()>>,
     pub(crate) last_periodic_wait: AtomicU64,
     pub(crate) actor_start_time: Instant,
@@ -59,9 +53,7 @@ pub struct SteadyActorShadow {
     pub(crate) team_id: usize,
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
-    /// When true, Aeron client init uses a short retry budget (see [`Graph::aeron_init_timeouts`]).
     pub(crate) aeron_init_for_tests: bool,
-    /// Controls whether the internal simulation behavior is applied instead of actual commands.
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
 }
@@ -93,11 +85,9 @@ impl Clone for SteadyActorShadow {
     }
 }
 
-
 impl SteadyActor for SteadyActorShadow {
+    // ── Lifecycle ─────────────────────────────────────────────────────────
 
-    /// Checks if the current message in the receiver is a showstopper (peeked N times without being taken).
-    /// If true you should consider pulling this message for a DLQ or log it or consider dropping it.
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
         rx.is_showstopper(threshold)
     }
@@ -110,192 +100,133 @@ impl SteadyActor for SteadyActorShadow {
         simulate_edge::simulated_behavior::<SteadyActorShadow>(&mut self, sims).await
     }
 
-    /// Initializes the logger with the specified log level.
     fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
     }
 
-    /// No op, and only relays stats upon the LocalMonitor instance
     fn relay_stats_smartly(&mut self) -> bool {
-        //do nothing this is only implemented for the monitor
         false
     }
 
-    /// No op, and only relays stats upon the LocalMonitor instance
-    fn relay_stats(&mut self) {
-        //do nothing this is only implemented for the monitor
-    }
+    fn relay_stats(&mut self) {}
 
-    /// Waits for a specified duration. does not relay because that is only for Monior
-    ///
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
         self.wait_periodic(duration_rate).await
-        //do nothing after waiting this is only implemented for the monitor
     }
 
-    /// Checks if the liveliness state matches any of the target states.
-    ///
-    /// # Parameters
-    /// - `target`: A slice of `GraphLivelinessState`.
-    ///
-    /// # Returns
-    /// `true` if the liveliness state matches any target state, otherwise `false`.
     fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_in_state(target)
     }
 
-    /// Convenience methods for checking the liveliness state of the actor.
     fn is_liveliness_building(&self) -> bool {
-        self.is_liveliness_in(&[ GraphLivelinessState::Building ])
-    }
-    /// Convenience methods for checking the liveliness state of the actor.
-    fn is_liveliness_running(&self) -> bool {
-        self.is_liveliness_in(&[ GraphLivelinessState::Running ])
+        self.is_liveliness_in(&[GraphLivelinessState::Building])
     }
 
-    /// Timeout if shutdown has been called
+    fn is_liveliness_running(&self) -> bool {
+        self.is_liveliness_in(&[GraphLivelinessState::Running])
+    }
+
+    fn is_liveliness_stop_requested(&self) -> bool {
+        self.is_liveliness_in(&[GraphLivelinessState::StopRequested])
+    }
+
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> {
         let liveliness = self.runtime_state.read();
         liveliness.shutdown_timeout
     }
 
-    /// Convenience methods for checking the liveliness state of the actor.
-    fn is_liveliness_stop_requested(&self) -> bool {
-        self.is_liveliness_in(&[ GraphLivelinessState::StopRequested ])
-    }
+    // ── RxCore wrappers (delegate to SteadyActorCore) ─────────────────────
 
-
-
-
-
-    /// Attempts to peek at a slice of messages without removing them from the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance for peeking.
-    /// - `elems`: A mutable slice to store the peeked messages.
-    ///
-    /// # Returns
-    /// THE number of messages peeked and stored in `elems`.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn peek_slice<'b,T>(&self, this: &'b mut T) -> T::SliceSource<'b>
+    fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where
-        T: RxCore
-    {        
-        this.shared_peek_slice()
-    }
-
-
-    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone  where T::MsgItem: Copy
+        T: RxCore,
     {
-        this.shared_take_slice(slice)
+        SteadyActorCore::peek_slice(this)
     }
 
-    /// Attempts to peek at the next message in the channel without removing it.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message is available, or `None` if the channel is empty.
-    fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>
-    {
-        this.shared_try_peek()
-    }
-    /// Returns an iterator over the messages currently in the channel without removing them.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An iterator over the messages in the channel.
-    fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item=&'a T> + 'a {
-        this.shared_try_peek_iter()
+    fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
+    where T::MsgItem: Copy {
+        SteadyActorCore::take_slice(this, slice)
     }
 
-    /// Checks if the channel is currently empty.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// `true` if the channel has no messages available, otherwise `false`.
+    fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone {
+        SteadyActorCore::advance_take_index(this, count)
+    }
+
+    fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T> {
+        SteadyActorCore::try_peek(this)
+    }
+
+    fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
+        SteadyActorCore::try_peek_iter(this)
+    }
+
     fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
-        this.shared_is_empty()
+        SteadyActorCore::is_empty(this)
     }
-    /// Returns the number of messages currently available in the channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// A `usize` indicating the number of available messages.
+
     fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize {
-        this.shared_avail_units()
+        SteadyActorCore::avail_units(this)
     }
-    /// Asynchronously peeks at the next available message in the channel without removing it.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An `Option<&T>` which is `Some(&T)` if a message becomes available, or `None` if the channel is closed.
-    ///
-    /// # Asynchronous
-    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>>
-    {
-            this.shared_peek_async_timeout(None).await
+
+    async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>> {
+        this.shared_peek_async_timeout(None).await
     }
-    /// Sends a slice of messages to the Tx channel until it is full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `slice`: A slice of messages to be sent.
-    ///
-    /// # Returns
-    /// THE number of messages successfully sent before the channel became full.
-    ///
-    /// # Type Constraints
-    /// - `T`: Must implement `Copy`.
-    fn send_slice<T: TxCore>(& mut self, this: & mut T, slice: T::SliceSource<'_>) -> TxDone  where T::MsgOut: Copy
-     {
-        this.shared_send_slice(slice)
+
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
+        SteadyActorCore::try_take(this)
+    }
+
+    async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
+        this.shared_take_async().await
+    }
+
+    async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T> {
+        this.shared_take_async_timeout(Some(timeout)).await
+    }
+
+    fn take_into_iter<'a, T: Sync + Send>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a {
+        SteadyActorCore::take_into_iter(this)
+    }
+
+    // ── TxCore wrappers (delegate to SteadyActorCore) ─────────────────────
+
+    fn send_slice<T: TxCore>(&mut self, this: &mut T, slice: T::SliceSource<'_>) -> TxDone
+    where T::MsgOut: Copy {
+        SteadyActorCore::send_slice(this, slice)
     }
 
     fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
-    where
-        T: TxCore{
-        this.shared_poke_slice()
+    where T: TxCore {
+        SteadyActorCore::poke_slice(this)
     }
 
-
-    /// Sends messages from an iterator to the Tx channel until it is full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `iter`: An iterator that yields messages of type `T`.
-    ///
-    /// # Returns
-    /// THE number of messages successfully sent before the channel became full.
-    fn send_iter_until_full<T, I: Iterator<Item=T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
-        this.shared_send_iter_until_full(iter)
+    fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone {
+        SteadyActorCore::advance_send_index(this, count)
     }
-    /// Attempts to send a single message to the Tx channel without blocking.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    /// - `msg`: THE message to be sent.
-    ///
-    /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates successful send and `Err(T)` returns the message if the channel is full.
+
+    fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
+        SteadyActorCore::send_iter_until_full(this, iter)
+    }
+
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
-        match this.shared_try_send(msg) {
-            Ok(_d) => SendOutcome::Success,
-            Err(msg) => SendOutcome::Blocked(msg),
-        }
+        SteadyActorCore::try_send(this, msg)
     }
+
+    fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
+        SteadyActorCore::is_full(this)
+    }
+
+    fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
+        SteadyActorCore::vacant_units(this)
+    }
+
+    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
+        this.shared_send_async(a, self.ident, saturation).await
+    }
+
+    // ── Stream defrag (kept inline, not delegated to core) ────────────────
 
     fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
@@ -303,24 +234,20 @@ impl SteadyActor for SteadyActorShadow {
         out_data: &mut Tx<u8>,
         defrag: &mut Defrag<S>,
     ) -> (u32, u32, Option<i32>) {
-
         debug_assert!(out_data.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(out_item.make_closed.is_some(), "Send called after channel marked closed");
 
-        // Get item slices and check if there's anything to flush
         let (items_a, items_b) = defrag.ringbuffer_items.1.as_slices();
         let total_items = items_a.len() + items_b.len();
         if total_items == 0 {
-            return (0, 0, None); // Early return for empty buffer
+            return (0, 0, None);
         }
 
-        // Determine how many messages can fit in both channels
         let vacant_items = out_item.tx.vacant_len();
         let vacant_bytes = out_data.tx.vacant_len();
         let mut msg_count = 0;
         let mut total_bytes = 0;
 
-        // Calculate feasible number of messages
         for item in items_a.iter().chain(items_b.iter()) {
             let item_bytes = item.length() as usize;
             if msg_count < vacant_items && total_bytes + item_bytes <= vacant_bytes {
@@ -332,7 +259,7 @@ impl SteadyActor for SteadyActorShadow {
         }
 
         if msg_count == 0 {
-            return (0, 0, Some(defrag.session_id)); // No space to flush anything
+            return (0, 0, Some(defrag.session_id));
         }
 
         // Push payload bytes
@@ -346,7 +273,7 @@ impl SteadyActor for SteadyActorShadow {
             0
         };
         let pushed_bytes = pushed_a + pushed_b;
-        assert_eq!(pushed_bytes, total_bytes, "Failed to push all payload bytes");
+        debug_assert_eq!(pushed_bytes, total_bytes, "Failed to push all payload bytes");
         unsafe {
             defrag.ringbuffer_bytes.1.advance_read_index(pushed_bytes);
         }
@@ -362,104 +289,14 @@ impl SteadyActor for SteadyActorShadow {
             defrag.ringbuffer_items.1.advance_read_index(msg_count);
         }
 
-        // Return result
         if msg_count == total_items {
-            debug_assert_eq!(0, defrag.ringbuffer_bytes.1.occupied_len());
             (msg_count as u32, total_bytes as u32, None)
         } else {
             (msg_count as u32, total_bytes as u32, Some(defrag.session_id))
         }
     }
 
-    /// Checks if the Tx channel is currently full.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Returns
-    /// `true` if the channel is full and cannot accept more messages, otherwise `false`.
-    fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
-        this.shared_is_full()
-    }
-    /// Returns the number of vacant units in the Tx channel.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Returns
-    /// THE number of messages that can still be sent before the channel is full.
-    fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
-        this.shared_vacant_units()
-    }
-    /// Asynchronously waits until the Tx channel is empty.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to a `Tx<T>` instance.
-    ///
-    /// # Asynchronous
-    async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
-        // We must select against shutdown to ensure the actor wakes up to vote
-        // even if the channel never becomes empty.
-        select! {
-            _ = self.oneshot_shutdown.clone().fuse() => false,
-            x = this.shared_wait_empty().fuse() => x,
-        }
-    }
-    /// Takes messages into an iterator.
-    ///
-    /// # Parameters
-    /// - `this`: A mutable reference to an `Rx<T>` instance.
-    ///
-    /// # Returns
-    /// An iterator over the taken messages.
-    fn take_into_iter<'a, T: Sync + Send>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item=T> + 'a {
-        this.shared_take_into_iter()
-    }
-    /// Calls an asynchronous function and monitors its execution for telemetry.
-    ///
-    /// # Parameters
-    /// - `f`: THE asynchronous function to call.
-    ///
-    /// # Returns
-    /// THE output of the asynchronous function `f`.
-    ///
-    /// # Asynchronous
-    async fn call_async<F>(&self, operation: F) -> Option<F::Output>
-    where
-        F: Future
-    {
-        let operation = operation.fuse();
-        futures::pin_mut!(operation); // Pin the future on the stack
-
-        if self.oneshot_shutdown.is_terminated() {
-            if let Some(duration) = self.is_liveliness_shutdown_timeout() {
-                //in this case we know that the shutdown signal happened but we have duration
-                //before it is a hard shutdown, so we will wait 4/1 of duration
-                select! {
-                        _ = Delay::new(duration.div_f32(4f32)).fuse() => None,
-                        r = operation => Some(r)
-                    }
-            } else {
-                if let Poll::Ready(result) = futures::poll!(&mut operation) {
-                    Some(result) // Return value if operation completed
-                } else {
-                    None
-                }
-            }
-        } else {
-            select! { _ = self.oneshot_shutdown.clone().fuse() => None, r = operation => Some(r), }
-        }
-    }
-
-    fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
-    where
-        F: FnOnce() -> T + Send + 'static,
-        T: Send + 'static,
-    {
-        warn!("Blocking calls are not recommended but we do support them. You should however consider async options if possible.");
-        info!("For engineering help in updating your solution please reach out to support@kmf-lab.com ");
-        BlockingCallFuture(core_exec::spawn_blocking(f))
-    }
+    // ── Wait helpers (delegate to SteadyActorCore) ────────────────────────
 
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
@@ -467,295 +304,202 @@ impl SteadyActor for SteadyActorShadow {
         let remaining_duration = if last <= now_nanos {
             duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
         } else {
-            if Duration::from_nanos(last-now_nanos).gt(&duration_rate) {
-                warn!("the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration."
-                        ,self.ident, Duration::from_nanos(last-now_nanos), duration_rate);
+            if Duration::from_nanos(last - now_nanos).gt(&duration_rate) {
+                warn!(
+                    "the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration.",
+                    self.ident,
+                    Duration::from_nanos(last - now_nanos),
+                    duration_rate
+                );
             }
-            Duration::ZERO //SHOULD NEVER HAPPEN BECAUSE last is in the future.
+            Duration::ZERO
         };
-        //must store now because this wait may be abandoned if data comes in
-        self.last_periodic_wait.store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
+        self.last_periodic_wait
+            .store(remaining_duration.as_nanos() as u64 + now_nanos, Ordering::Relaxed);
         let delay = Delay::new(remaining_duration);
-
-        let result = select! {
-                    _= self.oneshot_shutdown.clone().fuse() => false,
-                    _= &mut delay.fuse() => true
-                 };
-        result
+        select! {
+            _= self.oneshot_shutdown.clone().fuse() => false,
+            _= &mut delay.fuse() => true,
+        }
     }
+
     async fn wait_timeout(&self, timeout: Duration) -> bool {
         let delay = Delay::new(timeout);
-        let result = select! {
-                    _= self.oneshot_shutdown.clone().fuse() => false,
-                    _= &mut delay.fuse() => true
-                 };
-        result
-    }
-
-
-    /// Asynchronously waits for a specified duration.
-    ///
-    /// # Parameters
-    /// - `duration`: THE duration to wait.
-    ///
-    /// # Asynchronous
-    async fn wait(&self, duration: Duration) {
-        if !self.oneshot_shutdown.is_terminated() {
-            select! { _ = self.oneshot_shutdown.clone().fuse() => {}, _ =Delay::new(duration).fuse() => {} }
+        select! {
+            _= self.oneshot_shutdown.clone().fuse() => false,
+            _= &mut delay.fuse() => true,
         }
     }
-    /// Yield so other actors may be able to make use of this thread. Returns
-    /// immediately if there is nothing scheduled to check.
-    async fn yield_now(&self) {
-        yield_now().await;
+
+    async fn wait(&self, duration: Duration) {
+        SteadyActorCore::wait(&self.oneshot_shutdown, duration).await
     }
-    /// Waits for a future to complete or until a shutdown signal is received.
-    ///
-    /// # Parameters
-    /// - `fut`: THE future to wait for.
-    ///
-    /// # Returns
-    /// `true` if the future completed, `false` if a shutdown signal was received.
+
+    async fn yield_now(&self) {
+        SteadyActorCore::yield_now().await
+    }
+
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
-        F: FusedFuture<Output = ()> + 'static + Send + Sync {
-        let mut pinned_fut = Box::pin(fut);
-        if !self.oneshot_shutdown.is_terminated() {
-            select! { _ = self.oneshot_shutdown.clone().fuse() => false, _ = pinned_fut => true, }
-        } else {
-            false
-        }
-    }
-    /// Sends a message to the channel asynchronously, waiting if necessary until space is available.
-    ///
-    /// # Parameters
-    /// - `msg`: THE message to be sent.
-    ///
-    /// # Returns
-    /// A `Result<(), T>`, where `Ok(())` indicates that the message was successfully sent, and `Err(T)` if the send operation could not be completed.
-    ///
-    /// # Example Usage
-    /// Suitable for scenarios where it's critical that a message is sent, and the sender can afford to wait.
-    /// Not recommended for real-time systems where waiting could introduce unacceptable latency.
-    async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
-        this.shared_send_async(a, self.ident, saturation).await
+        F: FusedFuture<Output = ()> + 'static + Send + Sync,
+    {
+        SteadyActorCore::wait_future_void(&self.oneshot_shutdown, fut).await
     }
 
-
-    /// Attempts to take a message from the channel if available.
-    ///
-    /// # Returns
-    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
-    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
-        this.shared_try_take().map(|(_d,m)|m)
+    async fn call_async<F>(&self, operation: F) -> Option<F::Output>
+    where
+        F: Future,
+    {
+        SteadyActorCore::call_async(
+            &self.oneshot_shutdown,
+            self.is_liveliness_shutdown_timeout(),
+            operation,
+        )
+        .await
     }
 
-
-
-    /// Attempts to take a message from the channel if available.
-    ///
-    /// # Returns
-    /// An `Option<T>`, where `Some(T)` contains the message if available, or `None` if the channel is empty.
-    async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
-        this.shared_take_async().await
+    fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        BlockingCallFuture(core_exec::spawn_blocking(f))
     }
 
-
-    async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T> {
-        this.shared_take_async_timeout(Some(timeout)).await
-    }
-
-    fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone  {
-        this.shared_advance_index(count)
-    }
-
-    fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone  {
-        this.shared_advance_index(count)
-    }
-
-
-    /// Waits until the specified number of available units are in the receiver.
-    ///
-    /// # Parameters
-    /// - `count`: THE number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
-    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool {
-        // Shutdown awareness is critical here; if the producer is gone but 
-        // the channel isn't closed, we'd hang forever without this select.
-        select! {
-            _ = self.oneshot_shutdown.clone().fuse() => false,
-            x = this.shared_wait_closed_or_avail_units(size).fuse() => x,
-        }
-    }
-
-    /// Waits until the specified number of vacant units are in the transmitter.
-    ///
-    /// # Parameters
-    /// - `count`: THE number of units to wait for.
-    ///
-    /// # Returns
-    /// `true` if the required number of units became available, `false` if the wait was interrupted.
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
-        // Ensure we don't block indefinitely on a full channel during shutdown.
         select! {
             _ = self.oneshot_shutdown.clone().fuse() => false,
             x = this.shared_wait_shutdown_or_vacant_units(size).fuse() => x,
         }
     }
 
-    /// Waits until shutdown
-    ///
-    /// # Returns
-    /// true
-    async fn wait_shutdown(&self) -> bool {
-        let _ = self.oneshot_shutdown.clone().await;
-        true
+    async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool {
+        select! {
+            _ = self.oneshot_shutdown.clone().fuse() => false,
+            x = this.shared_wait_closed_or_avail_units(size).fuse() => x,
+        }
     }
-    /// Returns a side channel responder if available.
-    ///
-    /// # Returns
-    /// An `Option` containing a `SideChannelResponder` if available.
+
+    async fn wait_shutdown(&self) -> bool {
+        SteadyActorCore::wait_shutdown(&self.oneshot_shutdown).await
+    }
+
+    async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
+        select! {
+            _ = self.oneshot_shutdown.clone().fuse() => false,
+            x = this.shared_wait_empty().fuse() => x,
+        }
+    }
+
+    // ── Bundle waits ──────────────────────────────────────────────────────
+
+    async fn wait_vacant_bundle<T: TxCore>(
+        &self,
+        this: &mut TxCoreBundle<'_, T>,
+        count: T::MsgSize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let mut futures = FuturesUnordered::new();
+        for tx in this.iter_mut().take(count_down) {
+            let local_r = result.clone();
+            futures.push(async move {
+                let bool_result = tx.shared_wait_shutdown_or_vacant_units(count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            });
+        }
+        let mut completed = 0;
+        loop {
+            if completed >= count_down {
+                break;
+            }
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => {
+                    result.store(false, Ordering::Relaxed);
+                    break;
+                }
+                next = futures.next() => {
+                    if next.is_some() {
+                        completed += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        result.load(Ordering::Relaxed)
+    }
+
+    async fn wait_avail_bundle<T: RxCore>(
+        &self,
+        this: &mut RxCoreBundle<'_, T>,
+        count: usize,
+        ready_channels: usize,
+    ) -> bool {
+        let count_down = ready_channels.min(this.len());
+        let result = Arc::new(AtomicBool::new(true));
+        let mut futures = FuturesUnordered::new();
+        for rx in this.iter_mut().take(count_down) {
+            let local_r = result.clone();
+            futures.push(async move {
+                let bool_result = rx.shared_wait_closed_or_avail_units(count).await;
+                if !bool_result {
+                    local_r.store(false, Ordering::Relaxed);
+                }
+            });
+        }
+        let mut completed = 0;
+        loop {
+            if completed >= count_down {
+                break;
+            }
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => {
+                    result.store(false, Ordering::Relaxed);
+                    break;
+                }
+                next = futures.next() => {
+                    if next.is_some() {
+                        completed += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        result.load(Ordering::Relaxed)
+    }
+
+    // ── Misc ──────────────────────────────────────────────────────────────
+
     fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
         self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
-    /// Checks if the actor is running, using a custom accept function.
-    ///
-    /// # Parameters
-    /// - `accept_fn`: THE custom accept function to check the running state.
-    ///
-    /// # Returns
-    /// `true` if the actor is running, `false` otherwise.
-    #[inline]
+
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_running(self.ident, &mut accept_fn).unwrap_or(true)
     }
-    /// Requests a graph stop for the actor.
-    ///
-    #[inline]
+
     async fn request_shutdown(&mut self) {
         if let Some(barrier) = &self.shutdown_barrier {
-            // Wait for all required actors to reach the barrier
             barrier.clone().wait().await;
         }
-        GraphLiveliness::internal_request_shutdown(self.runtime_state.clone()).await;
+        SteadyActorCore::request_shutdown(&self.runtime_state).await
     }
 
-    /// Sets or clears an optional single-line subtitle in the **Graphviz DOT** node label only,
-    /// rendered directly under the actor name (before rolling stats). Pass `None` to remove the
-    /// line. Text is copied for cross-thread telemetry; newlines are collapsed to spaces and the
-    /// stored length is capped (see `DOT_SUBTITLE_MAX_CHARS` in the crate sources).
-    ///
-    /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
-    /// features or `frame_rate_ms` is zero).
-    fn set_dot_display_text(&mut self, text: Option<&str>) {
-        //NO OP no tlemetry
-    }
-
-
-    /// Retrieves the actor's arguments, cast to the specified type.
-    ///
-    /// # Returns
-    /// An `Option<&A>` containing the arguments if available and of the correct type.
     fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
-    /// Retrieves the actor's identity.
-    ///
-    /// # Returns
-    /// An `ActorIdentity` representing the actor's identity.
+
     fn identity(&self) -> ActorIdentity {
         self.ident
     }
 
-    async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>
-                                           , count: T::MsgSize
-                                           , ready_channels: usize) -> bool {
-
-            let count_down = ready_channels.min(this.len());
-            let result = Arc::new(AtomicBool::new(true));
-            let mut futures = FuturesUnordered::new();
-
-            // Push futures into the FuturesUnordered collection
-            for tx in this.iter_mut().take(count_down) {
-                let local_r = result.clone();
-                futures.push(async move {
-                    let bool_result = tx.shared_wait_shutdown_or_vacant_units(count).await;
-                    if !bool_result {
-                        local_r.store(false, Ordering::Relaxed);
-                    }
-                });
-            }
-            let mut completed = 0;
-
-            // Poll futures concurrently while watching for shutdown.
-            // This prevents the actor from hanging if the bundle never reaches the required vacancy.
-            loop {
-                if completed >= count_down {
-                    break;
-                }
-                select! {
-                    _ = self.oneshot_shutdown.clone().fuse() => {
-                        result.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    next = futures.next() => {
-                        if next.is_some() {
-                            completed += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-            result.load(Ordering::Relaxed)
-        }
-
-    async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, count: usize, ready_channels: usize) -> bool {
-
-            let count_down = ready_channels.min(this.len());
-            let result = Arc::new(AtomicBool::new(true));
-
-            let mut futures = FuturesUnordered::new();
-
-            // Push futures into the FuturesUnordered collection
-            for rx in this.iter_mut().take(count_down) {
-                let local_r = result.clone();
-                futures.push(async move {
-                    let bool_result = rx.shared_wait_closed_or_avail_units(count).await;
-                    if !bool_result {
-                        local_r.store(false, Ordering::Relaxed);
-                    }
-                });
-            }
-
-            let mut completed = 0;
-
-            // Poll futures concurrently while watching for shutdown.
-            // This prevents the actor from hanging if the bundle never reaches the required availability.
-            loop {
-                if completed >= count_down {
-                    break;
-                }
-                select! {
-                    _ = self.oneshot_shutdown.clone().fuse() => {
-                        result.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    next = futures.next() => {
-                        if next.is_some() {
-                            completed += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            result.load(Ordering::Relaxed)
-        }
+    fn set_dot_display_text(&mut self, _text: Option<&str>) {}
 
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
@@ -763,63 +507,5 @@ impl SteadyActor for SteadyActorShadow {
 
     fn regeneration(&self) -> u32 {
         self.regeneration
-    }
-}
-
-
-#[cfg(test)]
-mod steady_actor_tests {
-    use super::*;
-    use crate::core_exec;
-
-    #[test]
-    fn test_send_outcome_methods() {
-        let success: SendOutcome<i32> = SendOutcome::Success;
-        assert!(success.is_sent());
-        assert!(success.expect("should not panic"));
-
-        let blocked = SendOutcome::Blocked(42);
-        assert!(!blocked.is_sent());
-
-        let timeout = SendOutcome::Timeout(42);
-        assert!(!timeout.is_sent());
-
-        let closed = SendOutcome::Closed(42);
-        assert!(!closed.is_sent());
-    }
-
-    #[test]
-    #[should_panic(expected = "test panic")]
-    fn test_send_outcome_expect_panic() {
-        let blocked = SendOutcome::Blocked(42);
-        blocked.expect("test panic");
-    }
-
-    #[test]
-    fn test_blocking_call_future_terminated() {
-        let (tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
-        assert!(!fut.is_terminated());
-        tx.send(42).unwrap();
-        let res = core_exec::block_on(&mut fut);
-        assert_eq!(res, 42);
-        assert!(fut.is_terminated());
-    }
-
-    #[test]
-    fn test_blocking_call_future_fetch_timeout() {
-        let (_tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
-        let res = core_exec::block_on(fut.fetch(Duration::from_millis(10)));
-        assert!(res.is_none());
-    }
-
-    #[test]
-    fn test_blocking_call_future_fetch_ready() {
-        let (tx, rx) = crate::oneshot::channel::<i32>();
-        let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.unwrap() }.fuse()));
-        tx.send(42).unwrap();
-        let res = core_exec::block_on(fut.fetch(Duration::from_millis(100)));
-        assert_eq!(res, Some(42));
     }
 }

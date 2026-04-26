@@ -563,8 +563,11 @@ mod monitor_telemetry_old_tests {
 #[cfg(test)]
 mod monitor_telemetry_tests {
     use crate::monitor::{ActorMetaData, RxTel};
-    use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetry, SteadyTelemetryRx};
+    use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetry, SteadyTelemetryRx, SteadyTelemetrySend};
     use std::sync::Arc;
+    use std::time::Instant;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::*;
 
     // // Helper function to create default ChannelMetaData
     // fn create_channel_meta(id: usize, capacity: usize) -> Arc<ChannelMetaData> {
@@ -732,5 +735,58 @@ mod monitor_telemetry_tests {
 
         let result = telemetry_rx.consume_send_into(&mut take_send_target, &mut future_send);
         assert!(!result);
+    }
+
+    // --- New tests for SteadyTelemetrySend::process_event ---
+
+    #[test]
+    fn test_steady_telemetry_send_process_event_normal() {
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx, _rx) = builder.eager_build::<[usize; 4]>();
+
+        let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
+
+        let new_index = send.process_event(0, 0, 5);
+        assert_eq!(new_index, 0);
+        assert_eq!(send.count[0], 5);
+    }
+
+    #[test]
+    fn test_steady_telemetry_send_process_event_unknown() {
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx, _rx) = builder.eager_build::<[usize; 4]>();
+
+        let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
+
+        // When index == MONITOR_UNKNOWN, the code will try to resolve via find_my_index.
+        // The telemetry channel is not registered in the global registry so it will return
+        // MONITOR_NOT or some value >= MONITOR_NOT. The test ensures no panic.
+        let new_index = send.process_event(MONITOR_UNKNOWN, 42, 10);
+        assert!(new_index >= MONITOR_NOT);
+    }
+
+    #[test]
+    fn test_steady_telemetry_send_process_event_not_monitored() {
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx, _rx) = builder.eager_build::<[usize; 4]>();
+
+        let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
+
+        let new_index = send.process_event(MONITOR_NOT, 1, 7);
+        assert_eq!(new_index, MONITOR_NOT);
+    }
+
+    #[test]
+    fn test_steady_telemetry_send_process_event_normal_inverse() {
+        // Test that process_event with an index (not zero) works
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx, _rx) = builder.eager_build::<[usize; 3]>();
+
+        let mut send = SteadyTelemetrySend::new(tx, [10, 20, 30], [2, 1, 0], Instant::now());
+
+        // index=1, id=5, done=7
+        let new_index = send.process_event(1, 5, 7);
+        assert_eq!(new_index, 1);
+        assert_eq!(send.count[1], 27);
     }
 }

@@ -482,4 +482,54 @@ mod steady_lazy_tests {
         assert_eq!(ste_rx.try_take(), Some(2));
         assert_eq!(ste_rx.try_take(), None);
     }
+
+    /// Tests `shared_send_slice_until_full` on a raw `Tx` (not lazy).
+    #[test]
+    fn test_shared_send_slice_until_full() {
+        // Build a channel eagerly so we get a raw Tx.
+        let builder = ChannelBuilder::default().with_capacity(5);
+        let (mut tx, _rx) = builder.eager_build_internal::<u8>();
+
+        // Send a slice that fits entirely.
+        let sent = tx.shared_send_slice_until_full(&[10, 20, 30]);
+        assert_eq!(sent, 3);
+
+        // Send a slice that exceeds capacity (only 2 slots left).
+        let sent2 = tx.shared_send_slice_until_full(&[40, 50, 60]);
+        assert_eq!(sent2, 2); // only 2 fit
+
+        // Channel is now full; sending an empty slice returns 0.
+        let sent3 = tx.shared_send_slice_until_full(&[]);
+        assert_eq!(sent3, 0);
+
+        // Verify the channel is full.
+        assert!(tx.shared_is_full());
+    }
+}
+
+#[cfg(test)]
+mod tx_done_tests {
+    use super::*;
+
+    #[test]
+    fn test_tx_done_payload_count_normal() {
+        let done = TxDone::Normal(5);
+        assert_eq!(done.item_count(), 5);
+        assert_eq!(done.payload_count(), None);
+    }
+
+    #[test]
+    fn test_tx_done_payload_count_stream() {
+        let done = TxDone::Stream(3, 100);
+        assert_eq!(done.item_count(), 3);
+        assert_eq!(done.payload_count(), Some(100));
+    }
+
+    #[test]
+    fn test_tx_done_deref() {
+        let normal: usize = *TxDone::Normal(7);
+        assert_eq!(normal, 7);
+        let stream: usize = *TxDone::Stream(2, 200);
+        assert_eq!(stream, 2);
+    }
 }
