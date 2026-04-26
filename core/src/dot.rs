@@ -53,6 +53,9 @@ pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
 /// The pen width for bundles of partnered channels.
 pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 
+/// Percent of border RGB mixed into actor node `fillcolor` (remainder is white). Tweak for a stronger or weaker tint.
+const ACTOR_FILL_TINT_PERCENT: u32 = 12;
+
 /// Max number of per-channel `Avg fill` values to print comma-separated; above this, labels use
 /// a single `mean, N ch` line (aligns with large-bundle tooltips and Stage 2 bundle headers).
 const MAX_INLINE_AVG_FILL_LANES: usize = 20;
@@ -81,6 +84,18 @@ fn rgb_to_hex_into(out: &mut String, r: u32, g: u32, b: u32) {
         g.min(255),
         b.min(255)
     );
+}
+
+/// Actor node interior: white blended with `border_color` so the fill reads solid on black backgrounds.
+pub(crate) fn actor_fillcolor_hex_into(out: &mut String, border_color: &str) {
+    if border_color.is_empty() {
+        rgb_to_hex_into(out, 255, 255, 255);
+        return;
+    }
+    let k = ACTOR_FILL_TINT_PERCENT.clamp(1, 99);
+    let (r, g, b) = color_to_rgb(border_color);
+    let blend = |c: u32| (255u32 * (100 - k) + c * k) / 100;
+    rgb_to_hex_into(out, blend(r), blend(g), blend(b));
 }
 
 /// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
@@ -339,6 +354,16 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 dot_graph.put_slice(b"\", color=\"");
                 dot_graph.put_slice(node.color.as_bytes());
             }
+            actor_fillcolor_hex_into(
+                &mut frames.hex_line,
+                if node.color.is_empty() {
+                    ""
+                } else {
+                    node.color
+                },
+            );
+            dot_graph.put_slice(b"\", fillcolor=\"");
+            dot_graph.put_slice(frames.hex_line.as_bytes());
             dot_graph.put_slice(b"\", penwidth=");
             dot_graph.put_slice(node.pen_width.as_bytes());
             dot_graph.put_slice(b" ");
@@ -1535,6 +1560,27 @@ mod dot_tests {
             result
         );
         assert!(result.contains("color=\"grey\""), "found: {}", result);
+        assert!(
+            result.contains("fillcolor=\"#EFEFEF\""),
+            "expected tinted white fill for grey border, found: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_actor_fillcolor_hex_into() {
+        let mut s = String::new();
+        actor_fillcolor_hex_into(&mut s, "");
+        assert_eq!(s, "#FFFFFF");
+
+        actor_fillcolor_hex_into(&mut s, "grey");
+        assert_eq!(s, "#EFEFEF");
+
+        actor_fillcolor_hex_into(&mut s, "green");
+        assert_eq!(s, "#E0F4E0");
+
+        actor_fillcolor_hex_into(&mut s, "red");
+        assert_eq!(s, "#FFE0E0");
     }
 
     // ============================================================================
