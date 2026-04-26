@@ -1159,7 +1159,11 @@ impl Graph {
                 let is_unclean = shutdown.eq(&GraphLivelinessState::StoppedUncleanly);
                 rs.write().state = shutdown;
                 if is_unclean {
-                    warn!("graph stopped uncleanly: votes report");
+                    let voter_count = rs.read().votes.len();
+                    warn!(
+                        "graph stopped uncleanly ({} voters); per-voter breakdown at DEBUG (e.g. RUST_LOG=steady_state=debug)",
+                        voter_count
+                    );
                     Self::report_votes(&mut rs.write());
                     return Err("graph stopped uncleanly error from watch_shutdown".into());
                 }
@@ -1179,11 +1183,11 @@ impl Graph {
     ///
     /// * `state` - A mutable reference to the graph's liveliness state under a write lock.
     fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
-        warn!("voter log: (approved votes at the top, total:{})", state.votes.len());
+        debug!("voter log: (approved votes at the top, total:{})", state.votes.len());
         let mut voters = state.votes.iter().map(|f| f.try_lock()).collect::<Vec<_>>();
         voters.sort_by_key(|voter| !voter.as_ref().is_some_and(|f| f.in_favor));
         voters.iter().for_each(|voter| {
-            warn!("#{:?} Status:{:?} Voted: {:?} {:?} Ident: {:?}"
+            debug!("#{:?} Status:{:?} Voted: {:?} {:?} Ident: {:?}"
                    , voter.as_ref().map_or(usize::MAX, |f| f.id)
                    , voter.as_ref().map_or(Default::default(), |f| f.voter_status.clone())
                    , voter.as_ref().is_some_and(|f| f.in_favor)
@@ -1192,7 +1196,7 @@ impl Graph {
                                 {voter.as_ref().map_or(None, |f| f.veto_reason.clone()).map_or("".to_string(), |f| f.veto_reason())}
                    , voter.as_ref().map_or(Default::default(), |f| f.signature));
         });
-        warn!("graph stopped uncleanly, with voters {}",voters.len());
+        debug!("graph stopped uncleanly, with voters {}", voters.len());
         voters.iter().for_each(|voter| {
             let signature = voter.as_ref().map_or(&None, |f| &f.signature);
             let skip_internal = if let Some(signature) = signature {
