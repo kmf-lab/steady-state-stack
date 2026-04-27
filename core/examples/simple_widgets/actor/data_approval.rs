@@ -13,7 +13,7 @@ use crate::actor::data_feedback::FailureFeedback;
 
 const BATCH_SIZE: usize = 2000;
 
-#[derive(Clone, Debug, PartialEq, Copy, Ord, PartialOrd, Eq)]
+#[derive(Clone, Debug, PartialEq, Copy, Ord, PartialOrd, Eq, Default)]
 pub struct ApprovedWidgets {
     pub original_count: u64,
     pub approved_count: u64,

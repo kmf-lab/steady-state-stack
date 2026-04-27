@@ -7,7 +7,7 @@ use log::*;
 use rand::{random};
 use steady_state::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Packet {
     pub(crate) route: u16,
     pub(crate) data: Bytes,

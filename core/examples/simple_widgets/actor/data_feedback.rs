@@ -5,12 +5,12 @@ use steady_state::*;
 use steady_state::SteadyRx;
 use steady_state::SteadyTx;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct FailureFeedback {
     pub count: u64,
     pub message: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
     pub struct ChangeRequest {
     pub msg: FailureFeedback,
 }

@@ -6,7 +6,7 @@ use steady_state::*;
 
 use crate::actor::data_feedback::ChangeRequest;
 
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Default)]
 pub struct WidgetInventory {
     pub(crate) count: u64,
     pub(crate) _payload: u64,
