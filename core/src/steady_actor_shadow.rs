@@ -574,9 +574,6 @@ mod tests {
 
     #[test]
     fn test_is_showstopper() {
-        use crate::core_rx::RxCore;
-        use crate::core_tx::TxCore;
-
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
 
@@ -584,7 +581,10 @@ mod tests {
         tx.testing_send_all(vec![42], false);
 
         let shadow = graph.new_testing_test_monitor("test");
-        let mut rx_guard = core_exec::block_on(rx.lock());
+
+        // Clone the lazy rx to get a steady (Arc<Mutex<Rx<u8>>>) which supports .lock()
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
 
         // Initially peek_repeats is 0, so not a showstopper
         assert!(!shadow.is_showstopper(&mut rx_guard, 3));
