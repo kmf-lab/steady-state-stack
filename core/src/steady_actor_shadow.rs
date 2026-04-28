@@ -509,3 +509,101 @@ impl SteadyActor for SteadyActorShadow {
         self.regeneration
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_wait_periodic() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let result = core_exec::block_on(shadow.wait_periodic(Duration::from_millis(10)));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_wait_timeout() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let start = Instant::now();
+        let result = core_exec::block_on(shadow.wait_timeout(Duration::from_millis(50)));
+        assert!(result);
+        assert!(start.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[test]
+    fn test_yield_now() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        core_exec::block_on(shadow.yield_now());
+    }
+
+    #[test]
+    fn test_relay_stats_smartly() {
+        let graph = GraphBuilder::for_testing().build(());
+        let mut shadow = graph.new_testing_test_monitor("test");
+        // Shadow implementation always returns false
+        assert!(!shadow.relay_stats_smartly());
+    }
+
+    #[test]
+    fn test_relay_stats_periodic() {
+        let graph = GraphBuilder::for_testing().build(());
+        let mut shadow = graph.new_testing_test_monitor("test");
+        let result = core_exec::block_on(shadow.relay_stats_periodic(Duration::from_millis(10)));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_loglevel() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        // Should not panic
+        shadow.loglevel(LogLevel::Info);
+    }
+
+    #[test]
+    fn test_aeron_media_driver_none() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        assert!(shadow.aeron_media_driver().is_none());
+    }
+
+    #[test]
+    fn test_is_showstopper() {
+        use crate::core_rx::RxCore;
+        use crate::core_tx::TxCore;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        let tx_clone = tx.clone();
+        let rx_clone = rx.clone();
+
+        // Send a message
+        tx_clone.testing_send_all(vec![42], false);
+
+        let shadow = graph.new_testing_test_monitor("test");
+        let mut rx_guard = core_exec::block_on(rx_clone.lock());
+
+        // Initially peek_repeats is 0, so not a showstopper
+        assert!(!shadow.is_showstopper(&mut rx_guard, 3));
+
+        // Peek multiple times without taking to trigger showstopper
+        for _ in 0..5 {
+            shadow.try_peek(&mut rx_guard);
+        }
+        assert!(shadow.is_showstopper(&mut rx_guard, 3));
+    }
+
+    #[test]
+    fn test_wait() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let start = Instant::now();
+        core_exec::block_on(shadow.wait(Duration::from_millis(30)));
+        assert!(start.elapsed() >= Duration::from_millis(30));
+    }
+}
