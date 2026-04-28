@@ -699,8 +699,7 @@ mod tests {
     fn test_args() {
         let graph = GraphBuilder::for_testing().build(42i32);
         let shadow = graph.new_testing_test_monitor("test");
-        // The graph was built with i32, but the shadow's args are downcast from the graph's args
-        // Actually the shadow's args are the same Arc<Box<dyn Any>>, so we need to cast correctly
+        // The graph was built with i32
         let value: Option<&i32> = shadow.args();
         assert_eq!(value, Some(&42));
     }
@@ -759,14 +758,16 @@ mod tests {
         let (tx, _rx) = graph.channel_builder()
             .with_capacity(5)
             .build_stream::<StreamEgress>(1);
-        let shadow = graph.new_testing_test_monitor("test");
+        let mut shadow = graph.new_testing_test_monitor("test");
 
         let mut defrag = Defrag::<StreamEgress>::new(1, 10, 100);
         let tx_steady = tx.clone();
         let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        // Workaround: borrow fields through separate deref to satisfy borrow checker
+        let tx_inner = &mut *tx_guard;
         let (msgs, bytes, session) = shadow.flush_defrag_messages(
-            &mut tx_guard.control_channel,
-            &mut tx_guard.payload_channel,
+            &mut tx_inner.control_channel,
+            &mut tx_inner.payload_channel,
             &mut defrag,
         );
         assert_eq!(msgs, 0);
@@ -778,7 +779,7 @@ mod tests {
     fn test_try_send_and_try_take() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
-        let shadow = graph.new_testing_test_monitor("test");
+        let mut shadow = graph.new_testing_test_monitor("test");
 
         let tx_steady = tx.clone();
         let mut tx_guard = core_exec::block_on(tx_steady.lock());
@@ -796,13 +797,13 @@ mod tests {
     fn test_is_full_and_vacant_units() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder().with_capacity(3).build_channel::<u8>();
-        let shadow = graph.new_testing_test_monitor("test");
+        let mut shadow = graph.new_testing_test_monitor("test");
 
         let tx_steady = tx.clone();
-        let tx_guard = core_exec::block_on(tx_steady.lock());
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
         // Fresh channel should not be full
-        assert!(!shadow.is_full(&tx_guard));
-        assert_eq!(shadow.vacant_units(&tx_guard), 3);
+        assert!(!shadow.is_full(&mut tx_guard));
+        assert_eq!(shadow.vacant_units(&mut tx_guard), 3);
         drop(tx_guard);
 
         // Fill the channel
@@ -810,15 +811,15 @@ mod tests {
         for i in 0..3 {
             let _ = tx_guard.shared_try_send(i);
         }
-        assert!(shadow.is_full(&tx_guard));
-        assert_eq!(shadow.vacant_units(&tx_guard), 0);
+        assert!(shadow.is_full(&mut tx_guard));
+        assert_eq!(shadow.vacant_units(&mut tx_guard), 0);
     }
 
     #[test]
     fn test_send_iter_until_full() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
-        let shadow = graph.new_testing_test_monitor("test");
+        let mut shadow = graph.new_testing_test_monitor("test");
         let tx_steady = tx.clone();
         let mut tx_guard = core_exec::block_on(tx_steady.lock());
         let iter = vec![1, 2, 3].into_iter();
@@ -830,12 +831,12 @@ mod tests {
     fn test_is_empty_and_avail_units() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
-        let shadow = graph.new_testing_test_monitor("test");
+        let mut shadow = graph.new_testing_test_monitor("test");
 
         let rx_steady = rx.clone();
-        let rx_guard = core_exec::block_on(rx_steady.lock());
-        assert!(shadow.is_empty(&rx_guard));
-        assert_eq!(shadow.avail_units(&rx_guard), 0);
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        assert!(shadow.is_empty(&mut rx_guard));
+        assert_eq!(shadow.avail_units(&mut rx_guard), 0);
         drop(rx_guard);
 
         // Send a message and check again
@@ -845,8 +846,8 @@ mod tests {
         drop(tx_guard);
 
         let mut rx_guard = core_exec::block_on(rx_steady.lock());
-        assert!(!shadow.is_empty(&rx_guard));
-        assert_eq!(shadow.avail_units(&rx_guard), 1);
+        assert!(!shadow.is_empty(&mut rx_guard));
+        assert_eq!(shadow.avail_units(&mut rx_guard), 1);
     }
 
     #[test]
