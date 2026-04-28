@@ -579,14 +579,12 @@ mod tests {
 
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
-        let tx_clone = tx.clone();
-        let rx_clone = rx.clone();
 
-        // Send a message
-        tx_clone.testing_send_all(vec![42], false);
+        // Send a message using the lazy transmitter (has `testing_send_all`)
+        tx.testing_send_all(vec![42], false);
 
         let shadow = graph.new_testing_test_monitor("test");
-        let mut rx_guard = core_exec::block_on(rx_clone.lock());
+        let mut rx_guard = core_exec::block_on(rx.lock());
 
         // Initially peek_repeats is 0, so not a showstopper
         assert!(!shadow.is_showstopper(&mut rx_guard, 3));
