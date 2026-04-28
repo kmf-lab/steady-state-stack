@@ -618,11 +618,10 @@ mod tests {
 
     #[test]
     fn test_wait_shutdown() {
-        let graph = GraphBuilder::for_testing().build(());
+        let mut graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
-        // Trigger shutdown by requesting it on the graph's runtime state
-        let runtime_state = shadow.runtime_state.clone();
-        core_exec::block_on(SteadyActorCore::request_shutdown(&runtime_state));
+        // Use graph.request_shutdown() to properly trigger the oneshot
+        graph.request_shutdown();
         let result = core_exec::block_on(shadow.wait_shutdown());
         assert!(result);
     }
@@ -638,12 +637,16 @@ mod tests {
         let mut tx_guard = core_exec::block_on(tx_steady.lock());
         let vacant_result = core_exec::block_on(shadow.wait_vacant(&mut tx_guard, 1usize));
         assert!(vacant_result);
+        drop(tx_guard);
 
-        // Test wait_avail with rx guard that has no data
+        // Close the transmitter so the receiver channel becomes closed+empty
+        drop(tx_steady);
+
+        // Test wait_avail with rx guard that is closed and empty
         let rx_steady = rx.clone();
         let mut rx_guard = core_exec::block_on(rx_steady.lock());
         let avail_result = core_exec::block_on(shadow.wait_avail(&mut rx_guard, 1));
-        assert!(!avail_result); // No data, shutdown not issued, but channel not closed → false
+        assert!(!avail_result); // closed + empty → false
     }
 
     #[test]
