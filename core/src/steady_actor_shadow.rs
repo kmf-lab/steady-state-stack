@@ -515,6 +515,7 @@ mod tests {
     use super::*;
     use crate::*;
     use std::time::Duration;
+    use futures_util::future::ready;
 
     #[test]
     fn test_wait_periodic() {
@@ -603,5 +604,293 @@ mod tests {
         let start = Instant::now();
         core_exec::block_on(shadow.wait(Duration::from_millis(30)));
         assert!(start.elapsed() >= Duration::from_millis(30));
+    }
+
+    // ── Additional tests for increased coverage ──────────────────────────
+
+    #[test]
+    fn test_call_async() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let result = core_exec::block_on(shadow.call_async(ready(42u32)));
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn test_wait_shutdown() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        // Trigger shutdown by requesting it on the graph's runtime state
+        let runtime_state = shadow.runtime_state.clone();
+        core_exec::block_on(SteadyActorCore::request_shutdown(&runtime_state));
+        let result = core_exec::block_on(shadow.wait_shutdown());
+        assert!(result);
+    }
+
+    #[test]
+    fn test_wait_vacant_and_avail() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+
+        // Test wait_vacant with a tx guard that has space
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let vacant_result = core_exec::block_on(shadow.wait_vacant(&mut tx_guard, 1usize));
+        assert!(vacant_result);
+
+        // Test wait_avail with rx guard that has no data
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        let avail_result = core_exec::block_on(shadow.wait_avail(&mut rx_guard, 1));
+        assert!(!avail_result); // No data, shutdown not issued, but channel not closed → false
+    }
+
+    #[test]
+    fn test_wait_empty() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let result = core_exec::block_on(shadow.wait_empty(&mut tx_guard));
+        assert!(result); // Empty channel returns true
+    }
+
+    #[test]
+    fn test_wait_future_void() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let fut = ready(()).fuse();
+        let result = core_exec::block_on(shadow.wait_future_void(fut));
+        assert!(result);
+    }
+
+    #[test]
+    fn test_sidechannel_responder_none() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        assert!(shadow.sidechannel_responder().is_none());
+    }
+
+    #[test]
+    fn test_is_running() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        graph.start();
+        let mut shadow = graph.new_testing_test_monitor("test");
+        let running = shadow.is_running(|| true);
+        assert!(running);
+        graph.request_shutdown();
+        // After shutdown, is_running should return false
+        let running2 = shadow.is_running(|| true);
+        assert!(!running2);
+    }
+
+    #[test]
+    fn test_request_shutdown() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        graph.start();
+        let mut shadow = graph.new_testing_test_monitor("test");
+        core_exec::block_on(shadow.request_shutdown());
+        assert!(shadow.is_liveliness_stop_requested());
+    }
+
+    #[test]
+    fn test_args() {
+        let graph = GraphBuilder::for_testing().build(42i32);
+        let shadow = graph.new_testing_test_monitor("test");
+        // The graph was built with i32, but the shadow's args are downcast from the graph's args
+        // Actually the shadow's args are the same Arc<Box<dyn Any>>, so we need to cast correctly
+        let value: Option<&i32> = shadow.args();
+        assert_eq!(value, Some(&42));
+    }
+
+    #[test]
+    fn test_identity() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test_monitor");
+        let id = shadow.identity();
+        assert_eq!(id.label.name, "test_monitor");
+        assert_eq!(id.id, usize::MAX);
+    }
+
+    #[test]
+    fn test_frame_rate_ms() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        // The default telemetry production rate for testing is 1000 ms
+        assert_eq!(shadow.frame_rate_ms(), 1000);
+    }
+
+    #[test]
+    fn test_regeneration() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        assert_eq!(shadow.regeneration(), 0);
+    }
+
+    #[test]
+    fn test_liveliness_states() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        // Initial state is Building until start
+        assert!(shadow.is_liveliness_building());
+        assert!(!shadow.is_liveliness_running());
+        assert!(!shadow.is_liveliness_stop_requested());
+        graph.start();
+        assert!(!shadow.is_liveliness_building());
+        assert!(shadow.is_liveliness_running());
+        graph.request_shutdown();
+        assert!(shadow.is_liveliness_stop_requested());
+    }
+
+    #[test]
+    fn test_liveliness_shutdown_timeout() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        // Default has no shutdown_timeout
+        assert!(shadow.is_liveliness_shutdown_timeout().is_none());
+    }
+
+    #[test]
+    fn test_flush_defrag_empty() {
+        // Create a shadow and call flush_defrag_messages with an empty defrag
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder()
+            .with_capacity(5)
+            .build_stream::<StreamEgress>(1);
+        let shadow = graph.new_testing_test_monitor("test");
+
+        let mut defrag = Defrag::<StreamEgress>::new(1, 10, 100);
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let (msgs, bytes, session) = shadow.flush_defrag_messages(
+            &mut tx_guard.control_channel,
+            &mut tx_guard.payload_channel,
+            &mut defrag,
+        );
+        assert_eq!(msgs, 0);
+        assert_eq!(bytes, 0);
+        assert_eq!(session, None);
+    }
+
+    #[test]
+    fn test_try_send_and_try_take() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let send_result = shadow.try_send(&mut tx_guard, 42);
+        assert!(send_result.is_sent());
+        drop(tx_guard);
+
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        let take_result = shadow.try_take(&mut rx_guard);
+        assert_eq!(take_result, Some(42));
+    }
+
+    #[test]
+    fn test_is_full_and_vacant_units() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder().with_capacity(3).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+
+        let tx_steady = tx.clone();
+        let tx_guard = core_exec::block_on(tx_steady.lock());
+        // Fresh channel should not be full
+        assert!(!shadow.is_full(&tx_guard));
+        assert_eq!(shadow.vacant_units(&tx_guard), 3);
+        drop(tx_guard);
+
+        // Fill the channel
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        for i in 0..3 {
+            let _ = tx_guard.shared_try_send(i);
+        }
+        assert!(shadow.is_full(&tx_guard));
+        assert_eq!(shadow.vacant_units(&tx_guard), 0);
+    }
+
+    #[test]
+    fn test_send_iter_until_full() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let iter = vec![1, 2, 3].into_iter();
+        let count = shadow.send_iter_until_full(&mut tx_guard, iter);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_is_empty_and_avail_units() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        let shadow = graph.new_testing_test_monitor("test");
+
+        let rx_steady = rx.clone();
+        let rx_guard = core_exec::block_on(rx_steady.lock());
+        assert!(shadow.is_empty(&rx_guard));
+        assert_eq!(shadow.avail_units(&rx_guard), 0);
+        drop(rx_guard);
+
+        // Send a message and check again
+        let tx_steady = tx.clone();
+        let mut tx_guard = core_exec::block_on(tx_steady.lock());
+        let _ = tx_guard.shared_try_send(99);
+        drop(tx_guard);
+
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        assert!(!shadow.is_empty(&rx_guard));
+        assert_eq!(shadow.avail_units(&rx_guard), 1);
+    }
+
+    #[test]
+    fn test_call_blocking() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("test");
+        let fut = shadow.call_blocking(|| 42u32);
+        let result = core_exec::block_on(fut);
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn test_take_async_with_timeout() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        tx.testing_send_all(vec![10, 20], false);
+        let mut shadow = graph.new_testing_test_monitor("test");
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        let taken = core_exec::block_on(shadow.take_async_with_timeout(&mut rx_guard, Duration::from_millis(100)));
+        assert_eq!(taken, Some(10));
+    }
+
+    #[test]
+    fn test_take_into_iter() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        tx.testing_send_all(vec![1, 2, 3], false);
+        let mut shadow = graph.new_testing_test_monitor("test");
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        let items: Vec<u8> = shadow.take_into_iter(&mut rx_guard).collect();
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_peek_async() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
+        tx.testing_send_all(vec![77], false);
+        let shadow = graph.new_testing_test_monitor("test");
+        let rx_steady = rx.clone();
+        let mut rx_guard = core_exec::block_on(rx_steady.lock());
+        let peeked = core_exec::block_on(shadow.peek_async(&mut rx_guard));
+        assert!(peeked.is_some());
     }
 }
