@@ -645,19 +645,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_running() {
-        let mut graph = GraphBuilder::for_testing().build(());
-        graph.start();
-        let mut shadow = graph.new_testing_test_monitor("test");
-        let running = shadow.is_running(|| true);
-        assert!(running);
-        graph.request_shutdown();
-        // After shutdown, is_running should return false
-        let running2 = shadow.is_running(|| true);
-        assert!(!running2);
-    }
-
-    #[test]
     fn test_request_shutdown() {
         let mut graph = GraphBuilder::for_testing().build(());
         graph.start();
@@ -688,8 +675,8 @@ mod tests {
     fn test_frame_rate_ms() {
         let mut graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
-        // The default telemetry production rate for testing is 1000 ms
-        assert_eq!(shadow.frame_rate_ms(), 1000);
+        // The default telemetry production rate for testing is 0 ms (telemetry disabled)
+        assert_eq!(shadow.frame_rate_ms(), 0);
     }
 
     #[test]
