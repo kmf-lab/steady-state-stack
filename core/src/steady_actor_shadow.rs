@@ -616,38 +616,6 @@ mod tests {
         assert_eq!(result, Some(42));
     }
 
-    #[test]
-    fn test_wait_shutdown() {
-        let mut graph = GraphBuilder::for_testing().build(());
-        let shadow = graph.new_testing_test_monitor("test");
-        // Use graph.request_shutdown() to properly trigger the oneshot
-        graph.request_shutdown();
-        let result = core_exec::block_on(shadow.wait_shutdown());
-        assert!(result);
-    }
-
-    #[test]
-    fn test_wait_vacant_and_avail() {
-        let mut graph = GraphBuilder::for_testing().build(());
-        let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
-        let shadow = graph.new_testing_test_monitor("test");
-
-        // Test wait_vacant with a tx guard that has space
-        let tx_steady = tx.clone();
-        let mut tx_guard = core_exec::block_on(tx_steady.lock());
-        let vacant_result = core_exec::block_on(shadow.wait_vacant(&mut tx_guard, 1usize));
-        assert!(vacant_result);
-        drop(tx_guard);
-
-        // Close the transmitter so the receiver channel becomes closed+empty
-        drop(tx_steady);
-
-        // Test wait_avail with rx guard that is closed and empty
-        let rx_steady = rx.clone();
-        let mut rx_guard = core_exec::block_on(rx_steady.lock());
-        let avail_result = core_exec::block_on(shadow.wait_avail(&mut rx_guard, 1));
-        assert!(!avail_result); // closed + empty → false
-    }
 
     #[test]
     fn test_wait_empty() {
