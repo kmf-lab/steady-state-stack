@@ -608,9 +608,9 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 &mut dummy_metric,
                 FilledVisualMode::SuppressAvgOnly,
             );
-            if show_avg_filled_any {
+if show_avg_filled_any {
                 format_avg_fill_rollup_line_into(&mut frames.dot_scratch, &edges);
-                body.push_str(&frames.dot_scratch);
+                body.push_str(frames.dot_scratch.trim_end_matches('\n'));
             }
             body
         } else {
@@ -641,7 +641,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
             // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
             // This ensures avg_rate and other dynamic metrics are preserved on the label
-            summary_label = format!("{}\n{}", partner_info, summary_label);
+            summary_label = format!("{}\n{}", partner_info, summary_label.trim_end_matches('\n'));
         }
 
         // FIX: Always show the total(s) on the edge label itself, not just in the tooltip.
@@ -669,7 +669,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             }
             // For large bundles (len >= bundle_floor_size), the totals are handled in the bundle rendering section below
             if !total_label.is_empty() {
-                summary_label = format!("{}{}\n", summary_label, total_label);
+                summary_label = format!("{}{}\n", summary_label.trim_end_matches('\n'), total_label);
             }
         }
 
