@@ -134,21 +134,25 @@ fn format_lane_color_histogram_into(
     }
 }
 
-/// Mean whole-percent avg fill from channel edges; ignores lanes with no `Some` sample.
+/// Mean whole-percent avg fill from channel edges; ignores lanes with no `Some` sample
+/// or with a zero percent (idle/cold channels).
 fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
     for e in edges {
         if let Some(n) = e.stats_computer.avg_filled_whole_percent() {
-            sum += u32::from(n);
-            count += 1;
+            if n > 0 {
+                sum += u32::from(n);
+                count += 1;
+            }
         }
     }
     (count > 0).then(|| (sum / count) as u8)
 }
 
 /// Multi-lane `Avg fill` for DOT: comma list when `edges.len() <=` [`MAX_INLINE_AVG_FILL_LANES`], else
-/// a single `mean, N ch` line (see module constant). Omits the line entirely when no lane has a sample (`None`).
+/// a single `mean, N ch` line (see module constant). Omits the line entirely when no lane has a sample
+/// (`None`) or all samples are zero (idle/cold channels).
 fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.clear();
     if edges.is_empty() {
@@ -163,6 +167,9 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
         let mut started = false;
         for e in edges {
             if let Some(n) = e.stats_computer.avg_filled_whole_percent() {
+                if n == 0 {
+                    continue; // skip idle/cold channels (0% fill)
+                }
                 if !started {
                     out.push_str("Avg fill: ");
                     started = true;
@@ -178,14 +185,16 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     }
 }
 
-/// Integer mean of `Some` percent values; `None` if there are no samples.
+/// Integer mean of `Some` percent values; skips zero values (idle/cold channels). `None` if there are no samples.
 fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
     for o in iter {
         if let Some(n) = o {
-            sum += u32::from(*n);
-            count += 1;
+            if *n > 0 {
+                sum += u32::from(*n);
+                count += 1;
+            }
         }
     }
     (count > 0).then(|| (sum / count) as u8)
@@ -199,8 +208,10 @@ fn append_channel_fill_tooltip(
 ) {
     if stats.show_avg_filled {
         if let Some(n) = stats.avg_filled_whole_percent() {
-            tooltip.push_str("\n ");
-            let _ = write!(tooltip, "Avg fill: {}%\n", n);
+            if n > 0 {
+                tooltip.push_str("\n ");
+                let _ = write!(tooltip, "Avg fill: {}%\n", n);
+            }
         }
     } else {
         let _ = write!(
@@ -457,7 +468,6 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         let mut avg_fill_per_lane = Vec::with_capacity(edges.len());
 
         let is_large_bundle = edges.len() > MAX_INLINE_AVG_FILL_LANES;
-        let show_avg_filled_any = edges.iter().any(|e| e.stats_computer.show_avg_filled);
 
         for e in edges.iter() {
             lane_rgbs.push(color_to_rgb(e.color));
@@ -508,6 +518,9 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 }
             }
         }
+
+        // Only show avg fill if at least one lane has a non-zero value (skip idle/cold channels).
+        let show_avg_filled_any = avg_fill_per_lane.iter().any(|o| o.map_or(false, |v| v > 0));
 
         if !is_large_bundle && !lane_colors.is_empty() {
             format_lane_color_histogram_into(
@@ -586,7 +599,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         let combined_type = type_list.join("/");
 
         // Multi-lane avg fill: rebuild first lane's label without "Avg filled" line, then append comma rollup.
-        let mut summary_label = if edges.len() > 1 && show_avg_filled_any {
+        // When all lanes are idle (0% fill / no sample), suppress the individual avg fill line too.
+        let mut summary_label = if edges.len() > 1 {
             let mut body = String::new();
             let mut dummy_metric = String::new();
             first.stats_computer.append_visual_metric_lines(
@@ -594,8 +608,10 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 &mut dummy_metric,
                 FilledVisualMode::SuppressAvgOnly,
             );
-            format_avg_fill_rollup_line_into(&mut frames.dot_scratch, &edges);
-            body.push_str(&frames.dot_scratch);
+            if show_avg_filled_any {
+                format_avg_fill_rollup_line_into(&mut frames.dot_scratch, &edges);
+                body.push_str(&frames.dot_scratch);
+            }
             body
         } else {
             first.display_label.clone()
@@ -804,6 +820,9 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                     let mut started = false;
                     for o in edges.iter().flat_map(|pe| pe.avg_fill_per_lane.iter()) {
                         if let Some(n) = o {
+                            if *n == 0 {
+                                continue; // skip idle/cold lanes (0% fill)
+                            }
                             if !started {
                                 started = true;
                             } else {
@@ -2451,6 +2470,125 @@ mod dot_tests {
         assert!(
             !result.contains("Avg fill: 10%,"),
             "must not emit trailing comma for missing second lane: {}",
+            result
+        );
+    }
+/// Multi-lane partner group: all lanes idle (0% fill) must produce no `Avg fill:` line.
+    #[test]
+    fn test_multi_lane_avg_fill_omits_when_all_zero_percent() {
+        use crate::actor_stats::ChannelBlock;
+
+        let from = ActorName::new("from", None);
+        let to = ActorName::new("to", None);
+
+        let mut lane0 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        lane0.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 0,   // 0% fill (idle)
+            sum_of_squares: 0,
+        });
+
+        let mut lane1 = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            show_type: Some("T"),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        lane1.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 0,   // 0% fill (idle)
+            sum_of_squares: 0,
+        });
+
+        let edges = vec![
+            Edge {
+                id: 0,
+                from: Some(from),
+                to: Some(to),
+                color: "green",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.1,
+                ctl_labels: vec![],
+                stats_computer: lane0,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+            Edge {
+                id: 1,
+                from: Some(from),
+                to: Some(to),
+                color: "red",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.4,
+                ctl_labels: vec![],
+                stats_computer: lane1,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: Some("L"),
+                bundle_index: Some(0),
+            },
+        ];
+
+        let state = DotState {
+            nodes: vec![
+                Node {
+                    id: Some(from),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "from".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+                Node {
+                    id: Some(to),
+                    color: "grey",
+                    pen_width: NODE_PEN_WIDTH,
+                    stats_computer: ActorStatsComputer::default(),
+                    display_label: "to".to_string(),
+                    dot_subtitle: None,
+                    tooltip: String::new(),
+                    metric_text: String::new(),
+                    remote_details: None,
+                    thread_info_cache: None,
+                    total_count_restarts: 0,
+                    bool_stalled: false,
+                    work_info: None,
+                },
+            ],
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+
+        let mut frames = test_dot_frames();
+        build_dot(&state, &mut frames);
+        let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
+
+        assert!(
+            !result.contains("Avg fill:"),
+            "must omit Avg fill line when all lanes are 0% (idle): {}",
             result
         );
     }
