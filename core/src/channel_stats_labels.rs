@@ -233,16 +233,16 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
 pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     let mut b = itoa::Buffer::new();
     let t = b.format(val);
-    if val >= 7_999_999_999_999 {
+    if val >= 1_000_000_000_000 {
         target.push_str(&t[..t.len() - 12]);
         target.push('T');
-    } else if val >= 7_999_999_999 {
+    } else if val >= 1_000_000_000 {
         target.push_str(&t[..t.len() - 9]);
         target.push('B');
-    } else if val >= 7_999_999 {
+    } else if val >= 1_000_000 {
         target.push_str(&t[..t.len() - 6]);
         target.push('M');
-    } else if val >= 7_999 {
+    } else if val >= 1_000 {
         target.push_str(&t[..t.len() - 3]);
         target.push('K');
     } else {

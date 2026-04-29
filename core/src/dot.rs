@@ -2053,21 +2053,21 @@ mod dot_tests {
         build_dot(&state, &mut frames);
         let result = String::from_utf8(frames.active_graph.to_vec()).expect("internal error");
 
-        // Edge label should show total_consumed (1000)
+        // Edge label should show total_consumed (1000 -> "1K")
         assert!(
-            result.contains("Total: 1000"),
+            result.contains("Total: 1K"),
             "Edge label should show total_consumed: {}",
             result
         );
 
-        // Tooltip should also show total_consumed (1000), NOT last_total (50)
+        // Tooltip should also show total_consumed (1000 -> "1K"), NOT last_total (50)
         assert!(
-            result.contains("Total: 1000"),
+            result.contains("Total: 1K"),
             "Tooltip should show total_consumed, not last_total: {}",
             result
         );
 
-        println!("✓ Edge tooltip correctly uses total_consumed (cumulative): 1000");
+        println!("✓ Edge tooltip correctly uses total_consumed (cumulative): 1K");
     }
 
     /// When `avg_filled` is enabled, tooltip shows rolling-window **Avg fill**, not snapshot Instant fill
@@ -2886,25 +2886,25 @@ mod dot_tests {
 
         // Each partner lane shows its Total in the label
         assert!(
-            result.contains("Total: 1000"),
-            "Partner lane 0 should show Total: 1000: {}",
+            result.contains("Total: 1K"),
+            "Partner lane 0 should show Total: 1K: {}",
             result
         );
         assert!(
-            result.contains("Total: 2000"),
-            "Partner lane 1 should show Total: 2000: {}",
+            result.contains("Total: 2K"),
+            "Partner lane 1 should show Total: 2K: {}",
             result
         );
         assert!(
-            result.contains("Total: 3000"),
-            "Partner lane 2 should show Total: 3000: {}",
+            result.contains("Total: 3K"),
+            "Partner lane 2 should show Total: 3K: {}",
             result
         );
 
         // Tooltip should also show these totals
         assert!(
-            result.contains("Total: 1000"),
-            "Tooltip should show 1000: {}",
+            result.contains("Total: 1K"),
+            "Tooltip should show 1K: {}",
             result
         );
 
