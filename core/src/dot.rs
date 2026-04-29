@@ -213,7 +213,7 @@ fn append_channel_fill_tooltip(
                 let _ = write!(tooltip, "Avg fill: {}%\n", n);
             }
         }
-    } else {
+    } else if saturation_score > 0.0 {
         let _ = write!(
             tooltip,
             "\n Instant fill: {}%\n",
