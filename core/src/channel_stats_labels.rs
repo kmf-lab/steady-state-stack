@@ -284,38 +284,53 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
                 _metric_target.push('\n');
             }
         } else {
-            // Format float with 3 decimal places
-            let mut value_buf = [0u8; 32];
-            struct SliceWriter<'a> {
-                buf: &'a mut [u8],
-                pos: usize,
-            }
-            impl core::fmt::Write for SliceWriter<'_> {
-                fn write_str(&mut self, s: &str) -> core::fmt::Result {
-                    let bytes = s.as_bytes();
-                    if self.pos + bytes.len() > self.buf.len() {
-                        return Err(core::fmt::Error);
-                    }
-                    self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
-                    self.pos += bytes.len();
-                    Ok(())
-                }
-            }
-            let mut writer = SliceWriter {
-                buf: &mut value_buf,
-                pos: 0,
-            };
-            use std::fmt::Write;
-            write!(&mut writer, " {:.3}", float_value.expect("No float provided!")).unwrap();
-            let offset = writer.pos;
-            label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+            let fv = float_value.expect("No float provided!");
+            if fv.trunc() == fv {
+                // Whole number: use integer formatting (no leading space, no decimals)
+                format_compressed_u128(int_value, label_target);
 
-            // Output raw float value for metrics
-            #[cfg(feature = "prometheus_metrics")]
-            {
-                _metric_target.push(' ');
-                _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
-                _metric_target.push('\n');
+                // Output raw integer value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    let mut b = itoa::Buffer::new();
+                    _metric_target.push(' ');
+                    _metric_target.push_str(b.format(int_value));
+                    _metric_target.push('\n');
+                }
+            } else {
+                // Genuine fraction: format with 3 decimal places
+                let mut value_buf = [0u8; 32];
+                struct SliceWriter<'a> {
+                    buf: &'a mut [u8],
+                    pos: usize,
+                }
+                impl core::fmt::Write for SliceWriter<'_> {
+                    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                        let bytes = s.as_bytes();
+                        if self.pos + bytes.len() > self.buf.len() {
+                            return Err(core::fmt::Error);
+                        }
+                        self.buf[self.pos..self.pos + bytes.len()].copy_from_slice(bytes);
+                        self.pos += bytes.len();
+                        Ok(())
+                    }
+                }
+                let mut writer = SliceWriter {
+                    buf: &mut value_buf,
+                    pos: 0,
+                };
+                use std::fmt::Write;
+                write!(&mut writer, " {:.3}", fv).unwrap();
+                let offset = writer.pos;
+                label_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+
+                // Output raw float value for metrics
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    _metric_target.push(' ');
+                    _metric_target.push_str(core::str::from_utf8(&value_buf[..offset]).expect("internal error"));
+                    _metric_target.push('\n');
+                }
             }
         }
     }
@@ -370,6 +385,35 @@ mod tests {
             let float_val = if val < 10 { Some(val as f32 / 1000.0) } else { None };
             format_value(labels, &mut metric, &mut label, val, float_val);
             assert!(label.contains(expected), "Failed {}: expected {} in {}", msg, expected, label);
+        }
+    }
+#[test]
+    fn test_format_value_whole_number_float() {
+        // When float_value is a whole number (e.g., avg fill percentage),
+        // it should NOT format with decimal places and leading space.
+        let labels = ComputeLabelsLabels {
+            label: "test",
+            unit: "units",
+            _prometheus_labels: "",
+            int_only: false,
+            fixed_digits: 0,
+        };
+
+        let cases = [
+            (0u128, 0.0f32, "0"),
+            (3u128, 3.0f32, "3"),
+            (5u128, 5.0f32, "5"),
+            (9u128, 9.0f32, "9"),
+        ];
+
+        for (int_val, float_val, expected) in cases {
+            let mut metric = String::new();
+            let mut label = String::new();
+            format_value(labels, &mut metric, &mut label, int_val, Some(float_val));
+            let contains_int = label.contains(&format!(": {} ", expected));
+            let contains_float = label.contains(&format!(".000"));
+            assert!(contains_int, "Expected integer display for {}: got {}", expected, label);
+            assert!(!contains_float, "Expected no decimal display for {}: got {}", expected, label);
         }
     }
 
