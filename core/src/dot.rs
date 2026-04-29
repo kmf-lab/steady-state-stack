@@ -520,6 +520,59 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
         if is_large_bundle {
             let _ = write!(tooltip, "Summary: {} channels\n", edges.len());
+
+            // Total volume across all channels
+            let _ = write!(tooltip, "Total: ");
+            crate::channel_stats_labels::format_compressed_u128(
+                sum_total_consumed,
+                &mut tooltip,
+            );
+            tooltip.push('\n');
+
+            // Capacity range
+            let cap_min = sub_capacities.iter().copied().min().unwrap_or(0);
+            let cap_max = sub_capacities.iter().copied().max().unwrap_or(0);
+            if cap_min == cap_max {
+                let _ = write!(tooltip, "Capacity: ");
+                crate::channel_stats_labels::format_compressed_u128(
+                    cap_min as u128,
+                    &mut tooltip,
+                );
+                tooltip.push('\n');
+            } else {
+                let _ = write!(tooltip, "Capacity: ");
+                crate::channel_stats_labels::format_compressed_u128(
+                    cap_min as u128,
+                    &mut tooltip,
+                );
+                tooltip.push_str("–");
+                crate::channel_stats_labels::format_compressed_u128(
+                    cap_max as u128,
+                    &mut tooltip,
+                );
+                tooltip.push('\n');
+            }
+
+            // Mean avg fill
+            if let Some(m) = mean_avg_fill_percent(avg_fill_per_lane.iter()) {
+                let _ = write!(tooltip, "Avg fill: {}% (mean)\n", m);
+            }
+
+            // Mean saturation
+            let mean_sat = (sum_saturation / edges.len() as f64 * 100.0) as usize;
+            let _ = write!(tooltip, "Saturation: {}% (mean)\n", mean_sat);
+
+            // Memory footprint
+            if show_memory {
+                tooltip.push_str("Memory: ");
+                crate::channel_stats_labels::format_compressed_u128(
+                    memory_footprint as u128,
+                    &mut tooltip,
+                );
+                tooltip.push_str("B\n");
+            }
+
+            // Lane color histogram
             if !lane_colors.is_empty() {
                 format_lane_color_histogram_into(
                     &mut frames.lane_color_counts,
