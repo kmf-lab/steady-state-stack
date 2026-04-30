@@ -976,14 +976,9 @@ fn render_edge_internal(
         escape_dot_quotes(escape_buf, tooltip);
         dot_graph.put_slice(escape_buf.as_bytes());
 
-        // Also add labeltooltip so hovering over edge label text shows
-        // the same detailed information as hovering over the edge line.
-        // Newlines are replaced with spaces to avoid Graphviz SVG rendering
-        // issues that were observed when labeltooltip contained multi-line text.
-        dot_graph.put_slice(b"\", labeltooltip=\"");
-        escape_dot_quotes(escape_buf, tooltip);
-        let label_tooltip = escape_buf.replace('\n', " ");
-        dot_graph.put_slice(label_tooltip.as_bytes());
+        // NOTE: labeltooltip is NOT added here because it is unreliable in Graphviz JS
+        // rendering. Instead, the tooltip <title> element is cloned from each edge group
+        // onto its label <text> element by dot-viewer.js after the SVG is injected into the DOM.
     }
 
     dot_graph.put_slice(b"\", color=\"");

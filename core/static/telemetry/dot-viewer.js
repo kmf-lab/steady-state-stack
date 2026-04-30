@@ -87,6 +87,20 @@ function onMessage(message) {
         if (svg) svg.style.shapeRendering = 'geometricPrecision';
       }
 
+      // Copy tooltip <title> elements from each edge group to their
+      // label <text> elements so hovering over edge labels shows the
+      // same detailed info as hovering over the edge line.
+      if (diagram) {
+        diagram.querySelectorAll('g[id^="edge"]').forEach(edgeG => {
+          const title = edgeG.querySelector(':scope > title');
+          if (!title) return;
+          const labelText = edgeG.querySelector('text');
+          if (labelText && !labelText.querySelector('title')) {
+            labelText.prepend(title.cloneNode(true));
+          }
+        });
+      }
+
       if (svg) {
         svgRect = svg.getBoundingClientRect();
         aspectRatio = svgRect.width / svgRect.height;
