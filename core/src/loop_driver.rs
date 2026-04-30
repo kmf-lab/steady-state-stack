@@ -321,6 +321,42 @@ macro_rules! wait_for_any {
     }};
 }
 
+/// Wraps an `Option<usize>`-returning index wait method into a `bool`-returning future,
+/// storing the resulting index into a mutable target.
+///
+/// This bridges methods like [`wait_avail_index`](SteadyActor::wait_avail_index) and
+/// [`wait_vacant_index`](SteadyActor::wait_vacant_index) into the `bool`-based macro
+/// ecosystem (`await_for_any!`, `await_for_all!`, etc.).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let mut ready_idx: Option<usize> = None;
+///
+/// let _clean = await_for_any!(
+///     actor.wait_periodic(Duration::from_millis(500)),
+///     wait_for_index!(actor.wait_avail_index(&mut rx, &counts) => ready_idx)
+/// );
+///
+/// if let Some(i) = ready_idx {
+///     process(&mut rx[i]);
+/// }
+/// ```
+#[macro_export]
+macro_rules! wait_for_index {
+    ($call:expr => $target:expr) => {
+        async {
+            match $call.await {
+                Some(idx) => {
+                    $target = Some(idx);
+                    true
+                }
+                None => false,
+            }
+        }
+    };
+}
+
 /// Waits for the first of two futures to complete, returning its result.
 ///
 /// This function pins the provided futures and uses `select!` to await the first to finish.
