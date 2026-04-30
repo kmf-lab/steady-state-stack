@@ -976,9 +976,14 @@ fn render_edge_internal(
         escape_dot_quotes(escape_buf, tooltip);
         dot_graph.put_slice(escape_buf.as_bytes());
 
-        // NOTE: We intentionally do NOT add labeltooltip here. The tooltip attribute is sufficient
-        // for hover information. Adding labeltooltip was causing flickering and black lines in the
-        // graph visualization, likely due to parsing issues when the tooltip contains newlines.
+        // Also add labeltooltip so hovering over edge label text shows
+        // the same detailed information as hovering over the edge line.
+        // Newlines are replaced with spaces to avoid Graphviz SVG rendering
+        // issues that were observed when labeltooltip contained multi-line text.
+        dot_graph.put_slice(b"\", labeltooltip=\"");
+        escape_dot_quotes(escape_buf, tooltip);
+        let label_tooltip = escape_buf.replace('\n', " ");
+        dot_graph.put_slice(label_tooltip.as_bytes());
     }
 
     dot_graph.put_slice(b"\", color=\"");
