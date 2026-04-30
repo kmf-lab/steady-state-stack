@@ -414,12 +414,20 @@ impl ChannelStatsComputer {
     }
 
     /// Rolling-window average fill as a whole percent (0–100), matching [`Self::compute_filled_labels`] / [`channel_stats_labels::compute_labels`] integer path.
-    /// Returns `None` if avg filled is disabled or the window has no `current_filled` sample yet.
+    /// Returns `None` if avg filled is disabled, the window has no `current_filled` sample yet,
+    /// **or** the window sum (`runner`) is zero (idle/cold channel with no data).
+    /// Returning `None` for idle channels is critical so that bundle/partner rollup logic
+    /// treats them uniformly as "no data" and omits the `Avg fill:` line entirely rather than
+    /// printing "0%, 0%, 0%, …" which is unhelpful noise.
     pub(crate) fn avg_filled_whole_percent(&self) -> Option<u8> {
         if !self.show_avg_filled {
             return None;
         }
         let current = self.current_filled.as_ref()?;
+        // Idle channel with a zero-data window — treat as "no sample" so rollups skip it.
+        if current.runner == 0 {
+            return None;
+        }
         let window_bits = self.window_bucket_in_bits + self.refresh_rate_in_bits;
         let denominator = 10u128.saturating_mul(self.capacity as u128);
         if denominator == 0 {
@@ -1158,5 +1166,153 @@ mod channel_stats_tests {
         // but we can verify the branches that handle it.
         computer.init(&Arc::new(meta), ActorName::new("a", None), ActorName::new("b", None), 1000);
         assert!(computer.build_filled_histogram);
+    }
+
+    // ========================================================================
+    // Avg fill: zero-runner / idle-channel tests
+    // These verify the fix: avg_filled_whole_percent() returns None when the
+    // window's runner is zero (no data), so bundle/partner rollups never
+    // produce "Avg fill: 0%, 0%, 0%, …" noise.
+    // ========================================================================
+
+    #[test]
+    fn test_avg_filled_whole_percent_none_when_show_disabled() {
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: false,
+            current_filled: Some(ChannelBlock { histogram: None, runner: 50_000, sum_of_squares: 0 }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        assert_eq!(c.avg_filled_whole_percent(), None, "should be None when show_avg_filled is false");
+    }
+
+    #[test]
+    fn test_avg_filled_whole_percent_none_when_no_current_block() {
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            current_filled: None,
+            ..Default::default()
+        };
+        assert_eq!(c.avg_filled_whole_percent(), None, "should be None when current_filled is None");
+    }
+
+    #[test]
+    fn test_avg_filled_whole_percent_none_when_runner_zero() {
+        // THIS IS THE KEY FIX TEST: runner == 0 (idle/cold channel) → None, not Some(0)
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            current_filled: Some(ChannelBlock { histogram: None, runner: 0, sum_of_squares: 0 }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            c.avg_filled_whole_percent(),
+            None,
+            "idle channel with runner == 0 must return None (not Some(0))"
+        );
+    }
+
+    #[test]
+    fn test_avg_filled_whole_percent_returns_some_when_nonzero() {
+        // Sanity: non-zero runner still produces a valid percentage
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            current_filled: Some(ChannelBlock { histogram: None, runner: 50_000, sum_of_squares: 0 }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        assert_eq!(c.avg_filled_whole_percent(), Some(50), "50_000 runner with cap 100 → 50%");
+    }
+
+    #[test]
+    fn test_compute_filled_labels_inner_omits_avg_when_runner_zero() {
+        // When runner is zero, no "Avg filled:" line should appear.
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            current_filled: Some(ChannelBlock { histogram: None, runner: 0, sum_of_squares: 0 }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        let block = c.current_filled.as_ref().unwrap();
+        let mut label = String::new();
+        let mut metric = String::new();
+        c.compute_filled_labels_inner(&mut label, &mut metric, &block, false);
+        assert!(
+            !label.contains("Avg filled"),
+            "label must not contain 'Avg filled' when runner is zero: {:?}",
+            label
+        );
+    }
+
+    #[test]
+    fn test_compute_filled_labels_inner_shows_avg_when_nonzero_runner() {
+        // Sanity: non-zero runner still shows "Avg filled:" line
+        let c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            current_filled: Some(ChannelBlock { histogram: None, runner: 30_000, sum_of_squares: 0 }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        let block = c.current_filled.as_ref().unwrap();
+        let mut label = String::new();
+        let mut metric = String::new();
+        c.compute_filled_labels_inner(&mut label, &mut metric, &block, false);
+        assert!(
+            label.contains("Avg filled: 30 %"),
+            "label must contain 'Avg filled: 30 %': {:?}",
+            label
+        );
+    }
+
+    #[test]
+    fn test_edge_label_no_avg_filled_when_runner_zero_via_compute() {
+        // Integration-style: calling compute() on an idle channel should not
+        // produce an "Avg filled" line in the display_label.
+        let meta = mock_meta();
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(&meta, ActorName::new("a", None), ActorName::new("b", None), 1000);
+        // Force show_avg_filled after init (it was false by default in mock_meta)
+        computer.show_avg_filled = true;
+
+        let mut label = String::new();
+        let mut metric = String::new();
+
+        // First call: computer accumulates data but no bucket rotation yet
+        computer.compute(&mut label, &mut metric, None, 0, 0);
+        // No window sample yet → avg_filled_whole_percent returns None → no "Avg filled:" line
+        assert!(
+            !label.contains("Avg filled"),
+            "no Avg filled yet (no window sample): {:?}",
+            label
+        );
+
+        // Rotate enough to produce a current_filled with runner=0 (idle channel)
+        let rotations = 1 << (computer.window_bucket_in_bits + computer.refresh_rate_in_bits);
+        for _ in 0..rotations {
+            computer.compute(&mut label, &mut metric, None, 0, 0);
+        }
+
+        // Now current_filled exists but runner is zero → avg_filled_whole_percent returns None
+        assert!(
+            !label.contains("Avg filled"),
+            "no Avg filled line for idle channel with zero-data window: {:?}",
+            label
+        );
+        assert!(
+            !label.contains("Avg filled: 0 %"),
+            "must not produce 'Avg filled: 0 %': {:?}",
+            label
+        );
     }
 }

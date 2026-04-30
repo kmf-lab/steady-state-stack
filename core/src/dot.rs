@@ -2593,6 +2593,181 @@ mod dot_tests {
         );
     }
 
+    /// Verify `format_avg_fill_rollup_line_into` produces nothing when all edges have runner==0.
+    #[test]
+    fn test_rollup_line_all_zero_runner_omits_avg_fill() {
+        use crate::actor_stats::ChannelBlock;
+        let from = ActorName::new("a", None);
+        let to = ActorName::new("b", None);
+
+        let make = |id: usize| {
+            let mut s = ChannelStatsComputer {
+                capacity: 100,
+                show_avg_filled: true,
+                refresh_rate_in_bits: 0,
+                window_bucket_in_bits: 0,
+                ..Default::default()
+            };
+            s.current_filled = Some(ChannelBlock { histogram: None, runner: 0, sum_of_squares: 0 });
+            Edge {
+                id,
+                from: Some(from),
+                to: Some(to),
+                color: "grey",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.0,
+                ctl_labels: vec![],
+                stats_computer: s,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
+            }
+        };
+        let edges: Vec<Edge> = (0..3).map(make).collect();
+        let refs: Vec<&Edge> = edges.iter().collect();
+
+        let mut out = String::new();
+        format_avg_fill_rollup_line_into(&mut out, &refs);
+        assert!(
+            out.is_empty(),
+            "rollup line must be empty when all lanes have runner==0: {:?}",
+            out
+        );
+    }
+
+    /// Verify `format_avg_fill_rollup_line_into` shows only non-zero values.
+    #[test]
+    fn test_rollup_line_mixed_values_shows_only_nonzero() {
+        use crate::actor_stats::ChannelBlock;
+        let from = ActorName::new("a", None);
+        let to = ActorName::new("b", None);
+
+        let make = |id: usize, runner: u128| -> Edge {
+            let mut s = ChannelStatsComputer {
+                capacity: 100,
+                show_avg_filled: true,
+                refresh_rate_in_bits: 0,
+                window_bucket_in_bits: 0,
+                ..Default::default()
+            };
+            s.current_filled = Some(ChannelBlock { histogram: None, runner, sum_of_squares: 0 });
+            Edge {
+                id,
+                from: Some(from),
+                to: Some(to),
+                color: "grey",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.0,
+                ctl_labels: vec![],
+                stats_computer: s,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
+            }
+        };
+        // lanes: 10%, idle, 40%
+        let edges = vec![make(0, 10_000), make(1, 0), make(2, 40_000)];
+        let refs: Vec<&Edge> = edges.iter().collect();
+
+        let mut out = String::new();
+        format_avg_fill_rollup_line_into(&mut out, &refs);
+        assert!(
+            out.starts_with("Avg fill: "),
+            "must start with 'Avg fill: ': {:?}",
+            out
+        );
+        assert!(out.contains("10%"), "must contain 10%: {:?}", out);
+        assert!(out.contains("40%"), "must contain 40%: {:?}", out);
+        // "40%" contains "0%" as substring, so check for comma-separated or leading 0%
+        assert!(!out.contains(", 0%"), "must NOT contain standalone 0% (idle lane skipped): {:?}", out);
+        assert!(!out.starts_with("Avg fill: 0%"), "must NOT start with 0%: {:?}", out);
+    }
+
+    /// Verify `mean_avg_fill_from_edge_slice` returns None when all edge runners are zero.
+    #[test]
+    fn test_mean_avg_fill_from_edge_slice_all_zero() {
+        use crate::actor_stats::ChannelBlock;
+        let from = ActorName::new("a", None);
+        let to = ActorName::new("b", None);
+
+        let make = |id: usize| -> Edge {
+            let mut s = ChannelStatsComputer {
+                capacity: 100,
+                show_avg_filled: true,
+                refresh_rate_in_bits: 0,
+                window_bucket_in_bits: 0,
+                ..Default::default()
+            };
+            s.current_filled = Some(ChannelBlock { histogram: None, runner: 0, sum_of_squares: 0 });
+            Edge {
+                id,
+                from: Some(from),
+                to: Some(to),
+                color: "grey",
+                sidecar: false,
+                pen_width: "1".to_string(),
+                saturation_score: 0.0,
+                ctl_labels: vec![],
+                stats_computer: s,
+                display_label: String::new(),
+                metric_text: String::new(),
+                partner: None,
+                bundle_index: None,
+            }
+        };
+        let edges: Vec<Edge> = (0..5).map(make).collect();
+        let refs: Vec<&Edge> = edges.iter().collect();
+        assert_eq!(mean_avg_fill_from_edge_slice(&refs), None);
+    }
+
+    /// Verify `append_channel_fill_tooltip` omits Avg fill when runner is zero.
+    #[test]
+    fn test_append_channel_fill_tooltip_zero_fill_omitted() {
+        use crate::actor_stats::ChannelBlock;
+        let mut stats = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        stats.current_filled = Some(ChannelBlock { histogram: None, runner: 0, sum_of_squares: 0 });
+
+        let mut tooltip = String::new();
+        append_channel_fill_tooltip(&mut tooltip, &stats, 0.0);
+        assert!(
+            !tooltip.contains("Avg fill"),
+            "tooltip must not contain 'Avg fill' when runner==0: {:?}",
+            tooltip
+        );
+    }
+
+    /// Verify `append_channel_fill_tooltip` shows Avg fill when runner is non-zero.
+    #[test]
+    fn test_append_channel_fill_tooltip_shows_nonzero_fill() {
+        use crate::actor_stats::ChannelBlock;
+        let mut stats = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        stats.current_filled = Some(ChannelBlock { histogram: None, runner: 50_000, sum_of_squares: 0 });
+
+        let mut tooltip = String::new();
+        append_channel_fill_tooltip(&mut tooltip, &stats, 0.5);
+        assert!(
+            tooltip.contains("Avg fill: 50%"),
+            "tooltip must contain 'Avg fill: 50%': {:?}",
+            tooltip
+        );
+    }
+
     /// Test: Bundle tooltip uses sum of total_consumed, not sum of last_total
     #[test]
     fn test_bundle_tooltip_uses_total_consumed() {
