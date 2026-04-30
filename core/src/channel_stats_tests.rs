@@ -60,6 +60,69 @@ mod channel_stats_tests {
         assert_eq!(computer.avg_latency(&Duration::from_millis(100)), Ordering::Equal);
     }
 
+    /// Verify the edge-label avg filled display uses avg_filled_whole_percent()
+    /// as the single source of truth (PROBLEM #3 fix). The display label should
+    /// contain "Avg filled: <N> %" and the numeric portion must be consistent
+    /// with what avg_filled_whole_percent() returns.
+    #[test]
+    fn test_edge_label_avg_filled_matches_unified_percent() {
+        use crate::actor_stats::ChannelBlock;
+        let mut c = ChannelStatsComputer {
+            capacity: 100,
+            show_avg_filled: true,
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+        // 50_000 runner with denominator 1000 -> 50%
+        c.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 50_000,
+            sum_of_squares: 0,
+        });
+
+        // Grab the single-source-of-truth value
+        let pct = c.avg_filled_whole_percent().expect("should return 50%");
+
+        // Simulate what compute_filled_labels_inner does now: format through
+        // compute_filled_labels_inner (which internally calls avg_filled_whole_percent)
+        let mut label = String::new();
+        let mut metric = String::new();
+        let block = c.current_filled.as_ref().unwrap();
+        c.compute_filled_labels_inner(&mut label, &mut metric, &block, false);
+
+        // The display label must contain "Avg filled: 50 %"
+        let expected_fragment = format!("Avg filled: {} %", pct);
+        assert!(
+            label.contains(&expected_fragment),
+            "Expected label to contain '{}', got: {:?}",
+            expected_fragment,
+            label
+        );
+
+        // Verify that switching off show_avg_filled suppresses the line
+        c.show_avg_filled = false;
+        let mut label2 = String::new();
+        let mut metric2 = String::new();
+        c.compute_filled_labels_inner(&mut label2, &mut metric2, &block, false);
+        assert!(
+            !label2.contains("Avg filled"),
+            "Avg filled line should be suppressed when show_avg_filled=false, got: {:?}",
+            label2
+        );
+
+        // Verify that suppress_avg_filled flag also suppresses the line
+        c.show_avg_filled = true;
+        let mut label3 = String::new();
+        let mut metric3 = String::new();
+        c.compute_filled_labels_inner(&mut label3, &mut metric3, &block, true);
+        assert!(
+            !label3.contains("Avg filled"),
+            "Avg filled line should be suppressed when suppress_avg_filled=true, got: {:?}",
+            label3
+        );
+    }
+
     #[test]
     fn test_init_and_label_building() {
         let mut computer = ChannelStatsComputer::default();

@@ -736,17 +736,43 @@ impl ChannelStatsComputer {
 
     }
 
-    fn compute_filled_labels_inner(
+    pub(crate) fn compute_filled_labels_inner(
         &self,
         display_label: &mut String,
         metric_target: &mut String,
         current_block: &&ChannelBlock<u64>,
         suppress_avg_filled: bool,
     ) {
-        //NOTE: the runner stores 1000*fill value so we need 100/1000*capacity to get a normal percentage
         let show_avg = self.show_avg_filled && !suppress_avg_filled;
+
+        // Use avg_filled_whole_percent() as the single source of truth for the
+        // average filled percentage (see PROBLEM #3). Call it here and manually
+        // format the line, then suppress the generic path's duplicate computation
+        // by passing show_avg: false.
+        if show_avg {
+            if let Some(pct) = self.avg_filled_whole_percent() {
+                // Display label: "Avg filled: N %\n"
+                display_label.push_str("Avg filled: ");
+                let mut buf = itoa::Buffer::new();
+                let s = buf.format(pct);
+                display_label.push_str(s);
+                display_label.push_str(" %\n");
+
+                // Prometheus metric: avg_filled{labels} N\n
+                #[cfg(feature = "prometheus_metrics")]
+                {
+                    metric_target.push_str("avg_filled{");
+                    metric_target.push_str(&self.prometheus_labels);
+                    metric_target.push_str("} ");
+                    metric_target.push_str(s);
+                    metric_target.push('\n');
+                }
+            }
+        }
+
+        //NOTE: the runner stores 1000*fill value so we need 100/1000*capacity to get a normal percentage
         let config = ComputeLabelsConfig::channel_config(self, (1u64, 10u64 * self.capacity as u64), (1u64, 1u64), 100
-                                                         , show_avg, self.show_min_filled, self.show_max_filled);
+                                                         , false, self.show_min_filled, self.show_max_filled);
         let labels = ComputeLabelsLabels {
             label: "filled",
             unit: "%",
