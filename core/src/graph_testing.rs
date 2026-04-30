@@ -659,6 +659,11 @@ mod graph_testing_tests {
             _size: usize,
             _ready_channels: usize,
         ) -> bool { true }
+        async fn wait_avail_index<T: RxCore>(
+            &self,
+            _this: &mut RxCoreBundle<'_, T>,
+            _counts: &[usize],
+        ) -> Option<usize> { Some(0) }
         async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { false }
         async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }
         async fn wait_vacant_bundle<T: TxCore>(
@@ -667,6 +672,11 @@ mod graph_testing_tests {
             _count: T::MsgSize,
             _ready_channels: usize,
         ) -> bool { true }
+        async fn wait_vacant_index<T: TxCore>(
+            &self,
+            _this: &mut TxCoreBundle<'_, T>,
+            _counts: &[T::MsgSize],
+        ) -> Option<usize> { Some(0) }
         async fn wait_shutdown(&self) -> bool { false }
         fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
         fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }

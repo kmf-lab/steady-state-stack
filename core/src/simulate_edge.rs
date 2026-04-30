@@ -330,9 +330,11 @@ impl SteadyActor for TestActor {
     async fn wait(&self, _duration: Duration) {}
     async fn wait_avail<T: RxCore>(&self, _this: &mut T, _size: usize) -> bool { true }
     async fn wait_avail_bundle<T: RxCore>(&self, _this: &mut RxCoreBundle<'_, T>, _size: usize, _ready_channels: usize) -> bool { true }
+    async fn wait_avail_index<T: RxCore>(&self, _this: &mut RxCoreBundle<'_, T>, _counts: &[usize]) -> Option<usize> { None }
     async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { true }
     async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }
     async fn wait_vacant_bundle<T: TxCore>(&self, _this: &mut TxCoreBundle<'_, T>, _count: T::MsgSize, _ready_channels: usize) -> bool { true }
+    async fn wait_vacant_index<T: TxCore>(&self, _this: &mut TxCoreBundle<'_, T>, _counts: &[T::MsgSize]) -> Option<usize> { None }
     async fn wait_shutdown(&self) -> bool { true }
     fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
     fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }

@@ -632,6 +632,16 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     /// # Returns
     /// A future that resolves when the conditions are met.
     fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
+
+    /// Waits for the first receiver in the bundle to have at least its required item count.
+    ///
+    /// Each position in `avail_counts` maps positionally to the bundle positions. The method waits
+    /// until at least one channel satisfies `avail_units >= avail_counts[i]`, then returns its index.
+    /// Positions with `avail_counts[i] == 0` are skipped.
+    ///
+    /// # Returns
+    /// The index of the first ready channel.
+    fn wait_avail_index(&self, avail_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 
 impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
@@ -667,6 +677,31 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
                 break;
             }
         }
+    }
+
+    async fn wait_avail_index(&self, avail_counts: &[usize]) -> usize {
+        debug_assert_eq!(GIRTH, avail_counts.len(), "wait_avail_index: bundle and counts length mismatch");
+
+        // Spawn one future per channel with a non-zero count, tracking its index
+        let mut index_futures = Vec::new();
+        for (i, &count) in avail_counts.iter().enumerate() {
+            if count == 0 {
+                // Immediately return the index for zero-count channels (they're trivially ready)
+                return i;
+            }
+            let rx = self[i].clone();
+            index_futures.push(
+                async move {
+                    let mut guard = rx.lock().await;
+                    guard.shared_wait_closed_or_avail_units(count).await;
+                    i
+                }
+                .boxed(),
+            );
+        }
+
+        let (result, _index, _remaining) = select_all(index_futures).await;
+        result
     }
 }
 

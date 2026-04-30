@@ -869,6 +869,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         self.ident
     }
 
+    #[allow(deprecated)]
     async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>, size: T::MsgSize, ready_channels: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
@@ -905,6 +906,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         result.load(Ordering::Relaxed)
     }
 
+    #[allow(deprecated)]
     async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, item_count: usize, ready_channels: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
@@ -939,6 +941,87 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             }
         }
         result.load(Ordering::Relaxed)
+    }
+
+    async fn wait_avail_index<T: RxCore>(
+        &self,
+        this: &mut RxCoreBundle<'_, T>,
+        counts: &[usize],
+    ) -> Option<usize> {
+        debug_assert_eq!(this.len(), counts.len(), "wait_avail_index: bundle and counts length mismatch");
+
+        // Check if any channel already satisfies its count
+        for (i, rx) in this.iter_mut().enumerate() {
+            if counts[i] > 0 && rx.shared_avail_items_count() >= counts[i] {
+                return Some(i);
+            }
+        }
+
+        // Build a FuturesUnordered for channels with count > 0
+        let mut futures = FuturesUnordered::new();
+        for (i, rx) in this.iter_mut().enumerate() {
+            if counts[i] == 0 {
+                continue;
+            }
+            let channel_idx = i;
+            let required = counts[i];
+            futures.push(async move {
+                rx.shared_wait_closed_or_avail_units(required).await;
+                channel_idx
+            });
+        }
+
+        // Wait for the first one to complete
+        let _guard = self.start_profile(CALL_OTHER);
+        if futures.is_empty() {
+            return None;
+        }
+        loop {
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => return None,
+                next = futures.next() => {
+                    match next {
+                        Some(idx) => return Some(idx),
+                        None => return None,
+                    }
+                }
+            }
+        }
+    }
+
+    async fn wait_vacant_index<T: TxCore>(
+        &self,
+        this: &mut TxCoreBundle<'_, T>,
+        counts: &[T::MsgSize],
+    ) -> Option<usize> {
+        debug_assert_eq!(this.len(), counts.len(), "wait_vacant_index: bundle and counts length mismatch");
+
+        let _guard = self.start_profile(CALL_OTHER);
+
+        // Build a FuturesUnordered for all channels.
+        // Zero-count channels resolve immediately since they require no waiting.
+        let mut futures = FuturesUnordered::new();
+        for (i, tx) in this.iter_mut().enumerate() {
+            let channel_idx = i;
+            let required = counts[i];
+            futures.push(async move {
+                tx.shared_wait_shutdown_or_vacant_units(required).await;
+                channel_idx
+            });
+        }
+
+        // Wait for the first one to complete
+        loop {
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => return None,
+                next = futures.next() => {
+                    match next {
+                        Some(idx) => return Some(idx),
+                        None => return None,
+                    }
+                }
+            }
+        }
     }
 
     fn frame_rate_ms(&self) -> u64 {

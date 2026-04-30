@@ -207,6 +207,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 
     while actor.is_running(&mut || i!(rx.is_closed_and_empty())  ) {
         // Wait for either a periodic tick or available messages, optimizing CPU usage.
+        #[allow(deprecated)]
         let _clean = await_for_any!(
             actor.wait_periodic(Duration::from_millis(500)),
             actor.wait_avail_bundle(&mut rx, wait_for, in_channels)

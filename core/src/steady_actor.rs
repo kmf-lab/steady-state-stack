@@ -306,12 +306,29 @@ pub trait SteadyActor {
     /// Waits until at least `count` units are available in a bundle of receivers.
     ///
     /// Returns `true` if available, `false` if interrupted.
+    ///
+    /// ⚠️ **Deprecated**: Prefer [`wait_avail_index`](SteadyActor::wait_avail_index) which
+    /// returns the index of the first ready channel.
+    #[deprecated(since = "0.3.0", note = "Use wait_avail_index instead, which returns the index of the first ready channel")]
     async fn wait_avail_bundle<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
         size: usize,
         ready_channels: usize,
     ) -> bool;
+
+    /// Waits for the first receiver in a bundle to have at least its required item count.
+    ///
+    /// Each position in `counts` maps positionally to the bundle. The method waits until at
+    /// least one channel satisfies `avail_units >= counts[i]`, then returns its index.
+    /// Positions with `counts[i] == 0` are skipped immediately.
+    ///
+    /// Returns `Some(index)` of the first ready channel, or `None` if interrupted by shutdown.
+    async fn wait_avail_index<T: RxCore>(
+        &self,
+        this: &mut RxCoreBundle<'_, T>,
+        counts: &[usize],
+    ) -> Option<usize>;
 
     /// Waits for a future to complete or until shutdown is signaled.
     ///
@@ -328,12 +345,29 @@ pub trait SteadyActor {
     /// Waits until at least `count` vacant units are available in a bundle of transmitters.
     ///
     /// Returns `true` if available, `false` if interrupted.
+    ///
+    /// ⚠️ **Deprecated**: Prefer [`wait_vacant_index`](SteadyActor::wait_vacant_index) which
+    /// returns the index of the first ready channel.
+    #[deprecated(since = "0.3.0", note = "Use wait_vacant_index instead, which returns the index of the first ready channel")]
     async fn wait_vacant_bundle<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
         count: T::MsgSize,
         ready_channels: usize,
     ) -> bool;
+
+    /// Waits for the first transmitter in a bundle to have at least its required vacant count.
+    ///
+    /// Each position in `counts` maps positionally to the bundle. The method waits until at
+    /// least one channel satisfies `vacant_units >= counts[i]`, then returns its index.
+    /// Positions with `counts[i] == 0` are skipped immediately.
+    ///
+    /// Returns `Some(index)` of the first ready channel, or `None` if interrupted by shutdown.
+    async fn wait_vacant_index<T: TxCore>(
+        &self,
+        this: &mut TxCoreBundle<'_, T>,
+        counts: &[T::MsgSize],
+    ) -> Option<usize>;
 
     /// Waits until a shutdown signal is received.
     ///

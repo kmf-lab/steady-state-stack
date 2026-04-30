@@ -314,6 +314,16 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     /// # Returns
     /// A future that resolves when the specified conditions are satisfied.
     fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
+
+    /// Waits for the first transmitter in the bundle to have at least its required vacant count.
+    ///
+    /// Each position in `vacant_counts` maps positionally to the bundle positions. The method waits
+    /// until at least one channel satisfies `vacant_units >= vacant_counts[i]`, then returns its index.
+    /// Positions with `vacant_counts[i] == 0` are skipped.
+    ///
+    /// # Returns
+    /// The index of the first ready channel.
+    fn wait_vacant_index(&self, vacant_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 
 impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
@@ -359,6 +369,31 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
                 break;
             }
         }
+    }
+
+    async fn wait_vacant_index(&self, vacant_counts: &[usize]) -> usize {
+        debug_assert_eq!(GIRTH, vacant_counts.len(), "wait_vacant_index: bundle and counts length mismatch");
+
+        // Spawn one future per channel with a non-zero count, tracking its index
+        let mut index_futures = Vec::new();
+        for (i, &count) in vacant_counts.iter().enumerate() {
+            if count == 0 {
+                // Immediately return the index for zero-count channels (they're trivially ready)
+                return i;
+            }
+            let tx = self[i].clone();
+            index_futures.push(
+                async move {
+                    let mut tx = tx.lock().await;
+                    tx.wait_vacant_units(count).await;
+                    i
+                }
+                    .boxed(),
+            );
+        }
+
+        let (result, _index, _remaining) = select_all(index_futures).await;
+        result
     }
 }
 
