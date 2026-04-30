@@ -3076,10 +3076,30 @@ mod dot_tests {
             result
         );
 
-        // Tooltip should also show these totals
+        // Tooltip should also show these totals (each lane's tooltip has CH#N line + Total line)
+        // NOTE: Total: 1K appears in the edge label for lane 0 AND in the tooltip for lane 0,
+        // so this single assertion covers both. The lane 1 (2K) and lane 2 (3K) totals are
+        // verified above in the edge label checks.
         assert!(
             result.contains("Total: 1K"),
             "Tooltip should show 1K: {}",
+            result
+        );
+
+        // Verify partner header format appears for each lane
+        assert!(
+            result.contains("partner_lane [0]"),
+            "Partner lane 0 should show header 'partner_lane [0]': {}",
+            result
+        );
+        assert!(
+            result.contains("partner_lane [1]"),
+            "Partner lane 1 should show header 'partner_lane [1]': {}",
+            result
+        );
+        assert!(
+            result.contains("partner_lane [2]"),
+            "Partner lane 2 should show header 'partner_lane [2]': {}",
             result
         );
 
