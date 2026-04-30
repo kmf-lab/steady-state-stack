@@ -115,31 +115,94 @@ Why this matters:
 
 5. Orchestration: Waiting on Bundles
 
-Use specialized bundle-wait methods on the actor context to efficiently manage wake-ups based on the state of the entire bundle.
+Efficient bundle orchestration means waiting on the *right* channel — not just knowing *that* a condition is met, but *which* channel satisfied it.
 
-wait_avail_bundle and wait_vacant_bundle
+The Index-Returning Methods (Preferred)
 
-These methods take a `ready_channels` parameter to control the "sensitivity" of the wake-up.
+`wait_avail_index` and `wait_vacant_index` solve the key limitation of the older API: they return the index of the first channel that satisfies its per-channel item count, so you can act immediately without scanning.
 
 ```rust
-// Scenario 1: Work Stealing
-// Wake up as soon as ANY (at least 1) channel has at least 500 messages.
-let batch_size = 500;
-actor.wait_avail_bundle(&mut rx_guards, batch_size, 1).await;
+// Supply a slice of per-channel requirements. The first to satisfy its
+// count wins. A count of 0 means "immediately ready" (skip).
+let counts = [500; GIRTH]; // wait for 500 items on any single channel
 
-// Scenario 2: Barrier Synchronization / Batch Join
-// Wake up only when ALL (GIRTH) channels have at least 1 item ready.
-actor.wait_avail_bundle(&mut rx_guards, 1, GIRTH).await;
-
-// Scenario 3: Bulk Output
-// Wake up when at least 4 channels have room for a batch.
-actor.wait_vacant_bundle(&mut tx_guards, 1000, 4).await;
+match actor.wait_avail_index(&mut rx_guards, &counts).await {
+    Some(idx) => {
+        // Channel idx has 500+ items — process it directly
+        let batch = actor.take_slice(&mut rx_guards[idx], &mut buffer);
+    }
+    None => {
+        // Shutdown was signaled — exit the loop
+    }
+}
 ```
+
+For the vacant side (sharded output):
+
+```rust
+let counts = [1000; GIRTH]; // need 1000 vacant slots on any channel
+
+match actor.wait_vacant_index(&mut tx_guards, &counts).await {
+    Some(idx) => {
+        // Channel idx has room for 1000 items — send to it
+        actor.send_slice(&mut tx_guards[idx], &batch);
+    }
+    None => { /* shutdown */ }
+}
+```
+
+Dual-Time: Index + Periodic (The wait_for_index! Macro)
+
+When you need to race an index wait against a `wait_periodic` heartbeat, the `wait_for_index!` macro bridges the two worlds by turning an `Option<usize>`-returning method into a `bool`-returning future compatible with `await_for_any!`:
+
+```rust
+let mut ready_idx: Option<usize> = None;
+
+let _clean = await_for_any!(
+    actor.wait_periodic(Duration::from_millis(500)),
+    wait_for_index!(actor.wait_avail_index(&mut rx_guards, &[100; GIRTH]) => ready_idx)
+);
+
+if let Some(i) = ready_idx {
+    // Channel i has 100+ items — process it
+} else {
+    // Periodic tick or shutdown — do housekeeping, telemetry, etc.
+}
+```
+
+The `wait_for_index!` macro works identically with `wait_vacant_index`:
+
+```rust
+let mut ready_idx: Option<usize> = None;
+
+let _clean = await_for_any!(
+    actor.wait_periodic(Duration::from_millis(500)),
+    wait_for_index!(actor.wait_vacant_index(&mut tx_guards, &[(1, 64); GIRTH]) => ready_idx)
+);
+
+if let Some(i) = ready_idx {
+    // Channel i has room for your stream message — send it
+}
+```
+
+Old Methods (Deprecated)
+
+The older `wait_avail_bundle` and `wait_vacant_bundle` methods are deprecated. They accept a flat `ready_channels` count and only return a boolean, leaving you to manually scan for which channel is ready:
+
+```rust
+// ⚠️ Deprecated — use wait_avail_index instead
+#[allow(deprecated)]
+actor.wait_avail_bundle(&mut rx_guards, 500, 1).await;
+```
+
+While still functional, these should be migrated to the index-returning equivalents.
 
 Why this matters:
 
- • Cooperative Scheduling: These methods allow the actor to yield until the specific condition is met, maximizing CPU efficiency.
- • Flexible Topology: Switching from a 1-at-a-time consumer to a barrier-join consumer is a simple single-line adjustment.
+ • Pinpoint Wake-Up: The index tells you *exactly* which channel is ready. No scanning loops, no speculation.
+ • Per-Channel Requirements: Each channel gets its own count threshold (e.g., `[500, 100, 0, 250]`). Zero means "skip."
+ • Composable: Use plain `match` for simple cases, or `wait_for_index!` + `await_for_any!` when racing against a periodic timer.
+ • Shutdown-Aware: The actor methods return `Option<usize>` — `None` means shutdown was signaled, so you can exit cleanly.
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -205,15 +268,24 @@ if actor.wait_vacant(&mut tx_guards[target_idx], 1).await {
 
 Pattern: Parallel Barrier Join
 
-Wait for one item from EVERY source before proceeding.
+Wait for one item from EVERY source before proceeding. The trick is to maintain a `remaining` set of indices and call `wait_avail_index` in a loop until all have been seen:
 
 ```rust
 // Wait for ALL channels to have at least 1 item
-if actor.wait_avail_bundle(&mut rx_guards, 1, GIRTH).await {
-    for i in 0..GIRTH {
-        if let Some(item) = actor.try_take(&mut rx_guards[i]) {
-            process_sync(i, item);
+let mut remaining: Vec<usize> = (0..GIRTH).collect();
+while !remaining.is_empty() {
+    let mut counts = [0usize; GIRTH];
+    for &i in &remaining {
+        counts[i] = 1;
+    }
+    match actor.wait_avail_index(&mut rx_guards, &counts).await {
+        Some(idx) => {
+            if let Some(item) = actor.try_take(&mut rx_guards[idx]) {
+                process_sync(idx, item);
+                remaining.retain(|&x| x != idx);
+            }
         }
+        None => break, // shutdown
     }
 }
 ```
