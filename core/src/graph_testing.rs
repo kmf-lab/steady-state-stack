@@ -677,6 +677,13 @@ mod graph_testing_tests {
             _this: &mut TxCoreBundle<'_, T>,
             _counts: &[T::MsgSize],
         ) -> Option<usize> { Some(0) }
+        async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
+            &self,
+            _rx: &mut RxCoreBundle<'_, R>,
+            _tx: &mut TxCoreBundle<'_, T>,
+            _avail_counts: &[usize],
+            _vacant_counts: &[T::MsgSize],
+        ) -> Option<usize> { Some(0) }
         async fn wait_shutdown(&self) -> bool { false }
         fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
         fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }

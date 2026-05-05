@@ -369,6 +369,25 @@ pub trait SteadyActor {
         counts: &[T::MsgSize],
     ) -> Option<usize>;
 
+    /// Waits until some lane index satisfies **both** RX availability and TX vacancy at once.
+    ///
+    /// For each index `i`, RX is ready when `avail_counts[i] == 0` or
+    /// `avail_units >= avail_counts[i]`, and TX is ready when `shared_vacant_units_for(vacant_counts[i])`
+    /// is true (including when `vacant_counts[i]` is zero).
+    ///
+    /// Returns the **smallest** index that is ready on both sides. After each async wake the scan
+    /// runs from `0` again so behavior stays deterministic.
+    ///
+    /// Returns `None` on shutdown. Empty bundles return `None`. If no lane can ever satisfy both
+    /// sides, this may wait indefinitely (application-level deadlock).
+    async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
+        &self,
+        rx: &mut RxCoreBundle<'_, R>,
+        tx: &mut TxCoreBundle<'_, T>,
+        avail_counts: &[usize],
+        vacant_counts: &[T::MsgSize],
+    ) -> Option<usize>;
+
     /// Waits until a shutdown signal is received.
     ///
     /// Always returns `true`.

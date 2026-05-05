@@ -1024,6 +1024,76 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
+        &self,
+        rx: &mut RxCoreBundle<'_, R>,
+        tx: &mut TxCoreBundle<'_, T>,
+        avail_counts: &[usize],
+        vacant_counts: &[T::MsgSize],
+    ) -> Option<usize> {
+        debug_assert_eq!(rx.len(), tx.len(), "wait_avail_vacant_index: rx and tx bundle length mismatch");
+        debug_assert_eq!(rx.len(), avail_counts.len(), "wait_avail_vacant_index: rx bundle and avail_counts length mismatch");
+        debug_assert_eq!(rx.len(), vacant_counts.len(), "wait_avail_vacant_index: rx bundle and vacant_counts length mismatch");
+
+        let len = rx.len();
+        if len == 0 {
+            return None;
+        }
+
+        let _guard = self.start_profile(CALL_OTHER);
+
+        loop {
+            for (i, (rx_i, tx_i)) in rx.iter_mut().zip(tx.iter_mut()).enumerate() {
+                let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
+                let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
+                if rx_ok && tx_ok {
+                    return Some(i);
+                }
+            }
+
+            let mut futures = FuturesUnordered::new();
+            for (i, (rx_i, tx_i)) in rx.iter_mut().zip(tx.iter_mut()).enumerate() {
+                let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
+                let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
+                if rx_ok && tx_ok {
+                    continue;
+                }
+
+                let required_avail = avail_counts[i];
+                let required_vacant = vacant_counts[i];
+                futures.push(async move {
+                    let need_rx = required_avail > 0 && rx_i.shared_avail_items_count() < required_avail;
+                    let need_tx = !tx_i.shared_vacant_units_for(required_vacant);
+                    match (need_rx, need_tx) {
+                        (true, true) => {
+                            select! {
+                                _ = rx_i.shared_wait_closed_or_avail_units(required_avail).fuse() => {}
+                                _ = tx_i.shared_wait_shutdown_or_vacant_units(required_vacant).fuse() => {}
+                            }
+                        }
+                        (true, false) => {
+                            rx_i.shared_wait_closed_or_avail_units(required_avail).await;
+                        }
+                        (false, true) => {
+                            tx_i.shared_wait_shutdown_or_vacant_units(required_vacant).await;
+                        }
+                        (false, false) => {}
+                    }
+                });
+            }
+
+            if futures.is_empty() {
+                yield_now::yield_now().await;
+                continue;
+            }
+
+            select! {
+                _ = self.oneshot_shutdown.clone().fuse() => return None,
+                _ = futures.next() => {},
+            }
+        }
+    }
+
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }

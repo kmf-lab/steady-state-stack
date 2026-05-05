@@ -80,7 +80,7 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 [dependencies]
 async-std        = { version = "1.13", optional = true, features = ["default"]}
 ringbuf          = "0.4"  # foundational bounded message passing
-async-ringbuf    = "0.3"  # foundational bounded message passing
+async-ringbuf    = "=0.3.5"  # align with ringbuf 0.4 (0.3.6 pulls ringbuf 0.5 and breaks trait coherence)
 log              = "0.4"  # common logging traits
 flexi_logger     = { version="0.31", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0"   # for async Delay::new(check_rate).await used places where we poll

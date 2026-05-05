@@ -324,8 +324,9 @@ macro_rules! wait_for_any {
 /// Wraps an `Option<usize>`-returning index wait method into a `bool`-returning future,
 /// storing the resulting index into a mutable target.
 ///
-/// This bridges methods like [`wait_avail_index`](SteadyActor::wait_avail_index) and
-/// [`wait_vacant_index`](SteadyActor::wait_vacant_index) into the `bool`-based macro
+/// This bridges methods like [`wait_avail_index`](SteadyActor::wait_avail_index),
+/// [`wait_vacant_index`](SteadyActor::wait_vacant_index), and
+/// [`wait_avail_vacant_index`](SteadyActor::wait_avail_vacant_index) into the `bool`-returning macro
 /// ecosystem (`await_for_any!`, `await_for_all!`, etc.).
 ///
 /// # Example

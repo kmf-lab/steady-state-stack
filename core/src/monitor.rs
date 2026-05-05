@@ -1028,6 +1028,78 @@ pub(crate) mod monitor_tests {
         assert!(result);
     }
 
+    // Test for wait_avail_vacant_index: same index must have both RX avail and TX vacancy
+    #[async_std::test]
+    async fn test_wait_avail_vacant_index_paired_lane() {
+        let cap = 2usize;
+        let (_in_tx0, in_rx0) = create_rx(vec![42_i32]);
+        let (out_tx0_lazy, _out_rx0) = create_test_channel::<i32>(cap);
+        let out_tx0 = out_tx0_lazy.clone();
+        if let Some(mut g) = out_tx0.try_lock() {
+            for _ in 0..cap {
+                let _ = g.shared_try_send(1_i32);
+            }
+        }
+
+        let (in_tx1_lazy, in_rx1) = create_test_channel::<i32>(cap);
+        let in_tx1 = in_tx1_lazy.clone();
+        let (out_tx1_lazy, _out_rx1) = create_test_channel::<i32>(cap);
+        let out_tx1 = out_tx1_lazy.clone();
+
+        let context = test_steady_context();
+        let in_rx0 = in_rx0.clone();
+        let in_rx1 = in_rx1.clone();
+        let out_tx0 = out_tx0.clone();
+        let out_tx1 = out_tx1.clone();
+        let monitor = context.into_spotlight([&in_rx0, &in_rx1], [&out_tx0, &out_tx1]);
+
+        let mut rx_bundle = RxBundle::new();
+        if let Some(g) = in_rx0.try_lock() {
+            rx_bundle.push(g);
+        }
+        if let Some(g) = in_rx1.try_lock() {
+            rx_bundle.push(g);
+        }
+        let mut tx_bundle = TxBundle::new();
+        if let Some(g) = out_tx0.try_lock() {
+            tx_bundle.push(g);
+        }
+        if let Some(g) = out_tx1.try_lock() {
+            tx_bundle.push(g);
+        }
+
+        let avail_counts = [1usize, 1];
+        let vacant_counts = [1usize, 1];
+
+        let avail_only = monitor
+            .wait_avail_index(&mut rx_bundle, &avail_counts)
+            .await;
+        let vacant_only = monitor
+            .wait_vacant_index(&mut tx_bundle, &vacant_counts)
+            .await;
+        assert_eq!(avail_only, Some(0));
+        assert_eq!(vacant_only, Some(1));
+        assert_ne!(avail_only, vacant_only);
+
+        let in_tx1_unblock = in_tx1.clone();
+        async_std::task::spawn(async move {
+            Delay::new(Duration::from_millis(20)).await;
+            if let Some(mut g) = in_tx1_unblock.try_lock() {
+                let _ = g.shared_try_send(99);
+            }
+        });
+
+        let paired = monitor
+            .wait_avail_vacant_index(
+                &mut rx_bundle,
+                &mut tx_bundle,
+                &avail_counts,
+                &vacant_counts,
+            )
+            .await;
+        assert_eq!(paired, Some(1));
+    }
+
     // Test for wait_shutdown
     #[async_std::test]
     async fn test_wait_shutdown() {
