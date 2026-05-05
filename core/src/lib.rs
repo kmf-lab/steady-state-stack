@@ -278,6 +278,7 @@ pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 // Public re-exports for convenience
 pub use clap::*;
 pub use steady_actor::SendOutcome;
+pub use steady_actor::index_wait_counts_uniform_usize;
 pub use simulate_edge::SimRunner;
 pub use steady_actor_shadow::*;
 pub use futures_timer::Delay; // for easy use

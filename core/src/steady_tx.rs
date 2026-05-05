@@ -317,12 +317,14 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
 
     /// Waits for the first transmitter in the bundle to have at least its required vacant count.
     ///
-    /// Each position in `vacant_counts` maps positionally to the bundle positions. The method waits
-    /// until at least one channel satisfies `vacant_units >= vacant_counts[i]`, then returns its index.
+    /// Each position in `vacant_counts` maps positionally to the bundle. The method waits until at
+    /// least one channel satisfies `vacant_units >= vacant_counts[i]`, then returns its index.
     /// Positions with `vacant_counts[i] == 0` are skipped.
     ///
-    /// # Returns
-    /// The index of the first ready channel.
+    /// **Prefer [`SteadyActor::wait_vacant_index`](crate::steady_actor::SteadyActor::wait_vacant_index) inside actors:**
+    /// that API is graph-shutdown-aware, returns `Option<usize>`, and uses round-robin among lanes.
+    /// This bundle-trait method returns `usize` only, does not integrate the actor shutdown signal,
+    /// and does not apply monitor round-robin state.
     fn wait_vacant_index(&self, vacant_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 
@@ -539,6 +541,56 @@ mod steady_lazy_tests {
 
         // Verify the channel is full.
         assert!(tx.shared_is_full());
+    }
+
+    #[async_std::test]
+    async fn test_steady_rx_bundle_wait_avail_index() {
+        use crate::SteadyRxBundleTrait;
+        let b0 = ChannelBuilder::default().with_capacity(4);
+        let (tx0, rx0) = b0.build_channel::<i32>();
+        let b1 = ChannelBuilder::default().with_capacity(4);
+        let (tx1, rx1) = b1.build_channel::<i32>();
+        tx0.testing_send_all(vec![1], false);
+        tx1.testing_send_all(vec![2], false);
+        let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+        let idx = bundle.wait_avail_index(&[1, 1]).await;
+        assert!(idx == 0 || idx == 1);
+    }
+
+    #[async_std::test]
+    async fn test_steady_rx_bundle_wait_avail_index_first_zero_lane() {
+        use crate::SteadyRxBundleTrait;
+        let b0 = ChannelBuilder::default().with_capacity(4);
+        let (_tx0, rx0) = b0.build_channel::<i32>();
+        let b1 = ChannelBuilder::default().with_capacity(4);
+        let (_tx1, rx1) = b1.build_channel::<i32>();
+        let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+        let idx = bundle.wait_avail_index(&[0, 1]).await;
+        assert_eq!(idx, 0);
+    }
+
+    #[async_std::test]
+    async fn test_steady_tx_bundle_wait_vacant_index() {
+        use crate::SteadyTxBundleTrait;
+        let b0 = ChannelBuilder::default().with_capacity(4);
+        let (tx0, _rx0) = b0.build_channel::<i32>();
+        let b1 = ChannelBuilder::default().with_capacity(4);
+        let (tx1, _rx1) = b1.build_channel::<i32>();
+        let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+        let idx = bundle.wait_vacant_index(&[1, 1]).await;
+        assert!(idx == 0 || idx == 1);
+    }
+
+    #[async_std::test]
+    async fn test_steady_tx_bundle_wait_vacant_index_first_zero_lane() {
+        use crate::SteadyTxBundleTrait;
+        let b0 = ChannelBuilder::default().with_capacity(4);
+        let (tx0, _rx0) = b0.build_channel::<i32>();
+        let b1 = ChannelBuilder::default().with_capacity(4);
+        let (tx1, _rx1) = b1.build_channel::<i32>();
+        let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+        let idx = bundle.wait_vacant_index(&[0, 2]).await;
+        assert_eq!(idx, 0);
     }
 }
 

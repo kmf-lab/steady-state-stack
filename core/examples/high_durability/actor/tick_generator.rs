@@ -26,6 +26,7 @@ const BUFFER_SIZE:usize = 1000;
 
 //tag that it is ok that this is never called
 #[allow(unused)]
+#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor: C
                                                                       , ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 

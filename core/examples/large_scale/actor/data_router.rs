@@ -24,6 +24,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
     }
 }
 
+#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {
     
 

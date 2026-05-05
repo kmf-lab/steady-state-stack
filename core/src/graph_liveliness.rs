@@ -1027,6 +1027,9 @@ impl Graph {
             aeron_init_for_tests: true,
             use_internal_behavior: true,
             shutdown_barrier: self.shutdown_barrier.clone(),
+            index_wait_last_avail: AtomicUsize::new(usize::MAX),
+            index_wait_last_vacant: AtomicUsize::new(usize::MAX),
+            index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
         }
     }
 

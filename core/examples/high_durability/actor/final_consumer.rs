@@ -21,6 +21,7 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyActorShadow
 
 const BATCH: usize = 1000;
 
+#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,C: SteadyActor>(mut actor: C, tick_counts_rx: SteadyRxBundle<TickCount, TICK_COUNTS_RX_GIRTH>) -> Result<(), Box<dyn Error>> {
     let _cli_args = actor.args::<Args>();
 

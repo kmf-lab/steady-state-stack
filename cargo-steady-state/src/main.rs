@@ -260,23 +260,27 @@ fn build_driver_block(actor: &Actor) -> String {
                     }
 
                     if v.len() == 2 && 1==girth {
-                        format!("actor.wait_shutdown_or_vacant_units(&mut {}_tx,{})", v[0], v[1])
+                        format!("actor.wait_vacant(&mut {}_tx,{})", v[0], v[1])
                     } else {
                         let girth = actor.tx_channels
                             .iter()
                             .find(|f| f[0].name == v[0])
                             .map(|f| f.len());
                         let channels_count = if let Some(g) = girth {
-                            if let Some(p) = extract_percent(v[2].clone()) {
-                                (g as f32 * p) as usize
+                            if v.len() > 2 {
+                                if let Some(p) = extract_percent(v[2].clone()) {
+                                    (g as f32 * p) as usize
+                                } else {
+                                    g //if we can not get pct or not provided so assume 100%
+                                }
                             } else {
-                                g //if we can not get pct or not provided so assume 100%
+                                g
                             }
                         } else {
                             warn!("Failed to find more than one channel in the bundle: {}", v[0]);
                             1 //if we got no girth assume 1 by default
                         };
-                        format!("actor.wait_shutdown_or_vacant_units_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
+                        format!("actor.wait_vacant_bundle(&mut {}_tx,{},{})", v[0], v[1], channels_count)
                     }
                 }).collect();
                 andy_drivers.append(&mut each);
@@ -788,6 +792,76 @@ mod more_tests {
         let result = build_driver_block(&actor);
         let expected = "actor.wait_avail(&mut input_rx,1)";
         assert!(result.contains(expected));
+    }
+
+    #[test]
+    fn test_build_driver_block_event_driven_rx_bundle_emits_wait_avail_bundle() {
+        let ch = |bundle_index: isize| Channel {
+            name: "mux_in".to_string(),
+            from_mod: "src".to_string(),
+            to_mod: "test_actor".to_string(),
+            batch_read: 1,
+            batch_write: 1,
+            message_type: "Msg".to_string(),
+            peek: false,
+            copy: false,
+            capacity: 8,
+            bundle_index,
+            rebundle_index: -1,
+            bundle_struct_mod: "".to_string(),
+            to_node: "TestActor".to_string(),
+            from_node: "Src".to_string(),
+            bundle_on_from: RefCell::new(true),
+            is_unbundled: false,
+        };
+        let actor = Actor {
+            display_name: "TestActor".to_string(),
+            display_suffix: None,
+            mod_name: "test_actor".to_string(),
+            rx_channels: vec![vec![ch(0), ch(1)]],
+            tx_channels: vec![],
+            driver: vec![ActorDriver::EventDriven(vec![vec![
+                "mux_in".to_string(),
+                "4".to_string(),
+            ]])],
+        };
+        let result = build_driver_block(&actor);
+        assert!(result.contains("wait_avail_bundle(&mut mux_in_rx,4,1)"));
+    }
+
+    #[test]
+    fn test_build_driver_block_capacity_driven_tx_bundle_emits_wait_vacant_bundle() {
+        let ch = |bundle_index: isize| Channel {
+            name: "mux_out".to_string(),
+            from_mod: "test_actor".to_string(),
+            to_mod: "sink".to_string(),
+            batch_read: 1,
+            batch_write: 1,
+            message_type: "Msg".to_string(),
+            peek: false,
+            copy: false,
+            capacity: 8,
+            bundle_index,
+            rebundle_index: -1,
+            bundle_struct_mod: "".to_string(),
+            to_node: "Sink".to_string(),
+            from_node: "TestActor".to_string(),
+            bundle_on_from: RefCell::new(true),
+            is_unbundled: false,
+        };
+        let actor = Actor {
+            display_name: "TestActor".to_string(),
+            display_suffix: None,
+            mod_name: "test_actor".to_string(),
+            rx_channels: vec![],
+            tx_channels: vec![vec![ch(0), ch(1)]],
+            driver: vec![ActorDriver::CapacityDriven(vec![vec![
+                "mux_out".to_string(),
+                "2".to_string(),
+            ]])],
+        };
+        let result = build_driver_block(&actor);
+        assert!(result.contains("wait_vacant_bundle(&mut mux_out_tx,2,2)"));
     }
 
     #[test]

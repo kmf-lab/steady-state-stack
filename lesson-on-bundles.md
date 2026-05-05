@@ -119,11 +119,21 @@ Efficient bundle orchestration means waiting on the *right* channel — not just
 
 The Index-Returning Methods (Preferred)
 
-`wait_avail_index` and `wait_vacant_index` solve the key limitation of the older API: they return the index of the first channel that satisfies its per-channel item count, so you can act immediately without scanning.
+`wait_avail_index` and `wait_vacant_index` solve the key limitation of the older API: they return the index of the first channel that satisfies its per-channel item count, so you can act immediately without scanning. The monitor uses **round-robin** among lanes (separate internal cursor per method) and, if the chosen index would repeat the previous one, a **synchronous** scan prefers another ready lane when one exists. `wait_avail_vacant_index` waits on a **single** paired future per lane (RX avail and TX vacancy for the same index) until both sides are ready. **`None`** means graph shutdown (or an empty bundle). Fairness when multiple futures complete together is best-effort under `FuturesUnordered`.
+
+**Telemetry:** Unlike `wait_avail` / `wait_vacant`, index waits do **not** use the telemetry-dirty “yield and return false” path; they stay on the readiness wait until data/space or shutdown.
+
+**Capacity:** `wait_avail_index` does not clamp each `counts[i]` through `shared_validate_capacity_items` the way `wait_avail` does—validate at the call site if you rely on clamping.
+
+**All-zero `avail_counts`:** If every entry is `0`, `wait_avail_index` returns `None` immediately (nothing to wait for), not to be confused with shutdown alone.
+
+**Bundle traits:** `SteadyRxBundleTrait::wait_avail_index` / `SteadyTxBundleTrait::wait_vacant_index` return plain `usize`, are not graph-shutdown-aware, and treat the first zero count as an immediate winner—see their rustdocs when mixing with `SteadyActor` APIs.
+
+For a uniform threshold when bundle length is only known at runtime, use `steady_state::index_wait_counts_uniform_usize(per_lane, rx_guards.len())` to build the `counts` slice.
 
 ```rust
 // Supply a slice of per-channel requirements. The first to satisfy its
-// count wins. A count of 0 means "immediately ready" (skip).
+// count wins. A count of 0 skips that lane; if every count is 0, `wait_avail_index` returns `None`.
 let counts = [500; GIRTH]; // wait for 500 items on any single channel
 
 match actor.wait_avail_index(&mut rx_guards, &counts).await {

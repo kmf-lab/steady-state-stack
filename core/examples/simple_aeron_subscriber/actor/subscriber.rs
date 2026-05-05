@@ -14,6 +14,7 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
     }
 }
 
+#[allow(deprecated)] // Stream bundle readiness; index waits differ from `ready_channels` bundle semantics.
 async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(mut actor: C, rx: SteadyStreamRxBundle<StreamIngress, GIRTH>) -> Result<(), Box<dyn Error>> {
     let mut rx = rx.lock().await;
 

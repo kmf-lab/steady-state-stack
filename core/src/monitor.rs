@@ -402,6 +402,7 @@ where
 
 #[cfg(test)]
 pub(crate) mod monitor_tests {
+    #![allow(deprecated)] // legacy bundle-wait tests still exercise deprecated SteadyActor API
     use std::any::Any;
     use crate::*;
     use super::*;
@@ -417,8 +418,12 @@ pub(crate) mod monitor_tests {
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
     use crate::core_rx::DoubleSlice;
-    use crate::steady_actor::SendOutcome;
+    use crate::steady_actor::{
+        wait_paired_lane_ready, wait_rx_until_avail_items_ready, wait_tx_until_vacant_satisfied,
+        SendOutcome,
+    };
     use crate::steady_actor_shadow::SteadyActorShadow;
+    use crate::graph_liveliness::{GraphLiveliness, GraphLivelinessState};
     use crate::core_tx::TxCore;
     use crate::steady_tx::TxDone;
 
@@ -656,6 +661,9 @@ pub(crate) mod monitor_tests {
             use_internal_behavior: true,
             shutdown_barrier: None,
 
+            index_wait_last_avail: AtomicUsize::new(usize::MAX),
+            index_wait_last_vacant: AtomicUsize::new(usize::MAX),
+            index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
         }
     }
 
@@ -1100,6 +1108,245 @@ pub(crate) mod monitor_tests {
         assert_eq!(paired, Some(1));
     }
 
+    /// Two lanes both have data: successive `wait_avail_index` calls rotate 0, 1, 0, ...
+    #[async_std::test]
+    async fn test_wait_avail_index_round_robin_two_ready() {
+        let (_in_tx0, in_rx0) = create_rx(vec![1_i32]);
+        let (_in_tx1, in_rx1) = create_rx(vec![1_i32]);
+        let context = test_steady_context();
+        let in_rx0 = in_rx0.clone();
+        let in_rx1 = in_rx1.clone();
+        let monitor = context.into_spotlight([&in_rx0, &in_rx1], []);
+
+        let counts = [1_usize, 1];
+
+        {
+            let mut rx_bundle = RxBundle::new();
+            rx_bundle.push(
+                in_rx0
+                    .try_lock()
+                    .expect("rx0 should be uncontended in this test"),
+            );
+            rx_bundle.push(
+                in_rx1
+                    .try_lock()
+                    .expect("rx1 should be uncontended in this test"),
+            );
+            assert_eq!(
+                monitor.wait_avail_index(&mut rx_bundle, &counts).await,
+                Some(0)
+            );
+        }
+
+        async_std::task::yield_now().await;
+
+        {
+            let mut rx_bundle = RxBundle::new();
+            rx_bundle.push(
+                in_rx0
+                    .try_lock()
+                    .expect("rx0 should be uncontended in this test"),
+            );
+            rx_bundle.push(
+                in_rx1
+                    .try_lock()
+                    .expect("rx1 should be uncontended in this test"),
+            );
+            assert_eq!(
+                monitor.wait_avail_index(&mut rx_bundle, &counts).await,
+                Some(1)
+            );
+        }
+
+        async_std::task::yield_now().await;
+
+        {
+            let mut rx_bundle = RxBundle::new();
+            rx_bundle.push(
+                in_rx0
+                    .try_lock()
+                    .expect("rx0 should be uncontended in this test"),
+            );
+            rx_bundle.push(
+                in_rx1
+                    .try_lock()
+                    .expect("rx1 should be uncontended in this test"),
+            );
+            assert_eq!(
+                monitor.wait_avail_index(&mut rx_bundle, &counts).await,
+                Some(0)
+            );
+        }
+    }
+
+    #[async_std::test]
+    async fn test_index_wait_helpers_rx_tx_and_paired() {
+        let (_t, rx_arc) = create_rx::<i32>(vec![5]);
+        if let Some(mut rx) = rx_arc.try_lock() {
+            assert!(wait_rx_until_avail_items_ready(&mut *rx, 0).await);
+            assert!(wait_rx_until_avail_items_ready(&mut *rx, 1).await);
+        }
+        let (tx_lazy, _rx_side) = create_test_channel::<i32>(8);
+        if let Some(mut tx) = tx_lazy.clone().try_lock() {
+            assert!(wait_tx_until_vacant_satisfied(&mut *tx, 1usize).await);
+        }
+        let (tx_p, rx_p) = create_test_channel::<i32>(4);
+        if let Some(mut rxg) = rx_p.clone().try_lock() {
+            if let Some(mut txg) = tx_p.clone().try_lock() {
+                let _ = txg.shared_try_send(9);
+                assert!(wait_paired_lane_ready(&mut *rxg, &mut *txg, 1, 1usize).await);
+            }
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_index_async_path_delayed_send() {
+        let (tx0_arc, rx0) = create_rx::<i32>(vec![]);
+        let (_tx1_arc, rx1) = create_rx::<i32>(vec![]);
+        let tx_send = tx0_arc.clone();
+        async_std::task::spawn(async move {
+            Delay::new(Duration::from_millis(40)).await;
+            if let Some(mut g) = tx_send.try_lock() {
+                let _ = g.shared_try_send(100);
+            }
+        });
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([&rx0, &rx1], []);
+        let counts = [1_usize, 1];
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(rx0.try_lock().expect("rx0"));
+        rx_bundle.push(rx1.try_lock().expect("rx1"));
+        assert_eq!(monitor.wait_avail_index(&mut rx_bundle, &counts).await, Some(0));
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_index_returns_none_on_shutdown() {
+        let (_t, rx) = create_rx::<i32>(vec![]);
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([&rx], []);
+        {
+            let mut l = monitor.runtime_state.write();
+            l.state = GraphLivelinessState::Running;
+        }
+        GraphLiveliness::internal_request_shutdown(monitor.runtime_state.clone()).await;
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(rx.try_lock().expect("rx"));
+        assert_eq!(monitor.wait_avail_index(&mut rx_bundle, &[1]).await, None);
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_index_empty_bundle_returns_none() {
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([], []);
+        let mut rx_bundle: RxBundle<'_, i32> = Vec::new();
+        let counts: &[usize] = &[];
+        assert_eq!(monitor.wait_avail_index(&mut rx_bundle, counts).await, None);
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_index_all_zero_counts_returns_none() {
+        let (_t, rx) = create_rx::<i32>(vec![1]);
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([&rx], []);
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(rx.try_lock().expect("rx"));
+        assert_eq!(monitor.wait_avail_index(&mut rx_bundle, &[0]).await, None);
+    }
+
+    #[async_std::test]
+    async fn test_wait_vacant_index_round_robin_two_vacant() {
+        let (tx0, _r0) = create_test_channel::<i32>(4);
+        let (tx1, _r1) = create_test_channel::<i32>(4);
+        let tx0 = tx0.clone();
+        let tx1 = tx1.clone();
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([], [&tx0, &tx1]);
+        let counts = [1_usize, 1];
+        {
+            let mut tx_bundle = TxBundle::new();
+            tx_bundle.push(tx0.try_lock().expect("tx0"));
+            tx_bundle.push(tx1.try_lock().expect("tx1"));
+            assert_eq!(monitor.wait_vacant_index(&mut tx_bundle, &counts).await, Some(0));
+        }
+        async_std::task::yield_now().await;
+        {
+            let mut tx_bundle = TxBundle::new();
+            tx_bundle.push(tx0.try_lock().expect("tx0"));
+            tx_bundle.push(tx1.try_lock().expect("tx1"));
+            assert_eq!(monitor.wait_vacant_index(&mut tx_bundle, &counts).await, Some(1));
+        }
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_vacant_index_fast_path_both_ready() {
+        let (_in_tx0, in_rx0) = create_rx(vec![1_i32]);
+        let (out_tx0_lazy, _out_rx0) = create_test_channel::<i32>(4);
+        let (_in_tx1, in_rx1) = create_rx(vec![2_i32]);
+        let (out_tx1_lazy, _out_rx1) = create_test_channel::<i32>(4);
+        let in_rx0 = in_rx0.clone();
+        let in_rx1 = in_rx1.clone();
+        let out_tx0 = out_tx0_lazy.clone();
+        let out_tx1 = out_tx1_lazy.clone();
+        let monitor = test_steady_context().into_spotlight([&in_rx0, &in_rx1], [&out_tx0, &out_tx1]);
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(in_rx0.try_lock().expect("irx0"));
+        rx_bundle.push(in_rx1.try_lock().expect("irx1"));
+        let mut tx_bundle = TxBundle::new();
+        tx_bundle.push(out_tx0.try_lock().expect("otx0"));
+        tx_bundle.push(out_tx1.try_lock().expect("otx1"));
+        let avail = [1usize, 1];
+        let vacant = [1usize, 1];
+        let idx = monitor
+            .wait_avail_vacant_index(&mut rx_bundle, &mut tx_bundle, &avail, &vacant)
+            .await;
+        assert!(idx == Some(0) || idx == Some(1));
+    }
+
+    #[async_std::test]
+    async fn test_wait_avail_vacant_index_avail_zero_skips_rx_threshold() {
+        let (_in_tx0, in_rx0) = create_rx::<i32>(vec![]);
+        let (out_tx0_lazy, _out_rx0) = create_test_channel::<i32>(2);
+        let out_tx0 = out_tx0_lazy.clone();
+        if let Some(mut g) = out_tx0.try_lock() {
+            for _ in 0..2 {
+                let _ = g.shared_try_send(1);
+            }
+        }
+        let (_in_tx1, in_rx1) = create_rx(vec![7_i32]);
+        let (out_tx1_lazy, _out_rx1) = create_test_channel::<i32>(4);
+        let in_rx0 = in_rx0.clone();
+        let in_rx1 = in_rx1.clone();
+        let out_tx0 = out_tx0.clone();
+        let out_tx1 = out_tx1_lazy.clone();
+        let monitor = test_steady_context().into_spotlight([&in_rx0, &in_rx1], [&out_tx0, &out_tx1]);
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(in_rx0.try_lock().expect("irx0"));
+        rx_bundle.push(in_rx1.try_lock().expect("irx1"));
+        let mut tx_bundle = TxBundle::new();
+        tx_bundle.push(out_tx0.try_lock().expect("otx0"));
+        tx_bundle.push(out_tx1.try_lock().expect("otx1"));
+        let avail = [0usize, 1];
+        let vacant = [1usize, 1];
+        let idx = monitor
+            .wait_avail_vacant_index(&mut rx_bundle, &mut tx_bundle, &avail, &vacant)
+            .await;
+        assert_eq!(idx, Some(1));
+    }
+
+    #[async_std::test]
+    async fn test_wait_for_index_macro_with_wait_avail_index() {
+        let (_t, rx) = create_rx(vec![3_i32]);
+        let context = test_steady_context();
+        let monitor = context.into_spotlight([&rx], []);
+        let mut ready: Option<usize> = None;
+        let counts = [1usize];
+        let mut rx_bundle = RxBundle::new();
+        rx_bundle.push(rx.try_lock().expect("rx"));
+        let ok = crate::wait_for_index!(monitor.wait_avail_index(&mut rx_bundle, &counts) => ready).await;
+        assert!(ok);
+        assert_eq!(ready, Some(0));
+    }
+
     // Test for wait_shutdown
     #[async_std::test]
     async fn test_wait_shutdown() {
@@ -1244,6 +1491,9 @@ pub(crate) mod monitor_tests {
             use_internal_behavior: true,
             shutdown_barrier: None,
 
+            index_wait_last_avail: AtomicUsize::new(usize::MAX),
+            index_wait_last_vacant: AtomicUsize::new(usize::MAX),
+            index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
         }
     }
 

@@ -24,6 +24,7 @@ pub async fn run<const TICKS_TX_GIRTH:usize>(context: SteadyActorShadow
 
 const BUFFER_SIZE:usize = 2000;
 
+#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor: C
                                                                       , ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 

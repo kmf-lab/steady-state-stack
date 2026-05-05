@@ -635,12 +635,14 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
 
     /// Waits for the first receiver in the bundle to have at least its required item count.
     ///
-    /// Each position in `avail_counts` maps positionally to the bundle positions. The method waits
-    /// until at least one channel satisfies `avail_units >= avail_counts[i]`, then returns its index.
+    /// Each position in `avail_counts` maps positionally to the bundle. The method waits until at
+    /// least one channel satisfies `avail_units >= avail_counts[i]`, then returns its index.
     /// Positions with `avail_counts[i] == 0` are skipped.
     ///
-    /// # Returns
-    /// The index of the first ready channel.
+    /// **Prefer [`SteadyActor::wait_avail_index`](crate::steady_actor::SteadyActor::wait_avail_index) inside actors:**
+    /// that API is graph-shutdown-aware, returns `Option<usize>`, and uses round-robin among lanes.
+    /// This bundle-trait method returns `usize` only, does not integrate the actor shutdown signal,
+    /// and does not apply monitor round-robin state.
     fn wait_avail_index(&self, avail_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 

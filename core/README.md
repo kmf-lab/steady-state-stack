@@ -133,3 +133,7 @@ Distributed systems power the cloud era:
 We've journeyed from a single heartbeat to a distributed powerhouse—proving steady_state makes concurrency *inviting*. Academically, it's a masterclass in safe, verifiable systems. Business-wise, it's a toolkit for reliability, speed, and savings.
 
 Dive in: Clone the repo, run the lessons, and feel the excitement. Questions? Join our community. Let's build the future—steadily. 🚀
+
+## Bundle index waits (quick reference)
+
+For multi-receiver / multi-transmitter actors, prefer **`SteadyActor::wait_avail_index`**, **`wait_vacant_index`**, and **`wait_avail_vacant_index`** (see [`lesson-on-bundles.md`](../lesson-on-bundles.md) in the repo root). Use **`steady_state::index_wait_counts_uniform_usize`** when every lane shares the same threshold. **`cargo-steady-state`** still emits deprecated **`wait_*_bundle`** for multi-lane dot drivers so generated crates compile against the current crates.io **`steady_state`**; switch templates to **`wait_*_index`** and **`index_wait_counts_uniform_usize`** once you depend on a release that includes them.

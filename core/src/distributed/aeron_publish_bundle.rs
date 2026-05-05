@@ -325,6 +325,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     /// Mock sender actor for testing message transmission to Aeron.
     ///
     /// Sends batches of test data to the stream, simulating a producer.
+    #[allow(deprecated)]
     pub async fn mock_sender_run<const GIRTH: usize>(
         context: SteadyActorShadow,
         tx: SteadyStreamTxBundle<StreamEgress, GIRTH>,
@@ -377,6 +378,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     /// Mock receiver actor for testing message consumption from Aeron.
     ///
     /// Consumes messages from the stream, simulating a consumer.
+    #[allow(deprecated)]
     pub async fn mock_receiver_run<const GIRTH: usize>(
         context: SteadyActorShadow,
         rx: SteadyStreamRxBundle<StreamIngress, GIRTH>,

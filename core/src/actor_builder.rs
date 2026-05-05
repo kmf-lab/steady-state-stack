@@ -1488,6 +1488,9 @@ fn build_actor_context<I: ?Sized>(
         aeron_init_for_tests: builder_source.aeron_init_for_tests,
         use_internal_behavior,
         shutdown_barrier: builder_source.shutdown_barrier.clone(),
+        index_wait_last_avail: AtomicUsize::new(usize::MAX),
+        index_wait_last_vacant: AtomicUsize::new(usize::MAX),
+        index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
     }
 }
 

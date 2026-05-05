@@ -27,6 +27,114 @@ use crate::simulate_edge::IntoSimRunner;
 use futures_util::lock::Mutex;
 use std::sync::atomic::AtomicBool;
 
+/// Next scan start for round-robin index waits. `last_stored` is the last returned lane index,
+/// or `usize::MAX` before any successful return.
+pub(crate) fn next_index_wait_start(last_stored: usize, len: usize) -> usize {
+    if len == 0 || last_stored >= len {
+        0
+    } else {
+        (last_stored + 1) % len
+    }
+}
+
+/// If `candidate` equals the last returned lane index, prefer another lane `j != candidate` that
+/// is already ready (`is_ready(j)`), scanned in RR order from `start`.
+pub(crate) fn index_wait_avoid_repeat_lane<F>(len: usize, start: usize, last_stored: usize, candidate: usize, mut is_ready: F) -> usize
+where
+    F: FnMut(usize) -> bool,
+{
+    if len <= 1 || last_stored >= len || last_stored == usize::MAX {
+        return candidate;
+    }
+    if candidate != last_stored {
+        return candidate;
+    }
+    let len_start = len - start;
+    for step in 0..len {
+        let j = if step < len_start {
+            start + step
+        } else {
+            step - len_start
+        };
+        if j != candidate && is_ready(j) {
+            return j;
+        }
+    }
+    candidate
+}
+
+/// Awaits until `shared_avail_items_count() >= required` or the channel closes without enough data.
+pub(crate) async fn wait_rx_until_avail_items_ready<R: RxCore>(rx: &mut R, required: usize) -> bool {
+    if required == 0 {
+        return true;
+    }
+    while rx.shared_avail_items_count() < required {
+        if !rx.shared_wait_closed_or_avail_units(required).await {
+            return rx.shared_avail_items_count() >= required;
+        }
+    }
+    true
+}
+
+/// Awaits until `shared_vacant_units_for(required)` holds or the tx wait reports failure.
+pub(crate) async fn wait_tx_until_vacant_satisfied<T: TxCore>(tx: &mut T, required: T::MsgSize) -> bool {
+    while !tx.shared_vacant_units_for(required) {
+        if !tx.shared_wait_shutdown_or_vacant_units(required).await {
+            return tx.shared_vacant_units_for(required);
+        }
+    }
+    true
+}
+
+/// Waits until both RX availability and TX vacancy hold for this lane (same index on both sides).
+pub(crate) async fn wait_paired_lane_ready<R: RxCore, T: TxCore>(
+    rx: &mut R,
+    tx: &mut T,
+    required_avail: usize,
+    required_vacant: T::MsgSize,
+) -> bool {
+    loop {
+        let rx_ok = required_avail == 0 || rx.shared_avail_items_count() >= required_avail;
+        let tx_ok = tx.shared_vacant_units_for(required_vacant);
+        if rx_ok && tx_ok {
+            return true;
+        }
+        let need_rx = required_avail > 0 && rx.shared_avail_items_count() < required_avail;
+        let need_tx = !tx.shared_vacant_units_for(required_vacant);
+        match (need_rx, need_tx) {
+            (true, true) => {
+                select! {
+                    _ = rx.shared_wait_closed_or_avail_units(required_avail).fuse() => {}
+                    _ = tx.shared_wait_shutdown_or_vacant_units(required_vacant).fuse() => {}
+                }
+            }
+            (true, false) => {
+                if !rx.shared_wait_closed_or_avail_units(required_avail).await {
+                    return rx.shared_avail_items_count() >= required_avail
+                        && tx.shared_vacant_units_for(required_vacant);
+                }
+            }
+            (false, true) => {
+                if !tx.shared_wait_shutdown_or_vacant_units(required_vacant).await {
+                    return (required_avail == 0 || rx.shared_avail_items_count() >= required_avail)
+                        && tx.shared_vacant_units_for(required_vacant);
+                }
+            }
+            (false, false) => {
+                return (required_avail == 0 || rx.shared_avail_items_count() >= required_avail)
+                    && tx.shared_vacant_units_for(required_vacant);
+            }
+        }
+    }
+}
+
+/// Builds a `Vec<usize>` of length `len` filled with `per_lane` for [`SteadyActor::wait_avail_index`](crate::steady_actor::SteadyActor::wait_avail_index)
+/// and [`SteadyActor::wait_vacant_index`](crate::steady_actor::SteadyActor::wait_vacant_index) when `MsgSize` is `usize`.
+/// If `len == 0`, returns an empty vector (matches an empty bundle).
+pub fn index_wait_counts_uniform_usize(per_lane: usize, len: usize) -> Vec<usize> {
+    vec![per_lane; len]
+}
+
 impl SteadyActorShadow {
     /// Converts this actor shadow into a local monitor (spotlight) instance.
     ///
@@ -127,7 +235,9 @@ impl SteadyActorShadow {
             aeron_init_for_tests: self.aeron_init_for_tests,
             use_internal_behavior: self.use_internal_behavior,
             shutdown_barrier: self.shutdown_barrier.clone(),
-
+            index_wait_last_avail: self.index_wait_last_avail,
+            index_wait_last_vacant: self.index_wait_last_vacant,
+            index_wait_last_avail_vacant: self.index_wait_last_avail_vacant,
         }
     }
 }
@@ -317,13 +427,29 @@ pub trait SteadyActor {
         ready_channels: usize,
     ) -> bool;
 
-    /// Waits for the first receiver in a bundle to have at least its required item count.
+    /// Waits for a receiver in a bundle to have at least its required item count.
     ///
     /// Each position in `counts` maps positionally to the bundle. The method waits until at
     /// least one channel satisfies `avail_units >= counts[i]`, then returns its index.
     /// Positions with `counts[i] == 0` are skipped immediately.
     ///
-    /// Returns `Some(index)` of the first ready channel, or `None` if interrupted by shutdown.
+    /// When several channels are ready, the monitor picks the next candidate in **round-robin**
+    /// order (internal cursor per call site: last returned index, next scan starts at
+    /// `(last + 1) % len`) to reduce low-index starvation. If the winning index would equal the
+    /// previous return, a **synchronous** scan prefers another ready lane when one exists.
+    /// Fairness is best-effort when multiple waits complete concurrently via `FuturesUnordered`.
+    ///
+    /// **Telemetry:** Unlike [`wait_avail`](SteadyActor::wait_avail), this method does **not**
+    /// use the telemetry-dirty yield/short-timeout path; it blocks until data is ready or shutdown.
+    ///
+    /// **Capacity:** Unlike [`wait_avail`](SteadyActor::wait_avail), per-lane counts are **not**
+    /// passed through [`RxCore::shared_validate_capacity_items`](crate::core_rx::RxCore::shared_validate_capacity_items);
+    /// clamp or validate `counts` at the call site if needed.
+    ///
+    /// **All-zero counts:** If every `counts[i] == 0`, no lane is waited on and this returns
+    /// `None` (same as an empty bundle), not to be confused with shutdown alone.
+    ///
+    /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -356,13 +482,26 @@ pub trait SteadyActor {
         ready_channels: usize,
     ) -> bool;
 
-    /// Waits for the first transmitter in a bundle to have at least its required vacant count.
+    /// Waits for a transmitter in a bundle to have at least its required vacant count.
     ///
     /// Each position in `counts` maps positionally to the bundle. The method waits until at
-    /// least one channel satisfies `vacant_units >= counts[i]`, then returns its index.
-    /// Positions with `counts[i] == 0` are skipped immediately.
+    /// least one channel satisfies `vacant_units` for `counts[i]` (via
+    /// [`TxCore::shared_vacant_units_for`](crate::core_tx::TxCore::shared_vacant_units_for)), then
+    /// returns its index. For typical `MsgSize = usize`, a threshold of **zero** is trivially
+    /// satisfiable and that lane still participates in round-robin like any other lane (this
+    /// differs from [`SteadyTxBundleTrait::wait_vacant_index`](crate::steady_tx::SteadyTxBundleTrait::wait_vacant_index),
+    /// which returns the first zero-count index without waiting).
     ///
-    /// Returns `Some(index)` of the first ready channel, or `None` if interrupted by shutdown.
+    /// When several channels are ready, the monitor uses **round-robin** among lanes (separate
+    /// internal cursor: next scan starts at `(last + 1) % len`) to reduce low-index starvation.
+    /// If the winning index would equal the previous return, a **synchronous** scan prefers
+    /// another ready lane when one exists. Fairness is best-effort when multiple waits complete
+    /// concurrently via `FuturesUnordered`.
+    ///
+    /// **Telemetry:** Unlike [`wait_vacant`](SteadyActor::wait_vacant), this method does **not**
+    /// use the telemetry-dirty yield path; it blocks until vacancy or shutdown.
+    ///
+    /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -375,11 +514,17 @@ pub trait SteadyActor {
     /// `avail_units >= avail_counts[i]`, and TX is ready when `shared_vacant_units_for(vacant_counts[i])`
     /// is true (including when `vacant_counts[i]` is zero).
     ///
-    /// Returns the **smallest** index that is ready on both sides. After each async wake the scan
-    /// runs from `0` again so behavior stays deterministic.
+    /// Returns the next ready lane in **round-robin** order (internal cursor: after returning
+    /// `i`, the next scan starts at `(i + 1) % len`) to reduce low-index starvation. Each lane
+    /// waits on a **single** paired future (RX avail and TX vacancy for that index) until both
+    /// sides satisfy their thresholds. If the winning index would equal the previous return, a
+    /// **synchronous** scan prefers another fully ready lane when one exists.
     ///
     /// Returns `None` on shutdown. Empty bundles return `None`. If no lane can ever satisfy both
     /// sides, this may wait indefinitely (application-level deadlock).
+    ///
+    /// **Telemetry:** Like other index waits, this does not use the [`wait_avail`](SteadyActor::wait_avail) /
+    /// [`wait_vacant`](SteadyActor::wait_vacant) telemetry-dirty yield path.
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -631,5 +776,41 @@ mod steady_actor_tests {
         tx.send(42).expect("send");
         let res = core_exec::block_on(fut.fetch(Duration::from_millis(100)));
         assert_eq!(res, Some(42));
+    }
+
+    mod index_wait_pure {
+        use super::super::{
+            index_wait_avoid_repeat_lane, index_wait_counts_uniform_usize, next_index_wait_start,
+        };
+
+        #[test]
+        fn next_index_wait_start_empty_len() {
+            assert_eq!(next_index_wait_start(0, 0), 0);
+            assert_eq!(next_index_wait_start(5, 0), 0);
+        }
+
+        #[test]
+        fn next_index_wait_start_wrap_and_invalid_last() {
+            assert_eq!(next_index_wait_start(usize::MAX, 3), 0);
+            assert_eq!(next_index_wait_start(3, 3), 0);
+            assert_eq!(next_index_wait_start(0, 4), 1);
+            assert_eq!(next_index_wait_start(3, 4), 0);
+        }
+
+        #[test]
+        fn index_wait_avoid_repeat_lane_cases() {
+            assert_eq!(index_wait_avoid_repeat_lane(1, 0, 0, 0, |_| false), 0);
+            assert_eq!(index_wait_avoid_repeat_lane(3, 0, 100, 1, |_| false), 1);
+            assert_eq!(index_wait_avoid_repeat_lane(3, 0, usize::MAX, 1, |_| false), 1);
+            assert_eq!(index_wait_avoid_repeat_lane(4, 0, 1, 1, |j| j == 2), 2);
+            assert_eq!(index_wait_avoid_repeat_lane(4, 0, 1, 1, |_| false), 1);
+        }
+
+        #[test]
+        fn index_wait_counts_uniform_usize_cases() {
+            assert!(index_wait_counts_uniform_usize(7, 0).is_empty());
+            let v = index_wait_counts_uniform_usize(3, 5);
+            assert_eq!(v, vec![3, 3, 3, 3, 3]);
+        }
     }
 }

@@ -2,7 +2,7 @@
 //! of the `SteadyCommander` trait, enabling telemetry collection, profiling, and controlled
 //! execution monitoring for actors and channels within the Steady framework.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use log::*;
 use std::time::{Duration, Instant};
 use std::sync::{Arc, OnceLock};
@@ -26,7 +26,10 @@ use ringbuf::producer::Producer;
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
-use crate::steady_actor::{BlockingCallFuture, SendOutcome};
+use crate::steady_actor::{
+    index_wait_avoid_repeat_lane, next_index_wait_start, wait_paired_lane_ready, wait_rx_until_avail_items_ready,
+    wait_tx_until_vacant_satisfied, BlockingCallFuture, SendOutcome,
+};
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
@@ -95,6 +98,12 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub use_internal_behavior: bool,
     pub(crate) regeneration: u32,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
+    /// Last lane index returned by [`SteadyActor::wait_avail_index`] (round-robin).
+    pub(crate) index_wait_last_avail: AtomicUsize,
+    /// Last lane index returned by [`SteadyActor::wait_vacant_index`] (round-robin).
+    pub(crate) index_wait_last_vacant: AtomicUsize,
+    /// Last lane index returned by [`SteadyActor::wait_avail_vacant_index`] (round-robin).
+    pub(crate) index_wait_last_avail_vacant: AtomicUsize,
 }
 
 impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
@@ -950,28 +959,53 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ) -> Option<usize> {
         debug_assert_eq!(this.len(), counts.len(), "wait_avail_index: bundle and counts length mismatch");
 
-        // Check if any channel already satisfies its count
-        for (i, rx) in this.iter_mut().enumerate() {
+        let len = this.len();
+        if len == 0 {
+            return None;
+        }
+        let last_stored = self.index_wait_last_avail.load(Ordering::Relaxed);
+        let start = next_index_wait_start(last_stored, len);
+        let len_start = len - start;
+
+        // Check if any channel already satisfies its count (round-robin start)
+        let (head, tail) = this.split_at_mut(start);
+        for (step, rx) in tail.iter_mut().chain(head.iter_mut()).enumerate() {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
             if counts[i] > 0 && rx.shared_avail_items_count() >= counts[i] {
-                return Some(i);
+                let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                    counts[j] > 0 && this[j].shared_avail_items_count() >= counts[j]
+                });
+                self.index_wait_last_avail.store(picked, Ordering::Relaxed);
+                return Some(picked);
             }
         }
 
-        // Build a FuturesUnordered for channels with count > 0
+        // Build a FuturesUnordered for channels with count > 0 (rotated order)
         let mut futures = FuturesUnordered::new();
-        for (i, rx) in this.iter_mut().enumerate() {
+        let (head, tail) = this.split_at_mut(start);
+        for (step, rx) in tail.iter_mut().chain(head.iter_mut()).enumerate() {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
             if counts[i] == 0 {
                 continue;
             }
-            let channel_idx = i;
             let required = counts[i];
             futures.push(async move {
-                rx.shared_wait_closed_or_avail_units(required).await;
-                channel_idx
+                if wait_rx_until_avail_items_ready(rx, required).await {
+                    Some(i)
+                } else {
+                    None
+                }
             });
         }
 
-        // Wait for the first one to complete
         let _guard = self.start_profile(CALL_OTHER);
         if futures.is_empty() {
             return None;
@@ -981,7 +1015,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 _ = self.oneshot_shutdown.clone().fuse() => return None,
                 next = futures.next() => {
                     match next {
-                        Some(idx) => return Some(idx),
+                        Some(Some(i)) => {
+                            drop(futures);
+                            let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                                counts[j] > 0 && this[j].shared_avail_items_count() >= counts[j]
+                            });
+                            self.index_wait_last_avail.store(picked, Ordering::Relaxed);
+                            return Some(picked);
+                        }
+                        Some(None) => {}
                         None => return None,
                     }
                 }
@@ -996,27 +1038,67 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ) -> Option<usize> {
         debug_assert_eq!(this.len(), counts.len(), "wait_vacant_index: bundle and counts length mismatch");
 
+        let len = this.len();
+        if len == 0 {
+            return None;
+        }
+        let last_stored = self.index_wait_last_vacant.load(Ordering::Relaxed);
+        let start = next_index_wait_start(last_stored, len);
+
         let _guard = self.start_profile(CALL_OTHER);
 
-        // Build a FuturesUnordered for all channels.
-        // Zero-count channels resolve immediately since they require no waiting.
+        let len_start = len - start;
+
+        // Fast path: already enough vacancy (round-robin start)
+        let (head, tail) = this.split_at_mut(start);
+        for (step, tx) in tail.iter_mut().chain(head.iter_mut()).enumerate() {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
+            if tx.shared_vacant_units_for(counts[i]) {
+                let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                    this[j].shared_vacant_units_for(counts[j])
+                });
+                self.index_wait_last_vacant.store(picked, Ordering::Relaxed);
+                return Some(picked);
+            }
+        }
+
+        // Build a FuturesUnordered for all channels (rotated order).
         let mut futures = FuturesUnordered::new();
-        for (i, tx) in this.iter_mut().enumerate() {
-            let channel_idx = i;
+        let (head, tail) = this.split_at_mut(start);
+        for (step, tx) in tail.iter_mut().chain(head.iter_mut()).enumerate() {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
             let required = counts[i];
             futures.push(async move {
-                tx.shared_wait_shutdown_or_vacant_units(required).await;
-                channel_idx
+                if wait_tx_until_vacant_satisfied(tx, required).await {
+                    Some(i)
+                } else {
+                    None
+                }
             });
         }
 
-        // Wait for the first one to complete
         loop {
             select! {
                 _ = self.oneshot_shutdown.clone().fuse() => return None,
                 next = futures.next() => {
                     match next {
-                        Some(idx) => return Some(idx),
+                        Some(Some(i)) => {
+                            drop(futures);
+                            let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                                this[j].shared_vacant_units_for(counts[j])
+                            });
+                            self.index_wait_last_vacant.store(picked, Ordering::Relaxed);
+                            return Some(picked);
+                        }
+                        Some(None) => {}
                         None => return None,
                     }
                 }
@@ -1042,54 +1124,90 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
         let _guard = self.start_profile(CALL_OTHER);
 
-        loop {
-            for (i, (rx_i, tx_i)) in rx.iter_mut().zip(tx.iter_mut()).enumerate() {
-                let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
-                let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
-                if rx_ok && tx_ok {
-                    return Some(i);
-                }
-            }
+        let last_stored = self.index_wait_last_avail_vacant.load(Ordering::Relaxed);
+        let start = next_index_wait_start(last_stored, len);
+        let len_start = len - start;
 
-            let mut futures = FuturesUnordered::new();
-            for (i, (rx_i, tx_i)) in rx.iter_mut().zip(tx.iter_mut()).enumerate() {
-                let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
-                let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
-                if rx_ok && tx_ok {
-                    continue;
-                }
-
-                let required_avail = avail_counts[i];
-                let required_vacant = vacant_counts[i];
-                futures.push(async move {
-                    let need_rx = required_avail > 0 && rx_i.shared_avail_items_count() < required_avail;
-                    let need_tx = !tx_i.shared_vacant_units_for(required_vacant);
-                    match (need_rx, need_tx) {
-                        (true, true) => {
-                            select! {
-                                _ = rx_i.shared_wait_closed_or_avail_units(required_avail).fuse() => {}
-                                _ = tx_i.shared_wait_shutdown_or_vacant_units(required_vacant).fuse() => {}
-                            }
-                        }
-                        (true, false) => {
-                            rx_i.shared_wait_closed_or_avail_units(required_avail).await;
-                        }
-                        (false, true) => {
-                            tx_i.shared_wait_shutdown_or_vacant_units(required_vacant).await;
-                        }
-                        (false, false) => {}
-                    }
+        let (rx_head, rx_tail) = rx.split_at_mut(start);
+        let (tx_head, tx_tail) = tx.split_at_mut(start);
+        for (step, (rx_i, tx_i)) in rx_tail
+            .iter_mut()
+            .chain(rx_head.iter_mut())
+            .zip(tx_tail.iter_mut().chain(tx_head.iter_mut()))
+            .enumerate()
+        {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
+            let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
+            let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
+            if rx_ok && tx_ok {
+                let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                    let rx_ok_j = avail_counts[j] == 0 || rx[j].shared_avail_items_count() >= avail_counts[j];
+                    let tx_ok_j = tx[j].shared_vacant_units_for(vacant_counts[j]);
+                    rx_ok_j && tx_ok_j
                 });
+                self.index_wait_last_avail_vacant.store(picked, Ordering::Relaxed);
+                return Some(picked);
             }
+        }
 
-            if futures.is_empty() {
-                yield_now::yield_now().await;
+        let mut futures = FuturesUnordered::new();
+        let (rx_head, rx_tail) = rx.split_at_mut(start);
+        let (tx_head, tx_tail) = tx.split_at_mut(start);
+        for (step, (rx_i, tx_i)) in rx_tail
+            .iter_mut()
+            .chain(rx_head.iter_mut())
+            .zip(tx_tail.iter_mut().chain(tx_head.iter_mut()))
+            .enumerate()
+        {
+            let i = if step < len_start {
+                start + step
+            } else {
+                step - len_start
+            };
+            let rx_ok = avail_counts[i] == 0 || rx_i.shared_avail_items_count() >= avail_counts[i];
+            let tx_ok = tx_i.shared_vacant_units_for(vacant_counts[i]);
+            if rx_ok && tx_ok {
                 continue;
             }
 
+            let required_avail = avail_counts[i];
+            let required_vacant = vacant_counts[i];
+            futures.push(async move {
+                if wait_paired_lane_ready(rx_i, tx_i, required_avail, required_vacant).await {
+                    Some(i)
+                } else {
+                    None
+                }
+            });
+        }
+
+        if futures.is_empty() {
+            return None;
+        }
+
+        loop {
             select! {
                 _ = self.oneshot_shutdown.clone().fuse() => return None,
-                _ = futures.next() => {},
+                next = futures.next() => {
+                    match next {
+                        Some(Some(i)) => {
+                            drop(futures);
+                            let picked = index_wait_avoid_repeat_lane(len, start, last_stored, i, |j| {
+                                let rx_ok_j = avail_counts[j] == 0 || rx[j].shared_avail_items_count() >= avail_counts[j];
+                                let tx_ok_j = tx[j].shared_vacant_units_for(vacant_counts[j]);
+                                rx_ok_j && tx_ok_j
+                            });
+                            self.index_wait_last_avail_vacant.store(picked, Ordering::Relaxed);
+                            return Some(picked);
+                        }
+                        Some(None) => {}
+                        None => return None,
+                    }
+                }
             }
         }
     }
