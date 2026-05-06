@@ -497,14 +497,22 @@ mod steady_lazy_tests {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
 
+        let tx = tx_lazy.clone();
+        {
+            let ste_tx = core_exec::block_on(tx.lock());
+            assert_eq!(ste_tx.shared_capacity(), 2);
+            assert_eq!(ste_tx.shared_vacant_units(), 2);
+        }
+
         // Clones the transmitter lazily and sends messages.
         tx_lazy.testing_send_all(vec![1, 2], false);
 
-        // Locks and inspects the transmitter's capacity.
+        // A full ring has no vacant send slots until the reader consumes.
         let tx = tx_lazy.clone();
-        let ste_tx = core_exec::block_on(tx.lock());
-        assert_eq!(ste_tx.shared_capacity(), 2);
-        drop(ste_tx);
+        {
+            let ste_tx = core_exec::block_on(tx.lock());
+            assert_eq!(ste_tx.shared_vacant_units(), 0);
+        }
 
         // Locks and peeks at the receiver's next message.
         let rx = rx_lazy.clone();

@@ -908,4 +908,13 @@ mod steady_rx_tests {
         let collected: Vec<_> = ste_rx.try_peek_iter().cloned().collect();
         assert_eq!(collected, vec![5, 6, 7]);
     }
+
+    #[test]
+    fn test_shared_try_peek_empty_channel() {
+        let builder = ChannelBuilder::default().with_capacity(4);
+        let (_tx, rx_lazy) = builder.build_channel::<i64>();
+        let rx = rx_lazy.clone();
+        let ste_rx = core_exec::block_on(rx.lock());
+        assert!(ste_rx.shared_try_peek().is_none());
+    }
 }

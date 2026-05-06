@@ -331,6 +331,26 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    fn test_stream_rx_shared_capacity_for_bounds() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph
+                .channel_builder()
+                .with_capacity(10)
+                .build_stream::<StreamIngress>(100);
+
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let cap = rx_guard.shared_capacity();
+            assert!(rx_guard.shared_capacity_for(cap));
+            assert!(!rx_guard.shared_capacity_for((cap.0.saturating_add(1), cap.1)));
+            assert!(!rx_guard.shared_avail_units_for((1, 1)));
+
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
     fn test_stream_rx_peek_async_timeout() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());

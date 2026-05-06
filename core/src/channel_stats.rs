@@ -1015,6 +1015,21 @@ mod channel_stats_tests {
     }
 
     #[test]
+    fn test_init_builds_labels_without_suffix_on_to_actor() {
+        let mut computer = ChannelStatsComputer::default();
+        let meta = mock_meta();
+        computer.init(
+            &meta,
+            ActorName::new("producer", Some(2)),
+            ActorName::new("consumer", None),
+            1000,
+        );
+        assert!(computer.prometheus_labels.contains("from=\"producer2\""));
+        assert!(computer.prometheus_labels.contains("to=\"consumer\""));
+        assert!(!computer.prometheus_labels.contains("consumer-"));
+    }
+
+    #[test]
     fn test_monotonic_total_and_resets() {
         let mut computer = ChannelStatsComputer::default();
         computer.init(&mock_meta(), ActorName::new("a", None), ActorName::new("b", None), 1000);

@@ -111,6 +111,13 @@ echo "------------------------    compute coverage please wait -----------------
 echo "---------------------------------------------------------------------------------"
 # Optional: Run coverage and statistics
 # These can be skipped or run separately to save time
+#
+# Coverage policy (release interpretation):
+# - Merged LCOV from the two runs below is the meaningful total; do not compare to a single
+#   default-feature `cargo llvm-cov` run in isolation.
+# - Aeron / aqueduct / media-driver paths stay thin unless CI runs with a real Aeron Media Driver;
+#   do not gate releases on those modules reaching high % without that setup (see CHANGELOG
+#   "Coverage (pre-release scope)").
 cargo llvm-cov --lcov --output-path cov_a.lcov --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
 cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F proactor_nuclei,telemetry_server_cdn
 lcov --add-tracefile cov_a.lcov --add-tracefile cov_b.lcov -o merged.lcov

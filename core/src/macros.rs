@@ -253,6 +253,19 @@ mod macros_tests {
     use crate::channel_builder::ChannelBuilder;
 
     #[test]
+    fn test_split_bundle_partitions_lazy_tx_bundle() {
+        let builder = ChannelBuilder::default().with_capacity(2);
+        let (t0, _) = builder.build_channel::<u8>();
+        let (t1, _) = builder.build_channel::<u8>();
+        let (t2, _) = builder.build_channel::<u8>();
+        let (t3, _) = builder.build_channel::<u8>();
+        let bundle = steady_tx_bundle([t0, t1, t2, t3]);
+        let (a, b) = split_bundle!(bundle, 2, 2);
+        assert_eq!(a.len(), 2);
+        assert_eq!(b.len(), 2);
+    }
+
+    #[test]
     fn test_steady_tx_bundle() {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx0, _rx0) = builder.build_channel::<u8>();

@@ -42,6 +42,9 @@ target/**/*
 
 tarpaulin-report.html
 
+/cov_*.lcov
+/merged.lcov
+
 /core/routing_service/aeron/aeron/
 /htmlReport/
 /coverage_html/

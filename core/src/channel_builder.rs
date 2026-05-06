@@ -1449,6 +1449,13 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    pub(crate) fn test_channel_builder_with_memory_usage_sets_flag() {
+        let builder = create_test_channel_builder();
+        let with_mem = builder.with_memory_usage();
+        assert!(with_mem.show_memory);
+    }
+
+    #[test]
     pub(crate) fn test_channel_builder_bundle_index() {
         let builder = create_test_channel_builder();
         let (_, rx_bundle) = builder.build_channel_bundle::<i32, 3>();

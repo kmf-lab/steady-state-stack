@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Coverage (pre-release scope)
+
+- **Goal:** Raise merged `llvm-cov` coverage incrementally (Tier 1/2 tests below); do **not** treat full **Aeron** / **aqueduct** stacks or huge **spotlight/shadow** surfaces as release blockers without dedicated CI (e.g. media driver jobs).
+- **Interpretation:** When comparing totals, use the **same** two feature-set runs as `pre-publish.sh` and **merge** LCOVs; a single default `cargo llvm-cov -p steady_state` total will not match release-style numbers. Install the **`lcov`** package locally to run `lcov` / `genhtml` merge steps (`merged.lcov`, `coverage_html/`).
+- **Out of scope for strict thresholds (unless policy changes):** `distributed/aeron_*`, deep **aqueduct** integration, **`test_panic_capture`** (panic harness), and **`simulate_edge`** — low or noisy coverage there is expected without extra infrastructure or exclusions.
+
 ### `SteadyActor` index waits
 
 - **`wait_avail_index`**, **`wait_vacant_index`**, and **`wait_avail_vacant_index`** now wait only until a lane **truly** satisfies thresholds (RX closed-or-avail and TX shutdown-or-vacant semantics preserved); spurious completions no longer return a misleading index.
@@ -15,6 +21,10 @@ All notable changes to this project are documented in this file.
 ### Testing
 
 - Unit and integration tests for index-wait helpers, spotlight/shadow paths, bundle traits, and `wait_for_index!`; **`cargo-steady-state`** tests for multi-lane driver string emission (`wait_avail_bundle` / `wait_vacant_bundle`).
+- **`cargo-steady-state`:** `build_driver_block` coverage for **`AtMostEvery`**, **`Other`**, **`AtLeastEvery` + `EventDriven`**, bundle **percent** parsing on RX/TX, and **`extract_percent`** decimal edge cases.
+- **`graph_liveliness`:** clean shutdown path where the actor accepts stop (`is_running(|| true)`).
+- **`macros`:** `split_bundle!` on a four-lane lazy TX bundle.
+- **`channel_builder` / `channel_stats` / `steady_rx` / `steady_tx` / `core_rx_stream`:** small focused tests (`with_memory_usage`, Prometheus label suffix behavior, empty RX peek, TX vacant before/after send, stream capacity / avail predicates).
 
 ### Documentation
 

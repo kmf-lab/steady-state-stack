@@ -1362,6 +1362,31 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    fn test_clean_shutdown_actor_accepts_stop() {
+        let mut graph = GraphBuilder::for_testing().build(());
+
+        graph
+            .actor_builder()
+            .with_name("CleanActor")
+            .build(
+                |mut actor| {
+                    Box::pin(async move {
+                        while actor.is_running(|| true) {
+                            actor.wait(Duration::from_millis(2)).await;
+                        }
+                        Ok(())
+                    })
+                },
+                ScheduleAs::SoloAct,
+            );
+
+        graph.start();
+        graph.request_shutdown();
+        let result = graph.block_until_stopped(Duration::from_secs(2));
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn test_graph_liveliness_state_equality() {
         let building = GraphLivelinessState::Building;
         let running = GraphLivelinessState::Running;
