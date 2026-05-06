@@ -1,0 +1,23 @@
+--- core/src/telemetry/metrics_collector.rs
++++ replace run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+@@ -35,19 +35,17 @@
+ }
+ 
+ /// Entry point to run the MetricsCollector actor.
+ pub async fn run(
+     context: SteadyContext, 
+     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>, 
+     targets: Arc<[SteadyTx<DiagramData>; 1]>
+ ) -> Result<(), Box<dyn std::error::Error>> {
+-    let frame_rate_ms = context.frame_rate_ms;
+-    let collector = MetricsCollector::new(all_telemetry_rx, targets, frame_rate_ms);
+-    collector.run(context).await
++    Ok(()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// The `MetricsCollector` actor gathers telemetry data from all actors and channels.
+ pub struct MetricsCollector {
+     /// Shared telemetry receivers for all actors in the graph.
+     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
+     /// Channels to send diagram data to the metrics server.
+     targets: Arc<[SteadyTx<DiagramData>; 1]>,

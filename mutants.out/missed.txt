@@ -1,0 +1,24 @@
+core/src/lib.rs:463:5: replace init_logging -> Result<(), Box<dyn std::error::Error>> with Ok(())
+core/src/lib.rs:525:48: replace - with /
+core/src/lib.rs:595:9: replace StdDev::custom -> Option<Self> with None
+core/src/lib.rs:600:9: replace StdDev::value -> f32 with 0.0
+core/src/lib.rs:600:9: replace StdDev::value -> f32 with 1.0
+core/src/lib.rs:600:9: replace StdDev::value -> f32 with -1.0
+core/src/lib.rs:679:35: replace * with + in SteadyRunner::test_build
+core/src/lib.rs:679:35: replace * with / in SteadyRunner::test_build
+core/src/lib.rs:679:28: replace * with + in SteadyRunner::test_build
+core/src/lib.rs:679:28: replace * with / in SteadyRunner::test_build
+core/src/lib.rs:683:53: replace * with + in SteadyRunner::test_build
+core/src/lib.rs:683:53: replace * with / in SteadyRunner::test_build
+core/src/lib.rs:683:46: replace * with + in SteadyRunner::test_build
+core/src/lib.rs:683:46: replace * with / in SteadyRunner::test_build
+core/src/lib.rs:694:35: replace * with + in SteadyRunner::release_build
+core/src/lib.rs:694:35: replace * with / in SteadyRunner::release_build
+core/src/lib.rs:694:28: replace * with + in SteadyRunner::release_build
+core/src/lib.rs:698:53: replace * with / in SteadyRunner::release_build
+core/src/lib.rs:698:46: replace * with + in SteadyRunner::release_build
+core/src/lib.rs:698:46: replace * with / in SteadyRunner::release_build
+core/src/lib.rs:775:9: replace SteadyRunner::run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+core/src/telemetry/metrics_collector.rs:43:5: replace run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+core/src/telemetry/metrics_collector.rs:99:9: replace MetricsCollector::run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+core/src/telemetry/metrics_collector.rs:103:9: replace MetricsCollector::internal_behavior -> Result<(), Box<dyn std::error::Error>> with Ok(())

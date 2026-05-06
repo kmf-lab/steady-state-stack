@@ -1,0 +1,21 @@
+--- core/src/lib.rs
++++ replace StdDev::three -> Self with Default::default()
+@@ -577,17 +577,17 @@
+ 
+     /// Creates a `StdDev` of 2.5.
+     pub fn two_and_a_half() -> Self {
+         Self(2.5)
+     }
+ 
+     /// Creates a `StdDev` of 3.0.
+     pub fn three() -> Self {
+-        Self(3.0)
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Creates a `StdDev` of 4.0.
+     pub fn four() -> Self {
+         Self(4.0)
+     }
+ 
+     /// Creates a custom `StdDev` if within (0.0, 10.0).

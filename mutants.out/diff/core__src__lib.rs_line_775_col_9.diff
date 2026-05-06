@@ -1,0 +1,84 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+@@ -767,80 +767,17 @@
+         args: A,
+         f: F,
+     ) -> Result<(), Box<dyn std::error::Error>>
+     where
+         A: Any + Send + Sync + 'static,
+         F: FnOnce(Graph) -> Result<(), Box<dyn std::error::Error>> + std::marker::Send + 'static,
+     {
+ 
+-        let builder = std::thread::Builder::new()
+-                .name(self.name)
+-                .stack_size(self.stack_size);
+-
+-        // Spawn the thread and capture its join handle
+-        let handle = builder.spawn(move || {
+-            // Initialize logging if specified; ignore errors to avoid masking closure failures
+-            if let Some(level) = self.loglevel {
+-                let _ = init_logging(level, self.log_file_config);
+-            }
+-
+-            let mut graph = if self.for_test {
+-                               GraphBuilder::for_testing()
+-                             } else {
+-                               GraphBuilder::for_production()
+-                            };
+-
+-
+-            if let Some(size) = self.default_actor_stack_size {
+-                graph = graph.with_default_actor_stack_size(size);
+-            }
+-            if let Some(size) = self.barrier_size {
+-                graph = graph.with_shutdown_barrier(size);
+-            }
+-            if let Some(rate) = self.telemetry_rate_ms {
+-                graph = graph.with_telemtry_production_rate_ms(rate);
+-            }
+-            if let Some((ref c1, ref c2)) = self.telemetry_colors {
+-                graph = graph.with_telemetry_colors(c1, c2);
+-            }
+-            if let Some(size) = self.bundle_floor_size {
+-                graph = graph.with_bundle_floor_size(size);
+-            }
+-
+-            let graph = graph.build(args);
+-
+-            // Execute the user closure and return its result directly
+-            // (This propagates the Result from f, allowing errors to cross the thread boundary safely)
+-            match f(graph) {
+-                Ok(()) => Ok(()),
+-                Err(e) => {
+-                    let err_msg = e.to_string();
+-                    Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
+-                }
+-            }
+-        })
+-            .expect("Failed to spawn production orchestrator thread");
+-
+-        // Block and retrieve the thread's result: Inner is the closure's Result, outer is panic info
+-        // Unwrap the outer Result; if the thread panicked, resume unwinding to propagate it
+-        // If successful, return the inner Result (Ok(()) or Err(Box<dyn Error + Send + Sync + 'static>))
+-        match handle.join() {
+-            Ok(inner_result) => match inner_result {
+-                            Ok(()) => Ok(()),
+-                            Err(e) => {
+-                                let err_msg = e.to_string();
+-                                Err(Box::new(io::Error::new(io::ErrorKind::Other, err_msg)) as Box<dyn std::error::Error + Send + Sync + 'static>)
+-                            }
+-                        },
+-            Err(panic) => {
+-                // Thread panicked: Resume unwinding to propagate the panic to the caller
+-                std::panic::resume_unwind(panic);
+-            }
+-        }
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+ 
+ 
+ }
+ 
+ /// Macro for creating a LocalMonitor from channels.
+ ///
+ /// Takes a `SteadyContext` and lists of Rx and Tx channels, returning a `LocalMonitor` for telemetry and Prometheus metrics.

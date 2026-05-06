@@ -1,0 +1,21 @@
+--- core/src/lib.rs
++++ replace * with + in SteadyRunner::test_build
+@@ -671,17 +671,17 @@
+     for_test: bool,
+     bundle_floor_size: Option<usize>,
+ }
+ 
+ impl SteadyRunner {
+     /// Creates a new SteadyRunner with default settings.
+     pub fn test_build() -> Self {
+         Self {
+-            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
++            stack_size: 16 + /* ~ changed by cargo-mutants ~ */ 1024 * 1024, // 16 MiB default for main
+             name: "steady-orchestrator".to_string(),
+             loglevel: None,
+             log_file_config: None,
+             default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+             barrier_size: None,
+             telemetry_rate_ms: None,
+             telemetry_colors: None,
+             for_test: true,

@@ -1,0 +1,21 @@
+--- core/src/telemetry/metrics_collector.rs
++++ replace MetricsCollector::run -> Result<(), Box<dyn std::error::Error>> with Ok(())
+@@ -91,17 +91,17 @@
+             cursor: 0,
+         }
+     }
+ 
+     pub async fn run(self, context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
+         // CRITICAL: MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry
+         // feedback loops and prevent this internal actor from appearing in user-facing charts.
+         // Also we move this to heap in case we have a giant graph
+-        Box::pin(self.internal_behavior(context)).await
++        Ok(()) /* ~ changed by cargo-mutants ~ */
+     }
+     /// The main loop for the `MetricsCollector` actor.
+     pub async fn internal_behavior(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
+         let start_time = Instant::now();
+         let runtime_state = context.runtime_state.clone();
+ 
+         // We stay alive as long as the majority of other actors are still working.
+         // Once all actors except the telemetry system (Collector and Server) have agreed 

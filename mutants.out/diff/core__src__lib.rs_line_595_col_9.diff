@@ -1,0 +1,21 @@
+--- core/src/lib.rs
++++ replace StdDev::custom -> Option<Self> with None
+@@ -587,17 +587,17 @@
+ 
+     /// Creates a `StdDev` of 4.0.
+     pub fn four() -> Self {
+         Self(4.0)
+     }
+ 
+     /// Creates a custom `StdDev` if within (0.0, 10.0).
+     pub fn custom(value: f32) -> Option<Self> {
+-        Self::new(value)
++        None /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Retrieves the standard deviation value.
+     pub fn value(&self) -> f32 {
+         self.0
+     }
+ }
+ 

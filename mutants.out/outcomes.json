@@ -2,35 +2,2740 @@
   "outcomes": [
     {
       "scenario": "Baseline",
-      "summary": "Failure",
+      "summary": "Success",
       "log_path": "log/baseline.log",
       "diff_path": null,
       "phase_results": [
         {
           "phase": "Build",
-          "duration": 89.745406467,
+          "duration": 50.077448889,
           "process_status": "Success",
           "argv": [
             "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
             "test",
             "--no-run",
             "--verbose",
-            "--package=cargo-steady-state@0.2.12",
             "--package=steady_state@0.2.12",
             "--all-features"
           ]
         },
         {
           "phase": "Test",
-          "duration": 30.244481444,
+          "duration": 3.986615808,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:463:5: replace init_logging -> Result<(), Box<dyn std::error::Error>> with Ok(())",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "init_logging",
+            "return_type": "-> Result<(), Box<dyn std::error::Error>>",
+            "span": {
+              "start": {
+                "line": 452,
+                "column": 1
+              },
+              "end": {
+                "line": 464,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 463,
+              "column": 5
+            },
+            "end": {
+              "line": 463,
+              "column": 73
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_463_col_5.log",
+      "diff_path": "diff/core__src__lib.rs_line_463_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 17.846990859,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.546931479,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:506:9: replace LogLevel::to_level_filter -> log::LevelFilter with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "LogLevel::to_level_filter",
+            "return_type": "-> log::LevelFilter",
+            "span": {
+              "start": {
+                "line": 501,
+                "column": 5
+              },
+              "end": {
+                "line": 514,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 506,
+              "column": 9
+            },
+            "end": {
+              "line": 513,
+              "column": 10
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_506_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_506_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.876211539,
           "process_status": {
             "Failure": 101
           },
           "argv": [
             "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
             "test",
+            "--no-run",
             "--verbose",
-            "--package=cargo-steady-state@0.2.12",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:525:48: replace - with +",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": null,
+          "span": {
+            "start": {
+              "line": 525,
+              "column": 48
+            },
+            "end": {
+              "line": 525,
+              "column": 49
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_525_col_48.log",
+      "diff_path": "diff/core__src__lib.rs_line_525_col_48.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.9644362730000005,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:525:48: replace - with /",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": null,
+          "span": {
+            "start": {
+              "line": 525,
+              "column": 48
+            },
+            "end": {
+              "line": 525,
+              "column": 49
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_525_col_48_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_525_col_48_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 19.590454244,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.108469037,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:565:9: replace StdDev::one -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::one",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 563,
+                "column": 5
+              },
+              "end": {
+                "line": 566,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 565,
+              "column": 9
+            },
+            "end": {
+              "line": 565,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_565_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_565_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.14975029,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:570:9: replace StdDev::one_and_a_half -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::one_and_a_half",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 568,
+                "column": 5
+              },
+              "end": {
+                "line": 571,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 570,
+              "column": 9
+            },
+            "end": {
+              "line": 570,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_570_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_570_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 6.959489565,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:575:9: replace StdDev::two -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::two",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 573,
+                "column": 5
+              },
+              "end": {
+                "line": 576,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 575,
+              "column": 9
+            },
+            "end": {
+              "line": 575,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_575_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_575_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.227245158,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:580:9: replace StdDev::two_and_a_half -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::two_and_a_half",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 578,
+                "column": 5
+              },
+              "end": {
+                "line": 581,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 580,
+              "column": 9
+            },
+            "end": {
+              "line": 580,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_580_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_580_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.919251755,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:585:9: replace StdDev::three -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::three",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 583,
+                "column": 5
+              },
+              "end": {
+                "line": 586,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 585,
+              "column": 9
+            },
+            "end": {
+              "line": 585,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_585_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_585_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.21545592,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:590:9: replace StdDev::four -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::four",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 588,
+                "column": 5
+              },
+              "end": {
+                "line": 591,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 590,
+              "column": 9
+            },
+            "end": {
+              "line": 590,
+              "column": 18
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_590_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_590_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.528720797,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:595:9: replace StdDev::custom -> Option<Self> with None",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::custom",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 593,
+                "column": 5
+              },
+              "end": {
+                "line": 596,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 595,
+              "column": 9
+            },
+            "end": {
+              "line": 595,
+              "column": 25
+            }
+          },
+          "replacement": "None",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_595_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_595_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 22.301079036,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.4211890369999995,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:595:9: replace StdDev::custom -> Option<Self> with Some(Default::default())",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::custom",
+            "return_type": "-> Option<Self>",
+            "span": {
+              "start": {
+                "line": 593,
+                "column": 5
+              },
+              "end": {
+                "line": 596,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 595,
+              "column": 9
+            },
+            "end": {
+              "line": 595,
+              "column": 25
+            }
+          },
+          "replacement": "Some(Default::default())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_595_col_9_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_595_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.171819361,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:600:9: replace StdDev::value -> f32 with 0.0",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::value",
+            "return_type": "-> f32",
+            "span": {
+              "start": {
+                "line": 598,
+                "column": 5
+              },
+              "end": {
+                "line": 601,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 600,
+              "column": 9
+            },
+            "end": {
+              "line": 600,
+              "column": 15
+            }
+          },
+          "replacement": "0.0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_600_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_600_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 16.380787839,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.6652507960000005,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:600:9: replace StdDev::value -> f32 with 1.0",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::value",
+            "return_type": "-> f32",
+            "span": {
+              "start": {
+                "line": 598,
+                "column": 5
+              },
+              "end": {
+                "line": 601,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 600,
+              "column": 9
+            },
+            "end": {
+              "line": 600,
+              "column": 15
+            }
+          },
+          "replacement": "1.0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_600_col_9_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_600_col_9_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 22.934703554,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.860438063,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:600:9: replace StdDev::value -> f32 with -1.0",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "StdDev::value",
+            "return_type": "-> f32",
+            "span": {
+              "start": {
+                "line": 598,
+                "column": 5
+              },
+              "end": {
+                "line": 601,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 600,
+              "column": 9
+            },
+            "end": {
+              "line": 600,
+              "column": 15
+            }
+          },
+          "replacement": "-1.0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_600_col_9_002.log",
+      "diff_path": "diff/core__src__lib.rs_line_600_col_9_002.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.734911793,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.401121006,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:678:9: replace SteadyRunner::test_build -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 678,
+              "column": 9
+            },
+            "end": {
+              "line": 689,
+              "column": 10
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_678_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_678_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.66188306,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:679:35: replace * with + in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 679,
+              "column": 35
+            },
+            "end": {
+              "line": 679,
+              "column": 36
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_679_col_35.log",
+      "diff_path": "diff/core__src__lib.rs_line_679_col_35.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 21.78742739,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.405762433,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:679:35: replace * with / in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 679,
+              "column": 35
+            },
+            "end": {
+              "line": 679,
+              "column": 36
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_679_col_35_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_679_col_35_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 18.931786676,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.764802569,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:679:28: replace * with + in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 679,
+              "column": 28
+            },
+            "end": {
+              "line": 679,
+              "column": 29
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_679_col_28.log",
+      "diff_path": "diff/core__src__lib.rs_line_679_col_28.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 16.952210743,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.88692384,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:679:28: replace * with / in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 679,
+              "column": 28
+            },
+            "end": {
+              "line": 679,
+              "column": 29
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_679_col_28_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_679_col_28_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.874317641,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.030709147,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:683:53: replace * with + in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 683,
+              "column": 53
+            },
+            "end": {
+              "line": 683,
+              "column": 54
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_683_col_53.log",
+      "diff_path": "diff/core__src__lib.rs_line_683_col_53.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 16.610296652,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.521472598,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:683:53: replace * with / in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 683,
+              "column": 53
+            },
+            "end": {
+              "line": 683,
+              "column": 54
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_683_col_53_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_683_col_53_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 16.43255933,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.969865943,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:683:46: replace * with + in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 683,
+              "column": 46
+            },
+            "end": {
+              "line": 683,
+              "column": 47
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_683_col_46.log",
+      "diff_path": "diff/core__src__lib.rs_line_683_col_46.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 13.944726644,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.075762249,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:683:46: replace * with / in SteadyRunner::test_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::test_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 676,
+                "column": 5
+              },
+              "end": {
+                "line": 690,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 683,
+              "column": 46
+            },
+            "end": {
+              "line": 683,
+              "column": 47
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_683_col_46_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_683_col_46_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.737732851,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.808089284,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:693:9: replace SteadyRunner::release_build -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 693,
+              "column": 9
+            },
+            "end": {
+              "line": 704,
+              "column": 10
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_693_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_693_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.147629897,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:694:35: replace * with + in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 694,
+              "column": 35
+            },
+            "end": {
+              "line": 694,
+              "column": 36
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_694_col_35.log",
+      "diff_path": "diff/core__src__lib.rs_line_694_col_35.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 17.773759955,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.980867375,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:694:35: replace * with / in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 694,
+              "column": 35
+            },
+            "end": {
+              "line": 694,
+              "column": 36
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_694_col_35_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_694_col_35_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 13.998839147,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.528781614,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:694:28: replace * with + in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 694,
+              "column": 28
+            },
+            "end": {
+              "line": 694,
+              "column": 29
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_694_col_28.log",
+      "diff_path": "diff/core__src__lib.rs_line_694_col_28.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 16.094962559,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.040006037,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:694:28: replace * with / in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 694,
+              "column": 28
+            },
+            "end": {
+              "line": 694,
+              "column": 29
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "Timeout",
+      "log_path": "log/core__src__lib.rs_line_694_col_28_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_694_col_28_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 18.746795901,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.173601557,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:698:53: replace * with + in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 698,
+              "column": 53
+            },
+            "end": {
+              "line": 698,
+              "column": 54
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "Timeout",
+      "log_path": "log/core__src__lib.rs_line_698_col_53.log",
+      "diff_path": "diff/core__src__lib.rs_line_698_col_53.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 17.426512814,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 20.033049297,
+          "process_status": "Timeout",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:698:53: replace * with / in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 698,
+              "column": 53
+            },
+            "end": {
+              "line": 698,
+              "column": 54
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_698_col_53_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_698_col_53_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 14.687953553,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 6.2623149399999996,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:698:46: replace * with + in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 698,
+              "column": 46
+            },
+            "end": {
+              "line": 698,
+              "column": 47
+            }
+          },
+          "replacement": "+",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_698_col_46.log",
+      "diff_path": "diff/core__src__lib.rs_line_698_col_46.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 17.439174042,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.9860666179999997,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:698:46: replace * with / in SteadyRunner::release_build",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::release_build",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 691,
+                "column": 5
+              },
+              "end": {
+                "line": 705,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 698,
+              "column": 46
+            },
+            "end": {
+              "line": 698,
+              "column": 47
+            }
+          },
+          "replacement": "/",
+          "genre": "BinaryOperator"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_698_col_46_001.log",
+      "diff_path": "diff/core__src__lib.rs_line_698_col_46_001.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 15.488754291,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.407668998,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:710:9: replace SteadyRunner::with_stack_size -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_stack_size",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 708,
+                "column": 5
+              },
+              "end": {
+                "line": 712,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 710,
+              "column": 9
+            },
+            "end": {
+              "line": 711,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_710_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_710_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 4.565343851,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:716:9: replace SteadyRunner::with_logging -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_logging",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 714,
+                "column": 5
+              },
+              "end": {
+                "line": 718,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 716,
+              "column": 9
+            },
+            "end": {
+              "line": 717,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_716_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_716_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.7804252050000002,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:722:9: replace SteadyRunner::with_file_logging -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_file_logging",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 720,
+                "column": 5
+              },
+              "end": {
+                "line": 730,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 722,
+              "column": 9
+            },
+            "end": {
+              "line": 729,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_722_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_722_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.396942509,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:734:9: replace SteadyRunner::with_default_actor_stack_size -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_default_actor_stack_size",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 732,
+                "column": 5
+              },
+              "end": {
+                "line": 736,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 734,
+              "column": 9
+            },
+            "end": {
+              "line": 735,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_734_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_734_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 5.752015182,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:740:9: replace SteadyRunner::with_shutdown_barrier -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_shutdown_barrier",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 738,
+                "column": 5
+              },
+              "end": {
+                "line": 742,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 740,
+              "column": 9
+            },
+            "end": {
+              "line": 741,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_740_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_740_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.93656988,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:746:9: replace SteadyRunner::with_telemetry_rate_ms -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_telemetry_rate_ms",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 744,
+                "column": 5
+              },
+              "end": {
+                "line": 748,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 746,
+              "column": 9
+            },
+            "end": {
+              "line": 747,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_746_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_746_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 2.884082109,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:752:9: replace SteadyRunner::with_telemetry_colors -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_telemetry_colors",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 750,
+                "column": 5
+              },
+              "end": {
+                "line": 754,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 752,
+              "column": 9
+            },
+            "end": {
+              "line": 753,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_752_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_752_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 3.54051014,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:758:9: replace SteadyRunner::with_bundle_floor_size -> Self with Default::default()",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::with_bundle_floor_size",
+            "return_type": "-> Self",
+            "span": {
+              "start": {
+                "line": 756,
+                "column": 5
+              },
+              "end": {
+                "line": 760,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 758,
+              "column": 9
+            },
+            "end": {
+              "line": 759,
+              "column": 13
+            }
+          },
+          "replacement": "Default::default()",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "Unviable",
+      "log_path": "log/core__src__lib.rs_line_758_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_758_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 7.98516082,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/lib.rs:775:9: replace SteadyRunner::run -> Result<(), Box<dyn std::error::Error>> with Ok(())",
+          "package": "steady_state",
+          "file": "core/src/lib.rs",
+          "function": {
+            "function_name": "SteadyRunner::run",
+            "return_type": "-> Result<(), Box<dyn std::error::Error>>",
+            "span": {
+              "start": {
+                "line": 762,
+                "column": 5
+              },
+              "end": {
+                "line": 839,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 775,
+              "column": 9
+            },
+            "end": {
+              "line": 838,
+              "column": 10
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__lib.rs_line_775_col_9.log",
+      "diff_path": "diff/core__src__lib.rs_line_775_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 38.444290301,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.075089904,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/telemetry/metrics_collector.rs:43:5: replace run -> Result<(), Box<dyn std::error::Error>> with Ok(())",
+          "package": "steady_state",
+          "file": "core/src/telemetry/metrics_collector.rs",
+          "function": {
+            "function_name": "run",
+            "return_type": "-> Result<(), Box<dyn std::error::Error>>",
+            "span": {
+              "start": {
+                "line": 37,
+                "column": 1
+              },
+              "end": {
+                "line": 46,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 43,
+              "column": 5
+            },
+            "end": {
+              "line": 45,
+              "column": 33
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__telemetry__metrics_collector.rs_line_43_col_5.log",
+      "diff_path": "diff/core__src__telemetry__metrics_collector.rs_line_43_col_5.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 51.358193666,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 4.81809017,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/telemetry/metrics_collector.rs:99:9: replace MetricsCollector::run -> Result<(), Box<dyn std::error::Error>> with Ok(())",
+          "package": "steady_state",
+          "file": "core/src/telemetry/metrics_collector.rs",
+          "function": {
+            "function_name": "MetricsCollector::run",
+            "return_type": "-> Result<(), Box<dyn std::error::Error>>",
+            "span": {
+              "start": {
+                "line": 95,
+                "column": 5
+              },
+              "end": {
+                "line": 100,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 99,
+              "column": 9
+            },
+            "end": {
+              "line": 99,
+              "column": 56
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__telemetry__metrics_collector.rs_line_99_col_9.log",
+      "diff_path": "diff/core__src__telemetry__metrics_collector.rs_line_99_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 32.165146967,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 5.493376164,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "core/src/telemetry/metrics_collector.rs:103:9: replace MetricsCollector::internal_behavior -> Result<(), Box<dyn std::error::Error>> with Ok(())",
+          "package": "steady_state",
+          "file": "core/src/telemetry/metrics_collector.rs",
+          "function": {
+            "function_name": "MetricsCollector::internal_behavior",
+            "return_type": "-> Result<(), Box<dyn std::error::Error>>",
+            "span": {
+              "start": {
+                "line": 101,
+                "column": 5
+              },
+              "end": {
+                "line": 276,
+                "column": 6
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 103,
+              "column": 9
+            },
+            "end": {
+              "line": 275,
+              "column": 15
+            }
+          },
+          "replacement": "Ok(())",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant",
+      "log_path": "log/core__src__telemetry__metrics_collector.rs_line_103_col_9.log",
+      "diff_path": "diff/core__src__telemetry__metrics_collector.rs_line_103_col_9.diff",
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 34.744684463,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 3.5724073130000003,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
             "--package=steady_state@0.2.12",
             "--all-features"
           ]
@@ -38,13 +2743,13 @@
       ]
     }
   ],
-  "total_mutants": 0,
-  "missed": 0,
+  "total_mutants": 45,
+  "missed": 24,
   "caught": 0,
-  "timeout": 0,
-  "unviable": 0,
+  "timeout": 2,
+  "unviable": 19,
   "success": 0,
-  "start_time": "2026-05-06T17:36:58.637496241Z",
-  "end_time": "2026-05-06T17:39:04.825226147Z",
+  "start_time": "2026-05-06T19:55:29.266476401Z",
+  "end_time": null,
   "cargo_mutants_version": "27.0.0"
 }

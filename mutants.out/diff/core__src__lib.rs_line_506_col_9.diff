@@ -1,0 +1,28 @@
+--- core/src/lib.rs
++++ replace LogLevel::to_level_filter -> log::LevelFilter with Default::default()
+@@ -498,24 +498,17 @@
+ }
+ 
+ impl LogLevel {
+     /// Converts this `LogLevel` to the corresponding `log::LevelFilter`.
+     ///
+     /// # Returns
+     /// - `log::LevelFilter`: The matching filter level for logging.
+     pub fn to_level_filter(&self) -> log::LevelFilter {
+-        match self {
+-            LogLevel::Off => log::LevelFilter::Off,
+-            LogLevel::Error => log::LevelFilter::Error,
+-            LogLevel::Warn => log::LevelFilter::Warn,
+-            LogLevel::Info => log::LevelFilter::Info,
+-            LogLevel::Debug => log::LevelFilter::Debug,
+-            LogLevel::Trace => log::LevelFilter::Trace,
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ }
+ 
+ /// Constant representing an unknown monitor state.
+ ///
+ /// Used in monitoring logic to indicate an undefined or uninitialized state.
+ pub const MONITOR_UNKNOWN: usize = usize::MAX;
+ 

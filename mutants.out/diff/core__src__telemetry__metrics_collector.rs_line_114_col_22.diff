@@ -1,0 +1,21 @@
+--- core/src/telemetry/metrics_collector.rs
++++ replace += with -= in MetricsCollector::internal_behavior
+@@ -106,17 +106,17 @@
+         // We stay alive as long as the majority of other actors are still working.
+         // Once all actors except the telemetry system (Collector and Server) have agreed 
+         // to shut down, we cast our 'yes' vote by returning true from this closure, 
+         // which terminates the loop. This ensures we capture the final telemetry 
+         // from all worker actors before we exit.
+         while context.is_running(|| {
+             runtime_state.read().is_shutdown_telemetry_complete(2) //for collector and server
+         }) {
+-            self.seq += 1;
++            self.seq -= /* ~ changed by cargo-mutants ~ */ 1;
+             let now_loop = Instant::now();
+             
+             // Sparse actor status accumulation keyed by actor_id.
+             // We compact before sending so downstream only processes real updates.
+             let mut actor_statuses: Vec<Option<ActorStatus>> = Vec::new();
+             let mut node_defs_to_send = Vec::new();
+             let mut channel_volumes_to_send = Vec::new();
+             let mut dot_subtitle_updates: Vec<(usize, Option<String>)> = Vec::new();

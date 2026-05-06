@@ -1,0 +1,28 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::with_file_logging -> Self with Default::default()
+@@ -714,24 +714,17 @@
+     /// Sets the logging level for the application.
+     pub fn with_logging(mut self, level: LogLevel) -> Self {
+         self.loglevel = Some(level);
+         self
+     }
+ 
+     /// Sets the file logging configuration for the application.
+     pub fn with_file_logging(mut self, directory: &str, base_name: &str, max_size_bytes: u64, keep_count: usize, delete_old_on_start: bool) -> Self {
+-        self.log_file_config = Some(LogFileConfig {
+-            directory: directory.to_string(),
+-            base_name: base_name.to_string(),
+-            max_size_bytes,
+-            keep_count,
+-            delete_old_on_start,
+-        });
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Sets the default actor stack size for the graph.
+     pub fn with_default_actor_stack_size(mut self, size: usize) -> Self {
+         self.default_actor_stack_size = Some(size);
+         self
+     }
+ 

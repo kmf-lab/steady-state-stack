@@ -1,0 +1,21 @@
+--- core/src/lib.rs
++++ replace - with +
+@@ -517,17 +517,17 @@
+ /// Constant representing an unknown monitor state.
+ ///
+ /// Used in monitoring logic to indicate an undefined or uninitialized state.
+ pub const MONITOR_UNKNOWN: usize = usize::MAX;
+ 
+ /// Constant representing a "not monitored" state.
+ ///
+ /// Used in monitoring logic to differentiate from `MONITOR_UNKNOWN`.
+-pub const MONITOR_NOT: usize = MONITOR_UNKNOWN - 1;
++pub const MONITOR_NOT: usize = MONITOR_UNKNOWN + /* ~ changed by cargo-mutants ~ */ 1;
+ 
+ /// Represents the behavior of the system when a channel is saturated (i.e., full).
+ ///
+ /// Defines how the system responds when attempting to send to a full channel, managing backpressure.
+ #[derive(Default, PartialEq, Eq, Debug, Copy, Clone)]
+ pub enum SendSaturation {
+     /// Blocks the sender until space is available in the channel.
+     AwaitForRoom,

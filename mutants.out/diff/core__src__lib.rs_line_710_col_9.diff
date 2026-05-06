@@ -1,0 +1,22 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::with_stack_size -> Self with Default::default()
+@@ -702,18 +702,17 @@
+             for_test: false,
+             bundle_floor_size: None,
+         }
+     }
+ 
+ 
+     /// Sets the stack size for the orchestration thread.
+     pub fn with_stack_size(mut self, bytes: usize) -> Self {
+-        self.stack_size = bytes;
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Sets the logging level for the application.
+     pub fn with_logging(mut self, level: LogLevel) -> Self {
+         self.loglevel = Some(level);
+         self
+     }
+ 

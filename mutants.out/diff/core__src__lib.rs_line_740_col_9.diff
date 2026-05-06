@@ -1,0 +1,22 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::with_shutdown_barrier -> Self with Default::default()
+@@ -732,18 +732,17 @@
+     /// Sets the default actor stack size for the graph.
+     pub fn with_default_actor_stack_size(mut self, size: usize) -> Self {
+         self.default_actor_stack_size = Some(size);
+         self
+     }
+ 
+     /// Sets the size of the shutdown barrier for the graph.
+     pub fn with_shutdown_barrier(mut self, size: usize) -> Self {
+-        self.barrier_size = Some(size);
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Sets the telemetry rate for the graph.
+     pub fn with_telemetry_rate_ms(mut self, ms: u64) -> Self {
+         self.telemetry_rate_ms = Some(ms);
+         self
+     }
+ 

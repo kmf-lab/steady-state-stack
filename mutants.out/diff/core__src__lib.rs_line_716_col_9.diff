@@ -1,0 +1,22 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::with_logging -> Self with Default::default()
+@@ -708,18 +708,17 @@
+     /// Sets the stack size for the orchestration thread.
+     pub fn with_stack_size(mut self, bytes: usize) -> Self {
+         self.stack_size = bytes;
+         self
+     }
+ 
+     /// Sets the logging level for the application.
+     pub fn with_logging(mut self, level: LogLevel) -> Self {
+-        self.loglevel = Some(level);
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Sets the file logging configuration for the application.
+     pub fn with_file_logging(mut self, directory: &str, base_name: &str, max_size_bytes: u64, keep_count: usize, delete_old_on_start: bool) -> Self {
+         self.log_file_config = Some(LogFileConfig {
+             directory: directory.to_string(),
+             base_name: base_name.to_string(),
+             max_size_bytes,

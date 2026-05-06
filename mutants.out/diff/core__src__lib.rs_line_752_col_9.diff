@@ -1,0 +1,22 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::with_telemetry_colors -> Self with Default::default()
+@@ -744,18 +744,17 @@
+     /// Sets the telemetry rate for the graph.
+     pub fn with_telemetry_rate_ms(mut self, ms: u64) -> Self {
+         self.telemetry_rate_ms = Some(ms);
+         self
+     }
+ 
+     /// Sets the telemetry top bar colors (primary and secondary hex strings).
+     pub fn with_telemetry_colors(mut self, primary_color: &str, secondary_color: &str) -> Self {
+-        self.telemetry_colors = Some((primary_color.to_string(), secondary_color.to_string()));
+-        self
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+     /// Sets the bundle floor size for the graph.
+     pub fn with_bundle_floor_size(mut self, size: usize) -> Self {
+         self.bundle_floor_size = Some(size);
+         self
+     }
+ 

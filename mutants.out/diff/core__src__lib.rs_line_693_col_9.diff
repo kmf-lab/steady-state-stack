@@ -1,0 +1,32 @@
+--- core/src/lib.rs
++++ replace SteadyRunner::release_build -> Self with Default::default()
+@@ -685,28 +685,17 @@
+             telemetry_rate_ms: None,
+             telemetry_colors: None,
+             for_test: true,
+             bundle_floor_size: None,
+         }
+     }
+     /// Creates a new SteadyRunner with default settings.
+     pub fn release_build() -> Self {
+-        Self {
+-            stack_size: 16 * 1024 * 1024, // 16 MiB default for main
+-            name: "steady-orchestrator".to_string(),
+-            loglevel: None,
+-            log_file_config: None,
+-            default_actor_stack_size: Some(2 * 1024 * 1024), // 2 MiB default for each actor
+-            barrier_size: None,
+-            telemetry_rate_ms: None,
+-            telemetry_colors: None,
+-            for_test: false,
+-            bundle_floor_size: None,
+-        }
++        Default::default() /* ~ changed by cargo-mutants ~ */
+     }
+ 
+ 
+     /// Sets the stack size for the orchestration thread.
+     pub fn with_stack_size(mut self, bytes: usize) -> Self {
+         self.stack_size = bytes;
+         self
+     }

@@ -1,0 +1,21 @@
+--- core/src/lib.rs
++++ replace init_logging -> Result<(), Box<dyn std::error::Error>> with Ok(())
+@@ -455,17 +455,17 @@
+ ///
+ /// # Parameters
+ /// - `loglevel`: The desired logging level (e.g., `Info`, `Debug`).
+ /// - `file_config`: Optional configuration for file-based logging with rotation.
+ ///
+ /// # Returns
+ /// - `Result<(), Box<dyn std::error::Error>>`: Ok if successful, or an error if initialization fails.
+ pub fn init_logging(loglevel: LogLevel, file_config: Option<LogFileConfig>) -> Result<(), Box<dyn std::error::Error>> {
+-    steady_logger::initialize_with_level_and_file(loglevel, file_config)
++    Ok(()) /* ~ changed by cargo-mutants ~ */
+ }
+ 
+ /// Configuration for file-based logging with rotation.
+ #[derive(Clone, Debug)]
+ pub struct LogFileConfig {
+     /// Directory where log files will be stored.
+     pub directory: String,
+     /// Base name for the log files.
