@@ -84,10 +84,18 @@ mod tests {
 
     #[test]
     fn test_default_constants() {
-        // Under default compilation (no special features)
-        assert!(TELEMETRY_SERVER);
+        // `TELEMETRY_*` toggles follow `#[cfg(feature = ...)]`; builds may use
+        // `--all-features`, `cargo mutants`, etc., so assert consistency with the active set.
+        assert_eq!(
+            TELEMETRY_SERVER,
+            cfg!(any(
+                feature = "telemetry_server_cdn",
+                feature = "telemetry_server_builtin",
+                feature = "prometheus_metrics"
+            ))
+        );
         assert_eq!(BACKPLANE_CAPACITY, 32);
-        assert!(!TELEMETRY_HISTORY);
+        assert_eq!(TELEMETRY_HISTORY, cfg!(feature = "telemetry_history"));
         assert_eq!(MAX_TELEMETRY_ERROR_RATE_SECONDS, 20);
         assert_eq!(REAL_CHANNEL_LENGTH_TO_COLLECTOR, 256);
         assert_eq!(TELEMETRY_SAMPLES_PER_FRAME, 4);

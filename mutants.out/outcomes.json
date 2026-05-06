@@ -1,0 +1,50 @@
+{
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Failure",
+      "log_path": "log/baseline.log",
+      "diff_path": null,
+      "phase_results": [
+        {
+          "phase": "Build",
+          "duration": 89.745406467,
+          "process_status": "Success",
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--no-run",
+            "--verbose",
+            "--package=cargo-steady-state@0.2.12",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        },
+        {
+          "phase": "Test",
+          "duration": 30.244481444,
+          "process_status": {
+            "Failure": 101
+          },
+          "argv": [
+            "/home/nate/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo",
+            "test",
+            "--verbose",
+            "--package=cargo-steady-state@0.2.12",
+            "--package=steady_state@0.2.12",
+            "--all-features"
+          ]
+        }
+      ]
+    }
+  ],
+  "total_mutants": 0,
+  "missed": 0,
+  "caught": 0,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "start_time": "2026-05-06T17:36:58.637496241Z",
+  "end_time": "2026-05-06T17:39:04.825226147Z",
+  "cargo_mutants_version": "27.0.0"
+}
