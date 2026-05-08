@@ -274,34 +274,24 @@ mod core_rx_stream_tests {
         let mut channel_builder = graph.channel_builder();
         channel_builder = channel_builder.with_capacity(100);
         channel_builder = channel_builder.with_type();
-        let (tx,rx) = channel_builder.build_stream::<StreamEgress>(bytes_per_item);
-               
-        
-        let actor_builder = graph.actor_builder();
-        
-        let tx = tx.clone();
-        let rx = rx.clone();
-        actor_builder
-            .with_name("unit_test")
-            .build(move |mut actor| {
-                let tx = tx.clone();
-                let rx = rx.clone();
+        let (_tx, _rx) = channel_builder.build_stream::<StreamEgress>(bytes_per_item);
+
+        graph.actor_builder().with_name("unit_test").build(
+            move |mut actor| {
                 Box::pin(async move {
-                    let _tx = tx.lock();
-                    let _rx = rx.lock();
-                    if actor.is_running(|| true) {
-                        
-                        
+                    while actor.is_running(|| true) {
+                        actor.wait_periodic(Duration::from_millis(1)).await;
                     }
-                    
-                    actor.request_shutdown().await;
                     Ok::<(), Box<dyn std::error::Error>>(())
                 })
-            }, ScheduleAs::SoloAct);
-
+            },
+            ScheduleAs::SoloAct,
+        );
 
         graph.start();
-        graph.block_until_stopped(Duration::from_secs(5))
+        graph.request_shutdown();
+        graph.block_until_stopped(Duration::from_secs(5))?;
+        Ok(())
     }
 
     #[test]

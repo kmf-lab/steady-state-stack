@@ -34,7 +34,10 @@ core/static/telemetry/webworker.js
 /mutants.out*
 mutants.out/
 mutants.out/caught.txt
-mutants.out.old/ 
+mutants.out.old/
+**/mutants.out*
+**/mutants.out/
+
 
 
 /.idea

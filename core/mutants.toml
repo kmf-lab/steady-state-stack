@@ -1,0 +1,19 @@
+# cargo-mutants configuration for the `steady_state` crate.
+# Docs: https://mutants.rs/
+#
+# Default scope is intentionally small so `pre-publish.sh` stays tractable.
+# Widen `examine_globs` (or use EXTRA_CARGO_MUTANTS_ARGS in scripts/run-cargo-mutants.sh)
+# when you want broader mutation coverage.
+
+examine_globs = [
+    "**/graph_liveliness.rs",
+    "**/core_rx_stream.rs",
+    "**/core_tx_stream.rs",
+]
+
+# Match pre-publish: run unit/integration tests via nextest, scoped to this package.
+test_tool = "nextest"
+test_workspace = false
+
+# Lower bound on per-mutant test timeout (seconds); cargo-mutants adjusts from baseline runs.
+minimum_test_timeout = 120.0
