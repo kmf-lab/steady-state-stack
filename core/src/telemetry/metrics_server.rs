@@ -610,7 +610,7 @@ where
                 (locked_state.doc.clone(), can_write)
             };
 
-            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/vnd.graphviz; charset=utf-8\r\nContent-Length: ", cors_header).as_bytes()).await?;
+            stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: text/vnd.graphviz\r\nContent-Length: ", cors_header).as_bytes()).await?;
             stream.write_all(itoa::Buffer::new().format(data.len()).as_bytes()).await?;
             stream.write_all(b"\r\n\r\n").await?;
             stream.write_all(&data).await?;

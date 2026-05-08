@@ -8,7 +8,7 @@ use hdrhistogram::{Histogram};
 
 use crate::actor_stats::{ChannelBlock};
 use crate::channel_stats_labels;
-use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels, RollupMotionState};
+use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
 
 /// Constants representing the colors used in the dot graph.
 pub(crate) const DOT_GREEN: &str = "green";
@@ -79,7 +79,6 @@ pub struct ChannelStatsComputer {
     pub(crate) total_consumed: u128,
     pub(crate) memory_footprint: usize,
     pub(crate) show_memory: bool,
-    pub(crate) rollup_motion: RollupMotionState,
 }
 
 /// How DOT multi-lane rollup treats the filled block when rebuilding an edge label from [`ChannelStatsComputer`].
@@ -109,7 +108,6 @@ impl ChannelStatsComputer {
         self.bundle_index = meta.bundle_index;
         self.girth = meta.girth;
         self.total_consumed = 0;
-        self.rollup_motion.reset();
         self.memory_footprint = meta.capacity * meta.type_byte_count;
         self.show_memory = meta.show_memory;
 
@@ -574,8 +572,6 @@ impl ChannelStatsComputer {
         if self.trigger_alert_level(&AlertColor::Red) {
             line_color = DOT_RED;
         };
-
-        self.rollup_motion.advance(self.total_consumed);
 
         (line_color, line_thick)
     }

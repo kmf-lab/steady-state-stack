@@ -224,23 +224,6 @@ fn append_channel_fill_tooltip(
     }
 }
 
-/// Escape user text for Graphviz HTML-like `label=<…>` on a black background with white text;
-/// used when appending a two-tone [`channel_stats_labels::RollupMotionState`] glyph after compressed totals.
-fn escape_plain_to_graphviz_html(out: &mut String, src: &str) {
-    out.clear();
-    out.reserve(src.len().saturating_mul(2));
-    for ch in src.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\n' => out.push_str("<BR/>"),
-            _ => out.push(ch),
-        }
-    }
-}
-
 #[inline]
 fn escape_dot_quotes(out: &mut String, src: &str) {
     out.clear();
@@ -457,8 +440,6 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         memory_footprint: usize,
         show_memory: bool,
         show_total: bool,
-        /// When true, `summary_label` is Graphviz HTML-like (`label=<…>`) for rollup motion glyph + escaped body.
-        summary_label_is_html: bool,
     }
 
     let mut partnered_edges = Vec::new();
@@ -669,22 +650,15 @@ if show_avg_filled_any {
         // For bundled edges that will be rendered individually (len < bundle_floor_size),
         // show all totals separated by commas. For single edges, show the total directly.
         // For large bundles (len >= bundle_floor_size), totals are handled in the bundle rendering section below.
-        let mut summary_label_is_html = false;
         if first.stats_computer.show_total {
             let mut total_label = String::new();
             if edges.len() == 1 {
-                // Single edge: show total directly, optional HTML 8-step rollup glyph after K/M/B/T.
+                // Single edge: show total directly
                 total_label.push_str("Total: ");
                 crate::channel_stats_labels::format_compressed_u128(
                     first.stats_computer.total_consumed,
                     &mut total_label,
                 );
-                if let Some(g) = first.stats_computer.rollup_motion.glyph_html_suffix(
-                    first.stats_computer.total_consumed,
-                ) {
-                    total_label.push_str(&g);
-                    summary_label_is_html = true;
-                }
             } else if edges.len() < state.bundle_floor_size {
                 // Bundled edges (but not large enough to be rendered as bundle): show all totals separated by commas
                 total_label.push_str("Totals: ");
@@ -697,12 +671,7 @@ if show_avg_filled_any {
             }
             // For large bundles (len >= bundle_floor_size), the totals are handled in the bundle rendering section below
             if !total_label.is_empty() {
-                if summary_label_is_html {
-                    escape_plain_to_graphviz_html(&mut frames.dot_scratch, summary_label.trim_end_matches('\n'));
-                    summary_label = format!("{}<BR/>{}", frames.dot_scratch, total_label);
-                } else {
-                    summary_label = format!("{}{}\n", summary_label.trim_end_matches('\n'), total_label);
-                }
+                summary_label = format!("{}{}\n", summary_label.trim_end_matches('\n'), total_label);
             }
         }
 
@@ -732,7 +701,6 @@ if show_avg_filled_any {
             memory_footprint,
             show_memory,
             show_total: first.stats_computer.show_total,
-            summary_label_is_html,
         });
     }
 
@@ -770,7 +738,6 @@ if show_avg_filled_any {
                     p_key.to_name.unwrap_or("unknown"),
                     p_key.to_suffix,
                     &pe.summary_label,
-                    pe.summary_label_is_html,
                     &frames.hex_line,
                     &pe.pen_width,
                     "",
@@ -952,7 +919,6 @@ if show_avg_filled_any {
                 p_key.to_name.unwrap_or("unknown"),
                 p_key.to_suffix,
                 &header,
-                false,
                 &frames.hex_line,
                 pen_width,
                 ", style=\"bold,dashed\"",
@@ -974,7 +940,6 @@ fn render_edge_internal(
     to_name: &'static str,
     to_suffix: Option<usize>,
     label: &str,
-    label_is_html: bool,
     color: &str,
     pen_width: &str,
     style: &str,
@@ -994,45 +959,31 @@ fn render_edge_internal(
     if let Some(s) = to_suffix {
         dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
     }
-    dot_graph.put_slice(b"\" [label=");
-    if label_is_html {
-        // `<< … >>` so inner `>` in `<BR/>` / `</FONT>` do not end the DOT token.
-        // Graphviz still expects well-formed-ish HTML nodes; bare text + `<BR/>` fails `dot -Tsvg`
-        // ("not well-formed") without a `<TABLE><TR><TD>…</TD></TR></TABLE>` shell.
-        dot_graph.put_slice(b"<<TABLE BORDER=\"0\"><TR><TD>");
-        dot_graph.put_slice(label.as_bytes());
-        dot_graph.put_slice(b"</TD></TR></TABLE>>");
-    } else {
-        dot_graph.put_slice(b"\"");
-        escape_dot_quotes(escape_buf, label);
-        dot_graph.put_slice(escape_buf.as_bytes());
-        dot_graph.put_slice(b"\"");
-    }
+    dot_graph.put_slice(b"\" [label=\"");
+    escape_dot_quotes(escape_buf, label);
+    dot_graph.put_slice(escape_buf.as_bytes());
 
     if !headlabel.is_empty() {
-        dot_graph.put_slice(b", headlabel=\"");
+        dot_graph.put_slice(b"\", headlabel=\"");
         escape_dot_quotes(escape_buf, headlabel);
         dot_graph.put_slice(escape_buf.as_bytes());
-        dot_graph.put_slice(b"\"");
     }
     if !taillabel.is_empty() {
-        dot_graph.put_slice(b", taillabel=\"");
+        dot_graph.put_slice(b"\", taillabel=\"");
         escape_dot_quotes(escape_buf, taillabel);
         dot_graph.put_slice(escape_buf.as_bytes());
-        dot_graph.put_slice(b"\"");
     }
     if !tooltip.is_empty() {
-        dot_graph.put_slice(b", tooltip=\"");
+        dot_graph.put_slice(b"\", tooltip=\"");
         escape_dot_quotes(escape_buf, tooltip);
         dot_graph.put_slice(escape_buf.as_bytes());
-        dot_graph.put_slice(b"\"");
 
         // NOTE: labeltooltip is NOT added here because it is unreliable in Graphviz JS
         // rendering. Instead, the tooltip <title> element is cloned from each edge group
         // onto its label <text> element by dot-viewer.js after the SVG is injected into the DOM.
     }
 
-    dot_graph.put_slice(b", color=\"");
+    dot_graph.put_slice(b"\", color=\"");
     dot_graph.put_slice(color.as_bytes());
     dot_graph.put_slice(b"\", penwidth=");
     dot_graph.put_slice(pen_width.as_bytes());
@@ -1057,12 +1008,9 @@ fn render_edge_internal(
 /// Applies the node definition to the local state.
 ///
 /// Each [`ChannelMetaData`](crate::monitor::ChannelMetaData) telemetry id maps to **one**
-/// unified edge slot: **`channels_in` sets [`Edge::to`](crate::dot_edge::Edge::to), `channels_out` sets [`Edge::from`](crate::dot_edge::Edge::from)**.
-///
-/// If a second actor claims the same telemetry id on the **same side** (`to`/`from`), merging that metadata is invalid for
-/// the unified DOT diagram. Outside **unit tests**, [`crate::dot_unify::apply_channel_to_unified_edges`] reports this with a
-/// detailed **`panic!`** (target `steady_state::telemetry::dot` logs the same body first); see [`crate::dot_unify`] for the
-/// invariant and remediation tips. In tests, conflicts return [`crate::dot_unify::EdgeEndpointConflict`] and only log diagnostics.
+/// unified edge slot: **`channels_in` sets [`Edge::to`](crate::dot_edge::Edge), `channels_out` sets [`Edge::from`](crate::dot_edge::Edge)**.
+/// A second actor claiming the same id on the **same side** emits a structured warning (`steady_state::telemetry::dot`)
+/// and indicates inconsistent metadata—often mixed [`Graph`] `channel_builder` namespaces or swapped rx/tx registration in `into_spotlight`.
 ///
 /// * `channels_in` / `channels_out` must follow the same contract as [`crate::dot_unify`]: one tx and one rx
 /// claimant per [`ChannelMetaData`](crate::monitor::ChannelMetaData) telemetry id in a single metrics [`DotState`](DotState).
@@ -1465,56 +1413,6 @@ mod dot_tests {
             lane_color_counts: std::collections::BTreeMap::new(),
             last_generated_graph: Instant::now(),
         }
-    }
-
-    #[test]
-    fn escape_plain_to_graphviz_html_escapes_br_and_entities() {
-        let mut out = String::new();
-        escape_plain_to_graphviz_html(&mut out, "a & b\n<x>");
-        assert_eq!(out, "a &amp; b<BR/>&lt;x&gt;");
-    }
-
-    /// Graphviz terminates `label=<` at the first `>`; rollup labels use `<BR/>` and `<FONT>`.
-    /// Requires `<<…>>` plus a `<TABLE><TR><TD>…</TD></TR></TABLE>` shell for valid HTML-like parsing.
-    #[test]
-    fn render_edge_internal_html_label_uses_doubled_angle_brackets() {
-        let mut buf = BytesMut::new();
-        let mut scratch = String::new();
-        render_edge_internal(
-            &mut buf,
-            "FROM",
-            None,
-            "TO",
-            None,
-            r"left<BR/>Total: 1K<FONT COLOR='#FFFFFF'>▃</FONT>",
-            true,
-            "#FF0000",
-            "1",
-            "",
-            false,
-            "",
-            "",
-            "",
-            &mut scratch,
-        );
-        let s = std::str::from_utf8(&buf).expect("utf8 dot");
-        assert!(
-            s.contains("[label=<<TABLE"),
-            "expected TABLE shell after doubled bracket in {s:?}"
-        );
-        assert!(
-            s.contains("</TD></TR></TABLE>>"),
-            "expected TD/TABLE closing before comma-color in {s:?}"
-        );
-        let until_color = match s.find(", color=\"") {
-            Some(i) => &s[..i],
-            None => s,
-        };
-        assert!(
-            until_color.ends_with("</TABLE>>"),
-            "label fragment should close TABLE and DOT html token; tail: {:?}",
-            &until_color[until_color.len().saturating_sub(60)..]
-        );
     }
 
     /// `bool::then_some(x)` evaluates `x` eagerly; mean must use `then` so empty iterators never divide.
