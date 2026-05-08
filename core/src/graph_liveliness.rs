@@ -672,7 +672,8 @@ impl GraphBuilder {
 
     /// Sets the telemetry production rate in milliseconds.
     ///
-    /// This method configures how frequently telemetry data is generated, with a minimum of 40ms.
+    /// Values below the internal minimum (`MIN_MS_RATE`, currently 100 ms) are clamped to that minimum
+    /// and a warning is logged.
     ///
     /// # Arguments
     ///
@@ -686,7 +687,18 @@ impl GraphBuilder {
         if ms >= MIN_MS_RATE {
             result.telemtry_production_rate_ms = ms;
         } else {
-            warn!("telemetry production rate must be at least 40ms, setting to 40ms");
+            if cfg!(test) {
+                debug!(
+                    "telemetry production rate requested {}ms below minimum {}ms, using {}ms",
+                    ms, MIN_MS_RATE, MIN_MS_RATE
+                );
+            } else {
+                warn!(
+                    "telemetry production rate must be at least {}ms, using {}ms",
+                    MIN_MS_RATE, MIN_MS_RATE
+                );
+            }
+            result.telemtry_production_rate_ms = MIN_MS_RATE;
         }
         result
     }
@@ -993,7 +1005,7 @@ impl Graph {
     ///
     /// A `SteadyActorShadow` instance configured for testing.
     pub fn new_testing_test_monitor(&self, name: &'static str) -> SteadyActorShadow {
-        info!("this is for testing only, never run as part of your release");
+        trace!("this is for testing only, never run as part of your release");
         let channel_count = self.channel_count.clone();
         let all_telemetry_rx = self.all_telemetry_rx.clone();
         let oneshot_shutdown = {

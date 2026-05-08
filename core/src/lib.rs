@@ -75,6 +75,10 @@ pub(crate) mod telemetry_window;
 /// Internal module for graph visualization and DOT language integration.
 pub(crate) mod dot;
 
+/// Unified edge-slot merge for telemetry channel ids (`DotState.edges`).
+///
+/// Operators: conflicting endpoints are logged under target `steady_state::telemetry::dot`.
+pub(crate) mod dot_unify;
 
 /// Manages the lifecycle states of actor graphs.
 ///

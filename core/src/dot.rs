@@ -23,6 +23,8 @@ use crate::dot_node::Node;
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
+use crate::dot_unify::ChannelEdgeRole;
+use crate::graph_liveliness::ActorIdentity;
 use crate::*;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
@@ -203,7 +205,7 @@ fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Opt
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
 fn append_channel_fill_tooltip(
     tooltip: &mut String,
-    stats: &crate::channel_stats::ChannelStatsComputer,
+    stats: &ChannelStatsComputer,
     saturation_score: f64,
 ) {
     if stats.show_avg_filled {
@@ -1005,6 +1007,14 @@ fn render_edge_internal(
 
 /// Applies the node definition to the local state.
 ///
+/// Each [`ChannelMetaData`](crate::monitor::ChannelMetaData) telemetry id maps to **one**
+/// unified edge slot: **`channels_in` sets [`Edge::to`](crate::dot_edge::Edge), `channels_out` sets [`Edge::from`](crate::dot_edge::Edge)**.
+/// A second actor claiming the same id on the **same side** emits a structured warning (`steady_state::telemetry::dot`)
+/// and indicates inconsistent metadata—often mixed [`Graph`] `channel_builder` namespaces or swapped rx/tx registration in `into_spotlight`.
+///
+/// * `channels_in` / `channels_out` must follow the same contract as [`crate::dot_unify`]: one tx and one rx
+/// claimant per [`ChannelMetaData`](crate::monitor::ChannelMetaData) telemetry id in a single metrics [`DotState`](DotState).
+///
 /// # Arguments
 ///
 /// * `local_state` - THE local metric state.
@@ -1058,16 +1068,16 @@ pub fn apply_node_def(
     // actor.ident.id.label
     define_unified_edges(
         local_state,
-        actor.ident.label,
+        actor.ident,
         channels_in,
-        true,
+        ChannelEdgeRole::SetsEdgeTo,
         frame_rate_ms,
     );
     define_unified_edges(
         local_state,
-        actor.ident.label,
+        actor.ident,
         channels_out,
-        false,
+        ChannelEdgeRole::SetsEdgeFrom,
         frame_rate_ms,
     );
 }
@@ -1077,90 +1087,21 @@ pub fn apply_node_def(
 /// # Arguments
 ///
 /// * `local_state` - THE local metric state.
-/// * `node_name` - THE name of the node.
+/// * `actor_ident` - THE identity of the node (numeric id + label).
 /// * `mdvec` - THE metadata of the channels.
-/// * `set_to` - A boolean indicating if the edges are set to the node.
+/// * `role` - Incoming vs outgoing registration for [`DotState.edges`].
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
 fn define_unified_edges(
     local_state: &mut DotState,
-    node_name: ActorName,
+    actor_ident: ActorIdentity,
     mdvec: &[Arc<ChannelMetaData>],
-    set_to: bool,
+    role: ChannelEdgeRole,
     frame_rate_ms: u64,
 ) {
     mdvec.iter().for_each(|meta| {
-        let idx = meta.id;
-        // info!("define_unified_edges: {} {} {}", idx, node_id, set_to);
-        if idx.ge(&local_state.edges.len()) {
-            local_state.edges.resize_with(idx + 1, || {
-                Edge {
-                    id: usize::MAX,
-                    from: None,
-                    to: None,
-                    sidecar: false,
-                    stats_computer: ChannelStatsComputer::default(),
-                    ctl_labels: Vec::new(), // For visibility control
-                    color: "grey",
-                    pen_width: EDGE_PEN_WIDTH.to_string(),
-                    saturation_score: 0.0,
-                    display_label: String::new(), // Defined when the content arrives
-                    metric_text: String::new(),
-                    partner: None,
-                    bundle_index: None,
-                }
-            });
-        }
-        let edge = &mut local_state.edges[idx];
-        assert!(edge.id == idx || edge.id == usize::MAX);
-        edge.id = idx;
-        if set_to {
-            if edge.to.is_none() {
-                edge.to = Some(node_name);
-            } else {
-                if !Some(node_name).eq(&edge.to) {
-                    warn!(
-                        "internal error: edge.to was {:?} but now {:?}",
-                        edge.to.expect("to"),
-                        node_name
-                    );
-                }
-            }
-        } else if edge.from.is_none() {
-            edge.from = Some(node_name);
-        } else {
-            if !Some(node_name).eq(&edge.from) {
-                warn!(
-                    "internal error: edge.from was {:?} but now {:?}",
-                    edge.from.expect("from"),
-                    node_name
-                );
-            }
-        }
-
-        // Collect the labels that need to be added
-        // This is redundant but provides safety if two different label lists are in play
-        let labels_to_add: Vec<_> = meta
-            .labels
-            .iter()
-            .filter(|f| !edge.ctl_labels.contains(f))
-            .cloned() // Clone the items to be added
-            .collect();
-        // Now, append them to `ctl_labels`
-        for label in labels_to_add {
-            edge.ctl_labels.push(label);
-        }
-
-        if let Some(node_from) = edge.from {
-            if let Some(node_to) = edge.to {
-                if edge.stats_computer.capacity == 0 {
-                    edge.stats_computer
-                        .init(meta, node_from, node_to, frame_rate_ms);
-                }
-                edge.sidecar = meta.connects_sidecar;
-                edge.partner = meta.partner;
-                edge.bundle_index = meta.bundle_index;
-            }
-        }
+        let _ = crate::dot_unify::apply_channel_to_unified_edges(
+            local_state, actor_ident, meta, role, frame_rate_ms,
+        );
     });
 }
 
@@ -1453,6 +1394,7 @@ impl FrameHistory {
 #[cfg(test)]
 mod dot_tests {
     use super::*;
+    use crate::dot_unify::ChannelEdgeRole;
     use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
     use crate::telemetry::metrics_server::async_write_all;
     use bytes::BytesMut;
@@ -1533,6 +1475,7 @@ mod dot_tests {
             metric_text: String::new(),
             partner: None,
             bundle_index: None,
+        ..Default::default()
         };
         edge.compute_and_refresh(100, 50);
         assert_eq!(edge.color, "grey");
@@ -1571,6 +1514,7 @@ mod dot_tests {
                 metric_text: "edge_metric".to_string(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             }],
             seq: 0,
             telemetry_colors: None,
@@ -1613,6 +1557,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             }],
             seq: 0,
             telemetry_colors: None,
@@ -1711,6 +1656,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
             Edge {
                 id: 1,
@@ -1726,6 +1672,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
         ];
 
@@ -1826,6 +1773,7 @@ mod dot_tests {
                     metric_text: String::new(),
                     partner: Some("P"),
                     bundle_index: Some(bi),
+                ..Default::default()
                 });
                 id += 1;
             }
@@ -1924,6 +1872,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("Q"),
                 bundle_index: Some(0),
+            ..Default::default()
             });
         }
 
@@ -2007,6 +1956,7 @@ mod dot_tests {
             metric_text: String::new(),
             partner: None,
             bundle_index: None,
+        ..Default::default()
         };
 
         let state = DotState {
@@ -2107,6 +2057,7 @@ mod dot_tests {
             metric_text: String::new(),
             partner: None,
             bundle_index: None,
+        ..Default::default()
         };
 
         let state = DotState {
@@ -2194,6 +2145,7 @@ mod dot_tests {
             metric_text: String::new(),
             partner: None,
             bundle_index: None,
+        ..Default::default()
         };
 
         let state = DotState {
@@ -2285,6 +2237,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
             Edge {
                 id: 1,
@@ -2300,6 +2253,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
         ];
 
@@ -2400,6 +2354,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
             Edge {
                 id: 1,
@@ -2415,6 +2370,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
         ];
 
@@ -2524,6 +2480,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
             Edge {
                 id: 1,
@@ -2539,6 +2496,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("L"),
                 bundle_index: Some(0),
+            ..Default::default()
             },
         ];
 
@@ -2623,6 +2581,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             }
         };
         let edges: Vec<Edge> = (0..3).map(make).collect();
@@ -2667,6 +2626,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             }
         };
         // lanes: 10%, idle, 40%
@@ -2717,6 +2677,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             }
         };
         let edges: Vec<Edge> = (0..5).map(make).collect();
@@ -2798,6 +2759,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             });
         }
 
@@ -2912,6 +2874,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             });
         }
 
@@ -3012,6 +2975,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: Some("partner_lane"),
                 bundle_index: Some(i),
+            ..Default::default()
             });
         }
 
@@ -3158,10 +3122,16 @@ mod dot_tests {
     #[test]
     fn test_define_unified_edges() {
         let mut metric_state = DotState::default();
-        let node_name = ActorName::new("node1", None);
+        let actor = crate::graph_liveliness::ActorIdentity::new(991, "node1", None);
         let channels = vec![Arc::new(ChannelMetaData::default())];
 
-        define_unified_edges(&mut metric_state, node_name, &channels, true, 1000);
+        define_unified_edges(
+            &mut metric_state,
+            actor,
+            &channels,
+            ChannelEdgeRole::SetsEdgeTo,
+            1000,
+        );
         assert_eq!(metric_state.edges.len(), 1);
         assert!(metric_state.edges[0].to.is_some());
     }
@@ -3413,6 +3383,7 @@ mod dot_tests {
                 metric_text: String::new(),
                 partner: None,
                 bundle_index: None,
+            ..Default::default()
             });
         }
 
@@ -3469,3 +3440,4 @@ mod dot_tests {
         assert!(result.contains("Instant fill: 10%"));
     }
 }
+

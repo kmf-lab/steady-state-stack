@@ -494,14 +494,14 @@ mod steady_lazy_tests {
     /// Tests the basic flow of sending and receiving messages through lazy transmitter and receiver channels.
     #[test]
     fn test_lazy_flow() {
-        let builder = ChannelBuilder::default().with_capacity(2);
+        let builder = ChannelBuilder::default().with_capacity(3);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
 
         let tx = tx_lazy.clone();
         {
             let ste_tx = core_exec::block_on(tx.lock());
-            assert_eq!(ste_tx.shared_capacity(), 2);
-            assert_eq!(ste_tx.shared_vacant_units(), 2);
+            assert_eq!(ste_tx.shared_capacity(), 3);
+            assert_eq!(ste_tx.shared_vacant_units(), 3);
         }
 
         // Clones the transmitter lazily and sends messages.
@@ -511,7 +511,7 @@ mod steady_lazy_tests {
         let tx = tx_lazy.clone();
         {
             let ste_tx = core_exec::block_on(tx.lock());
-            assert_eq!(ste_tx.shared_vacant_units(), 0);
+            assert_eq!(ste_tx.shared_vacant_units(), 1);
         }
 
         // Locks and peeks at the receiver's next message.

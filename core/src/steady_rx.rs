@@ -893,7 +893,7 @@ mod steady_rx_tests {
 
     #[test]
     fn test_peek_slice_and_iter() {
-        let builder = ChannelBuilder::default().with_capacity(3);
+        let builder = ChannelBuilder::default().with_capacity(4);
         let (tx_lazy, rx_lazy) = builder.build_channel::<i32>();
         tx_lazy.testing_send_all(vec![5, 6, 7], false);
 

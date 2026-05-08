@@ -13,6 +13,15 @@
 # Widen scope by editing examine_globs in core/mutants.toml or passing --file / --exclude via
 # EXTRA_CARGO_MUTANTS_ARGS. Expect long runtimes for full-crate mutation.
 #
+# Dot telemetry edge merge (`core/src/dot_unify.rs`) is included in `mutants.toml` `examine_globs`.
+# For a quicker loop on that file only, use the dedicated config (does not apply other examine_globs):
+#   cargo mutants --manifest-path core/Cargo.toml --config core/mutants.dot_unify.toml --cap-lints true -j 4
+# Or combine glob + no config (see mutants.rs docs for `-f`):
+#   cargo mutants --manifest-path core/Cargo.toml --no-config --test-tool nextest -f "**/dot_unify.rs" --cap-lints true
+# For sharded CI: EXTRA_CARGO_MUTANTS_ARGS='--shard 1/4'
+#
+# Edge telemetry troubleshooting: STEADY_TELEMETRY_EDGE_DIAG / RUST_LOG — see docs/telemetry-edge-conflict.md
+#
 # Requires a Rust toolchain compatible with cargo-mutants (see https://mutants.rs/).
 # Exit status is non-zero if the tool fails, tests fail for a mutant, or mutants survive
 # (see upstream docs for exact exit codes).

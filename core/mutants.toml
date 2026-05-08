@@ -9,7 +9,11 @@ examine_globs = [
     "**/graph_liveliness.rs",
     "**/core_rx_stream.rs",
     "**/core_tx_stream.rs",
+    "**/dot_unify.rs",
 ]
+
+# Dot edge unification: scope `cargo mutants --file dot_unify.rs` (or EXAMINE_GLOBS) during iter
+# development; full list above increases wall time. Use `--shard i/n` for CI splits.
 
 # Match pre-publish: run unit/integration tests via nextest, scoped to this package.
 test_tool = "nextest"

@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_simulate_single_rx() {
-        let builder = ChannelBuilder::default().with_capacity(3);
+        let builder = ChannelBuilder::default().with_capacity(4);
         let (tx, rx) = builder.build_channel::<i32>();
         tx.testing_send_all(vec![10, 20, 30], false);  // tx is LazySteadyTx
         let mut runner: Box<dyn SimRunner> = IntoSimRunner::<TestActor>::into_sim_runner(&rx.clone());

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, AtomicU64};
+use std::sync::{atomic::{AtomicU16, AtomicU64}, Mutex};
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
@@ -21,6 +21,9 @@ use crate::core_exec;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_tx::TxCore;
+
+/// Serializes env mutation for ephemeral test telemetry HTTP binds (`127.0.0.1:0`).
+static TEST_TELEMETRY_SERVER_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Constructs telemetry channels for the given context and metadata.
 ///
@@ -143,6 +146,17 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
         feature = "prometheus_metrics"
     ))]
     {
+        if graph.is_for_testing {
+            // Parallel `cargo nextest` + default `0.0.0.0:9900` causes EADDRINUSE; ephemeral
+            // binds get a unique port each time `metrics_server` starts.
+            let _env_guard = TEST_TELEMETRY_SERVER_ENV_LOCK.lock().expect("telemetry env lock");
+            // SAFETY: `set_var` is `unsafe` due to process-wide env races; we serialize with
+            // `TEST_TELEMETRY_SERVER_ENV_LOCK` above and only apply for test graphs here.
+            unsafe {
+                std::env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+                std::env::set_var("TELEMETRY_SERVER_PORT", "0");
+            }
+        }
 
         let base = graph.channel_builder().with_no_refresh_window();
 

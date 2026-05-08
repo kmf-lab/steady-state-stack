@@ -1,0 +1,7 @@
+# cargo-mutants: only `dot_unify.rs` (fast loop for edge telemetry merge).
+# From repo root (use `-j 1` if this machine hits `File exists` worker errors with `-j` > 1):
+#   cargo mutants --manifest-path core/Cargo.toml --config core/mutants.dot_unify.toml --cap-lints true -j 1
+test_tool = "nextest"
+test_workspace = false
+minimum_test_timeout = 120.0
+examine_globs = ["**/dot_unify.rs"]

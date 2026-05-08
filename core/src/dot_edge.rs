@@ -2,7 +2,10 @@ use crate::ActorName;
 use crate::channel_stats::ChannelStatsComputer;
 
 /// Represents an edge in the graph, including metrics and display information.
-#[derive(Debug)]
+///
+/// Diagnostic fields (`diag_*`) capture the **first claimant** numeric actor id + `Arc<ChannelMetaData>` pointer
+/// for each endpoint so WARN lines can correlate duplicate `channels_out` / `channels_in`.
+#[derive(Default, Debug)]
 pub(crate) struct Edge {
     pub(crate) id: usize, // Position matches the channel ID
     pub(crate) from: Option<ActorName>,
@@ -17,6 +20,10 @@ pub(crate) struct Edge {
     pub(crate) metric_text: String, // Results from computer
     pub(crate) partner: Option<&'static str>,
     pub(crate) bundle_index: Option<usize>,
+    pub(crate) diag_from_claim_actor_id: Option<usize>,
+    pub(crate) diag_from_claim_meta_arc: Option<usize>,
+    pub(crate) diag_to_claim_actor_id: Option<usize>,
+    pub(crate) diag_to_claim_meta_arc: Option<usize>,
 }
 
 /// Checks if a color string is recognized by the DOT renderer.

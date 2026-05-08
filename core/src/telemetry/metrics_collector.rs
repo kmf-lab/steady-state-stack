@@ -1,6 +1,10 @@
  //! The `metrics_collector` module provides the `MetricsCollector` actor, which is responsible for
 //! gathering telemetry data from all actors and channels in the graph. It aggregates this data
 //! into a `DotState` for visualization and Prometheus metrics.
+//!
+//! Set **`STEADY_TELEMETRY_EDGE_DIAG=1`** at process start to log one structured line per actor’s first
+//! `NodeDef`: numeric actor id, name, rx/tx channel telemetry ids plus `Arc` pointers—see
+//! [telemetry-edge-conflict.md](../../../docs/telemetry-edge-conflict.md).
 
 use std::collections::{VecDeque};
 use std::sync::Arc;
@@ -68,6 +72,25 @@ pub struct MetricsCollector {
     future_take: Vec<i64>,
     future_send: Vec<i64>,
     cursor: usize,
+}
+
+#[inline]
+fn telemetry_edge_diag_enabled() -> bool {
+    matches!(
+        std::env::var("STEADY_TELEMETRY_EDGE_DIAG").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE")
+    )
+}
+
+fn format_diag_channel_slots(metas: &[Arc<ChannelMetaData>]) -> String {
+    let mut pairs: Vec<(usize, usize)> =
+        metas.iter().map(|m| (m.id, Arc::as_ptr(m) as usize)).collect();
+    pairs.sort_by_key(|p| p.0);
+    pairs
+        .into_iter()
+        .map(|(id, ptr)| format!("{}:{:#x}", id, ptr))
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 impl MetricsCollector {
@@ -154,6 +177,25 @@ impl MetricsCollector {
                             // Buffer NodeDef if this is a new actor
                             if !self.sent_node_def[actor_id] {
                                 self.sent_node_def[actor_id] = true;
+                                if telemetry_edge_diag_enabled() {
+                                    let rxv = rx.rx_channel_id_vec();
+                                    let txv = rx.tx_channel_id_vec();
+                                    info!(
+                                        target: "steady_state::telemetry::dot",
+                                        concat!(
+                                            "telemetry NodeDef_diag seq={} ",
+                                            "actor_numeric_id={} actor_name={:?} ",
+                                            "telemetry_bundle_queue_depth={} ",
+                                            "rx_channel_id_arc=[{}] tx_channel_id_arc=[{}]",
+                                        ),
+                                        self.seq,
+                                        meta.ident.id,
+                                        meta.ident.label,
+                                        detail.telemetry_take.len(),
+                                        format_diag_channel_slots(&rxv),
+                                        format_diag_channel_slots(&txv),
+                                    );
+                                }
                                 node_defs_to_send.push(DiagramData::NodeDef(
                                     self.seq, 
                                     Box::new((
@@ -303,5 +345,20 @@ pub(crate) mod metric_collector_tests {
         let collector = MetricsCollector::new(all_telemetry_rx, targets, 40);
         assert_eq!(collector.seq, 0);
         assert!(collector.sent_node_def.is_empty());
+    }
+
+    #[test]
+    fn format_diag_channel_slots_orders_by_id() {
+        let a = Arc::new(ChannelMetaData {
+            id: 50,
+            ..ChannelMetaData::default()
+        });
+        let b = Arc::new(ChannelMetaData {
+            id: 10,
+            ..ChannelMetaData::default()
+        });
+        let line = format_diag_channel_slots(&[a.clone(), b.clone()]);
+        assert!(line.starts_with("10:"));
+        assert!(line.contains(";50:"));
     }
 }

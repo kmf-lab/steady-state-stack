@@ -578,8 +578,20 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                 duration_rate.saturating_sub(Duration::from_nanos(now_nanos - last))
             } else {
                 if Duration::from_nanos(last-now_nanos).gt(&duration_rate) {
-                    warn!("the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration."
-                        ,self.ident, Duration::from_nanos(last-now_nanos), duration_rate);
+                    #[cfg(not(test))]
+                    warn!(
+                        "the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}, consider doing less work OR increating the wait_periodic duration.",
+                        self.ident,
+                        Duration::from_nanos(last - now_nanos),
+                        duration_rate
+                    );
+                    #[cfg(test)]
+                    debug!(
+                        "the actor {:?} loop took {:?} which is longer than the required periodic time of: {:?}",
+                        self.ident,
+                        Duration::from_nanos(last - now_nanos),
+                        duration_rate
+                    );
                 }
                 Duration::ZERO //SHOULD NEVER HAPPEN BECAUSE last is in the future.
             };

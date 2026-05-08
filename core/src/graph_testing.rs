@@ -123,7 +123,10 @@ impl StageManager {
         let (sender_rx, receiver_rx) = rb.split();
 
         if self.node.contains_key(&key) || self.backplane.contains_key(&key) {
-            warn!("Node with name {:?} already exists, check suffix usage", key);
+            trace!(
+                "Node with name {:?} already exists, check suffix usage",
+                key
+            );
             false
         } else {
             self.node.insert(
@@ -539,7 +542,9 @@ impl SideChannelResponder {
         if let Some(q) = rx.try_peek() {
             let is_correct_type = q.is::<M>();
             if !is_correct_type {
-                error!("Fix the unit test sent message, Type must match channel of the target actor but it does not.");
+                debug!(
+                    "should_apply: message at channel head does not match the requested type parameter"
+                );
             }
             Some(is_correct_type)
         } else {
