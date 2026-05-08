@@ -1,9 +1,13 @@
+use std::cmp::Ordering;
+
 use hdrhistogram::Counter;
 use log::error;
 use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
 use crate::channel_stats::{ChannelStatsComputer, PLACES_TENS};
 use crate::{actor_stats, StdDev};
 use crate::actor_builder_units::Percentile;
+
+/// Rollup motion glyphs use `#FFFFFF` / `#808080` for the vertical meter on DOT edges (`graph` uses black background, white `fontcolor`).
 
 /// Struct for configuring the computation of labels.
 #[derive(Copy, Clone)]
@@ -250,6 +254,81 @@ pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     }
 }
 
+/// Unicode lower one-eighth blocks (U+2581–U+2588): bottom-growing vertical meter in one glyph.
+const ROLLUP_VERT_GLYPHS: [char; 8] = [
+    '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}',
+];
+
+/// White vs grey for DOT telemetry on a black canvas (`build_dot` uses `fontcolor=white`);
+/// used at steps `0` and `7` to alternate while direction stays down / up at the rail.
+const ROLLUP_MOTION_BRIGHT: &str = "#FFFFFF";
+const ROLLUP_MOTION_DIM: &str = "#808080";
+
+/// Fixed-cadence motion state for K/M/B/T **Total:** lines on DOT edges (see `advance` / `glyph_html_suffix`).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RollupMotionState {
+    prev_value: u128,
+    step: u8,
+    osc: bool,
+    initialized: bool,
+}
+
+impl RollupMotionState {
+    #[inline]
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Call once per telemetry frame after `total_consumed` is updated (see [`super::channel_stats::ChannelStatsComputer::compute`]).
+    pub(crate) fn advance(&mut self, current: u128) {
+        if !self.initialized {
+            self.prev_value = current;
+            self.initialized = true;
+            return;
+        }
+        match current.cmp(&self.prev_value) {
+            Ordering::Greater => {
+                if self.step < 7 {
+                    self.step += 1;
+                } else {
+                    self.osc = !self.osc;
+                }
+            }
+            Ordering::Less => {
+                if self.step > 0 {
+                    self.step -= 1;
+                } else {
+                    self.osc = !self.osc;
+                }
+            }
+            Ordering::Equal => {}
+        }
+        self.prev_value = current;
+    }
+
+    /// HTML fragment for Graphviz `label=<…>` after a **compressed** total; `None` when the total is shown without a letter suffix.
+    pub(crate) fn glyph_html_suffix(&self, total_display: u128) -> Option<String> {
+        if total_display < 1000 {
+            return None;
+        }
+        let ch = ROLLUP_VERT_GLYPHS[self.step.min(7) as usize];
+        let color = self.glyph_color_hex();
+        Some(format!("<FONT COLOR='{color}'>{ch}</FONT>"))
+    }
+
+    fn glyph_color_hex(&self) -> &'static str {
+        if self.step == 0 || self.step == 7 {
+            if self.osc {
+                ROLLUP_MOTION_DIM
+            } else {
+                ROLLUP_MOTION_BRIGHT
+            }
+        } else {
+            ROLLUP_MOTION_BRIGHT
+        }
+    }
+}
+
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
     if labels.int_only {
@@ -459,5 +538,49 @@ mod tests {
         format_label_prefix(labels, &mut metric, &mut label, "Avg ", "avg_");
         format_value(labels, &mut metric, &mut label, 50, None);
         assert_eq!(metric, "avg_latency{actor=\"test\"} 50\n");
+    }
+
+    #[test]
+    fn rollup_motion_advances_one_step_per_increase() {
+        let mut m = RollupMotionState::default();
+        m.advance(100);
+        assert_eq!(m.step, 0);
+        m.advance(200);
+        assert_eq!(m.step, 1);
+        m.advance(300);
+        assert_eq!(m.step, 2);
+    }
+
+    #[test]
+    fn rollup_motion_flat_holds_step() {
+        let mut m = RollupMotionState::default();
+        m.advance(100);
+        m.advance(5000);
+        assert_eq!(m.step, 1);
+        m.advance(5000);
+        assert_eq!(m.step, 1);
+    }
+
+    #[test]
+    fn rollup_glyph_suffix_only_when_compressed() {
+        let m = RollupMotionState::default();
+        assert!(m.glyph_html_suffix(999).is_none());
+        let g = m.glyph_html_suffix(1000).expect("glyph");
+        assert!(g.contains("<FONT"));
+        assert!(g.contains('\u{2581}'));
+        assert!(g.contains("#FFFFFF") || g.contains("#808080"));
+    }
+
+    #[test]
+    fn rollup_oscillates_at_top_when_still_rising() {
+        let mut m = RollupMotionState {
+            step: 7,
+            initialized: true,
+            prev_value: 1000,
+            osc: false,
+        };
+        m.advance(2000);
+        assert_eq!(m.step, 7);
+        assert!(m.osc);
     }
 }

@@ -7,18 +7,27 @@
 //! ([`ChannelEdgeRole::SetsEdgeTo`], from payload **receive** / `channels_in`) and **at most one** setting
 //! [`Edge::from`](crate::dot_edge::Edge) ([`ChannelEdgeRole::SetsEdgeFrom`], from **send** / `channels_out`).
 //!
-//! If you see `steady_state::telemetry::dot` warnings about endpoint conflicts:
+//! In **non-test** builds, merging spotlight metadata that violates this invariant **panics** with a detailed message
+//! (see `fatal_endpoint_conflict`). In **test** builds the same situation only logs and returns
+//! [`EdgeEndpointConflict`] so unit tests can assert behavior.
+//!
+//! How to fix mis-wired metadata before that happens:
 //! - Ensure every channel is allocated from [`Graph::channel_builder()`](crate::Graph::channel_builder) on the **same**
 //!   [`Graph`](crate::Graph) (one shared `channel_count` namespace).
 //! - In [`SteadyActorShadow::into_spotlight`](crate::steady_actor_shadow::SteadyActorShadow::into_spotlight), list each wire on
 //!   the **receiver** side in rx metadata and on the **sender** side in tx metadata only—never both on the same side
 //!   for two different actors sharing one id.
+//! - **Shared `SteadyTx` clones** (e.g. multiple actors sending to one DLQ) are valid at runtime, but **only one** actor
+//!   should list that transmit end in `tx_meta_data!` / spotlight tx—otherwise two actors both claim the same `from`
+//!   endpoint for one telemetry id.
 
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use log::{debug, trace, warn};
+use log::{debug, trace};
+#[cfg(not(test))]
+use log::error;
 
 use crate::ActorName;
 use crate::channel_stats::ChannelStatsComputer;
@@ -92,35 +101,11 @@ pub(crate) static EDGE_CONFLICT_DIAG_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
 static EDGE_DIAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Test-only diagnostic log when two actors collide on one endpoint (non-test builds [`fatal_endpoint_conflict`] instead).
+#[cfg(test)]
 #[inline]
 fn log_endpoint_conflict(details: &EdgeEndpointConflict, meta: &Arc<ChannelMetaData>) {
-    #[cfg(test)]
     EDGE_CONFLICT_DIAG_COUNT.fetch_add(1, Ordering::Relaxed);
-    #[cfg(not(test))]
-    warn!(
-        target: "steady_state::telemetry::dot",
-        concat!(
-            "dot edge endpoint conflict ",
-            "channel_id={} endpoint={} existing_actor={:?} existing_actor_id={:?} existing_first_arc_ptr={:?} ",
-            "new_actor={:?} new_actor_id={} new_claim_arc_ptr={:#x} ",
-            "partner={:?} bundle_index={:?} ",
-            "label_len={} first_label={:?} connects_sidecar={}",
-        ),
-        details.channel_id,
-        details.endpoint,
-        details.existing,
-        details.existing_actor_numeric_id,
-        details.existing_claim_meta_arc,
-        details.new_claimant,
-        details.new_claimant_actor_numeric_id,
-        details.new_claim_arc_ptr,
-        meta.partner,
-        meta.bundle_index,
-        meta.labels.len(),
-        meta.labels.first().copied(),
-        meta.connects_sidecar,
-    );
-    #[cfg(test)]
     debug!(
         target: "steady_state::telemetry::dot",
         concat!(
@@ -151,12 +136,82 @@ fn log_endpoint_conflict(details: &EdgeEndpointConflict, meta: &Arc<ChannelMetaD
     );
 }
 
+/// Human-readable explanation for process exit on DOT metadata collision (non-test builds).
+#[cfg(not(test))]
+fn endpoint_conflict_fatal_message(details: &EdgeEndpointConflict, meta: &ChannelMetaData) -> String {
+    let endpoint_expl: &'static str = match details.endpoint {
+        "from" => {
+            "Endpoint `from`: two different actors registered the same telemetry ChannelMetaData::id as SENDER.\n\
+This comes from spotlight transmit metadata (`channels_out`, tx side of `into_spotlight`). \
+The unified DOT graph allows only one `from` node per channel id.\n\n"
+        }
+        "to" => {
+            "Endpoint `to`: two different actors registered the same telemetry ChannelMetaData::id as RECEIVER.\n\
+This comes from spotlight receive metadata (`channels_in`, rx side of `into_spotlight`). \
+The unified DOT graph allows only one `to` node per channel id.\n\n"
+        }
+        _ => "Internal error: unknown endpoint name for conflict.\n\n",
+    };
+
+    let labels_block = if meta.labels.is_empty() {
+        "Channel labels: (none on this metadata snapshot). Use ChannelMetaData::id above and locate the channel in \
+your `Graph` wiring and in each actor's `tx_meta_data!` / `rx_meta_data!` lists.\n\n"
+            .to_string()
+    } else {
+        format!("Channel labels: {}\n\n", meta.labels.join(", "))
+    };
+
+    let show_ty = meta.show_type.unwrap_or("(not set)");
+
+    format!(
+        "FATAL: DOT telemetry edge endpoint conflict — unified graph cannot be built.\n\n\
+Duplicate telemetry key: ChannelMetaData::id == {}\n\
+{}{}\
+Second-registration snapshot: partner={:?} bundle_index={:?} connects_sidecar={} show_type={} capacity={}\n\n\
+Conflicting actors:\n\
+  first claimant (already owned this endpoint): {:?}  actor_id={:?}\n\
+  second claimant (this registration):          {:?}  actor_id={}\n\n\
+Diagnostics (Arc metadata pointers): existing_claim_meta_arc={:?} new_claim_arc_ptr={:#x}\n\n\
+What to check:\n\
+- Allocate every Steady channel from ONE `Graph::channel_builder()` chain on ONE `Graph` (single channel id namespace).\n\
+- In `SteadyActorShadow::into_spotlight`: each wire's receiver only in rx metadata, sender only in tx metadata — \
+never two different actors listing the same side for the same id.\n\
+- Shared `SteadyTx` clones (e.g. multiple actors to one DLQ) are valid at runtime; only ONE actor should list that \
+transmit end in `tx_meta_data!` / spotlight tx. Omit it from other actors, or route through one dedicated sender actor \
+for telemetry.\n",
+        details.channel_id,
+        labels_block,
+        endpoint_expl,
+        meta.partner,
+        meta.bundle_index,
+        meta.connects_sidecar,
+        show_ty,
+        meta.capacity,
+        details.existing,
+        details.existing_actor_numeric_id,
+        details.new_claimant,
+        details.new_claimant_actor_numeric_id,
+        details.existing_claim_meta_arc,
+        details.new_claim_arc_ptr,
+    )
+}
+
+#[cfg(not(test))]
+#[cold]
+#[inline(never)]
+fn fatal_endpoint_conflict(details: &EdgeEndpointConflict, meta: &Arc<ChannelMetaData>) -> ! {
+    let msg = endpoint_conflict_fatal_message(details, meta.as_ref());
+    error!(target: "steady_state::telemetry::dot", "{}", msg);
+    panic!("{}", msg);
+}
+
 /// Applies one channel's metadata into [`DotState::edges`] (grow slot, assign `from`/`to`, merge labels, maybe init stats).
 ///
-/// Returns [`Some`] when a **different** actor already claimed the same endpoint for this channel id (a warning is emitted).
+/// Returns [`Some`] when a **different** actor already claimed the same endpoint for this channel id. In **test**
+/// builds this only logs diagnostics; in **non-test** builds this **panics** with a detailed message (no return).
 ///
-/// Behaviour matches the legacy `define_unified_edges` per-item loop—including continuing with label merge and stats refresh
-/// after a conflict warning.
+/// Behaviour after a handled test-only conflict matches the legacy `define_unified_edges` per-item loop (label merge and
+/// stats refresh continue). Non-test conflicts do not continue.
 #[must_use]
 pub(crate) fn apply_channel_to_unified_edges(
     local_state: &mut DotState,
@@ -195,8 +250,13 @@ pub(crate) fn apply_channel_to_unified_edges(
                     new_claimant_actor_numeric_id: actor_ident.id,
                     new_claim_arc_ptr: Arc::as_ptr(meta) as usize,
                 };
-                log_endpoint_conflict(&details, meta);
-                conflict = Some(details);
+                #[cfg(test)]
+                {
+                    log_endpoint_conflict(&details, meta);
+                    conflict = Some(details);
+                }
+                #[cfg(not(test))]
+                fatal_endpoint_conflict(&details, meta);
             }
         }
         ChannelEdgeRole::SetsEdgeFrom => {
@@ -216,8 +276,13 @@ pub(crate) fn apply_channel_to_unified_edges(
                     new_claimant_actor_numeric_id: actor_ident.id,
                     new_claim_arc_ptr: Arc::as_ptr(meta) as usize,
                 };
-                log_endpoint_conflict(&details, meta);
-                conflict = Some(details);
+                #[cfg(test)]
+                {
+                    log_endpoint_conflict(&details, meta);
+                    conflict = Some(details);
+                }
+                #[cfg(not(test))]
+                fatal_endpoint_conflict(&details, meta);
             }
         }
     }
