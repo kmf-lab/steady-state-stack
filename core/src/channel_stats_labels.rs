@@ -254,10 +254,9 @@ pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     }
 }
 
-/// Unicode lower one-eighth blocks (U+2581–U+2588): bottom-growing vertical meter in one glyph.
-const ROLLUP_VERT_GLYPHS: [char; 8] = [
-    '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}',
-];
+/// Unicode scalar values for vertical meter (avoid raw UTF‑8 in DOT FONT; use `&#x…;` in HTML for Viz/embeddings).
+const ROLLUP_VERT_CODEPOINTS: [u32; 8] =
+    [0x2581, 0x2582, 0x2583, 0x2584, 0x2585, 0x2586, 0x2587, 0x2588];
 
 /// White vs grey for DOT telemetry on a black canvas (`build_dot` uses `fontcolor=white`);
 /// used at steps `0` and `7` to alternate while direction stays down / up at the rail.
@@ -311,9 +310,12 @@ impl RollupMotionState {
         if total_display < 1000 {
             return None;
         }
-        let ch = ROLLUP_VERT_GLYPHS[self.step.min(7) as usize];
+        let cp = ROLLUP_VERT_CODEPOINTS[self.step.min(7) as usize];
         let color = self.glyph_color_hex();
-        Some(format!("<FONT COLOR='{color}'>{ch}</FONT>"))
+        Some(format!(
+            "<FONT COLOR='{}'>&#x{:x};</FONT>",
+            color, cp,
+        ))
     }
 
     fn glyph_color_hex(&self) -> &'static str {
@@ -567,7 +569,7 @@ mod tests {
         assert!(m.glyph_html_suffix(999).is_none());
         let g = m.glyph_html_suffix(1000).expect("glyph");
         assert!(g.contains("<FONT"));
-        assert!(g.contains('\u{2581}'));
+        assert!(g.contains("&#x2581;"));
         assert!(g.contains("#FFFFFF") || g.contains("#808080"));
     }
 

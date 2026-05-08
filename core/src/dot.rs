@@ -996,9 +996,12 @@ fn render_edge_internal(
     }
     dot_graph.put_slice(b"\" [label=");
     if label_is_html {
-        dot_graph.put_slice(b"<");
+        // `<< … >>` so inner `>` in `<BR/>` / `</FONT>` do not end the DOT token.
+        // Graphviz still expects well-formed-ish HTML nodes; bare text + `<BR/>` fails `dot -Tsvg`
+        // ("not well-formed") without a `<TABLE><TR><TD>…</TD></TR></TABLE>` shell.
+        dot_graph.put_slice(b"<<TABLE BORDER=\"0\"><TR><TD>");
         dot_graph.put_slice(label.as_bytes());
-        dot_graph.put_slice(b">");
+        dot_graph.put_slice(b"</TD></TR></TABLE>>");
     } else {
         dot_graph.put_slice(b"\"");
         escape_dot_quotes(escape_buf, label);
@@ -1022,6 +1025,7 @@ fn render_edge_internal(
         dot_graph.put_slice(b", tooltip=\"");
         escape_dot_quotes(escape_buf, tooltip);
         dot_graph.put_slice(escape_buf.as_bytes());
+        dot_graph.put_slice(b"\"");
 
         // NOTE: labeltooltip is NOT added here because it is unreliable in Graphviz JS
         // rendering. Instead, the tooltip <title> element is cloned from each edge group
@@ -1468,6 +1472,49 @@ mod dot_tests {
         let mut out = String::new();
         escape_plain_to_graphviz_html(&mut out, "a & b\n<x>");
         assert_eq!(out, "a &amp; b<BR/>&lt;x&gt;");
+    }
+
+    /// Graphviz terminates `label=<` at the first `>`; rollup labels use `<BR/>` and `<FONT>`.
+    /// Requires `<<…>>` plus a `<TABLE><TR><TD>…</TD></TR></TABLE>` shell for valid HTML-like parsing.
+    #[test]
+    fn render_edge_internal_html_label_uses_doubled_angle_brackets() {
+        let mut buf = BytesMut::new();
+        let mut scratch = String::new();
+        render_edge_internal(
+            &mut buf,
+            "FROM",
+            None,
+            "TO",
+            None,
+            r"left<BR/>Total: 1K<FONT COLOR='#FFFFFF'>▃</FONT>",
+            true,
+            "#FF0000",
+            "1",
+            "",
+            false,
+            "",
+            "",
+            "",
+            &mut scratch,
+        );
+        let s = std::str::from_utf8(&buf).expect("utf8 dot");
+        assert!(
+            s.contains("[label=<<TABLE"),
+            "expected TABLE shell after doubled bracket in {s:?}"
+        );
+        assert!(
+            s.contains("</TD></TR></TABLE>>"),
+            "expected TD/TABLE closing before comma-color in {s:?}"
+        );
+        let until_color = match s.find(", color=\"") {
+            Some(i) => &s[..i],
+            None => s,
+        };
+        assert!(
+            until_color.ends_with("</TABLE>>"),
+            "label fragment should close TABLE and DOT html token; tail: {:?}",
+            &until_color[until_color.len().saturating_sub(60)..]
+        );
     }
 
     /// `bool::then_some(x)` evaluates `x` eagerly; mean must use `then` so empty iterators never divide.
