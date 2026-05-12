@@ -24,6 +24,7 @@ use futures_util::lock::{Mutex, MutexGuard};
 use log::*;
 use parking_lot::RwLock;
 use std::any::Any;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
 use std::future::Future;
@@ -105,6 +106,8 @@ pub struct ActorBuilder {
     stack_size: Option<usize>,
     /// Universal list of all actors in the graph.
     actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
+    /// Actor base names that run real `internal_behavior` in test graphs (pipeline processors).
+    test_pipeline_internal_names: Arc<HashSet<&'static str>>,
 }
 
 /// A helper struct for managing CPU core allocation to balance actor distribution across available cores.
@@ -618,6 +621,8 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     aeron_init_for_tests: bool,
     /// Flag indicating whether to prevent simulation.
     never_simulate: bool,
+    /// When true, test graphs use `internal_behavior` for this actor (see graph name allowlist).
+    force_internal_behavior_in_test: bool,
     /// Optional barrier for synchronizing shutdown.
     shutdown_barrier: Option<Arc<Barrier>>,
 }
@@ -639,6 +644,7 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             aeron_meda_driver: self.aeron_meda_driver.clone(),
             aeron_init_for_tests: self.aeron_init_for_tests,
             never_simulate: self.never_simulate,
+            force_internal_behavior_in_test: self.force_internal_behavior_in_test,
             shutdown_barrier: self.shutdown_barrier.clone(),
         }
     }
@@ -725,6 +731,7 @@ impl ActorBuilder {
             is_for_test: graph.is_for_testing,
             stack_size: graph.default_stack_size,
             actor_catalog: graph.actor_catalog.clone(),
+            test_pipeline_internal_names: graph.test_pipeline_internal_names.clone(),
         }
     }
 
@@ -1307,6 +1314,10 @@ impl ActorBuilder {
             });
             oneshot_shutdown.shared()
         };
+        let force_internal_behavior_in_test = self.is_for_test
+            && self
+                .test_pipeline_internal_names
+                .contains(self.actor_name.name);
         SteadyContextArchetype {
             runtime_state: runtime_state.clone(),
             channel_count: channel_count.clone(),
@@ -1322,6 +1333,7 @@ impl ActorBuilder {
             aeron_meda_driver: self.aeron_meda_driver,
             aeron_init_for_tests: self.is_for_test,
             never_simulate: self.never_simulate,
+            force_internal_behavior_in_test,
             shutdown_barrier: self.shutdown_barrier,
         }
     }
@@ -1464,9 +1476,9 @@ fn build_actor_context<I: ?Sized>(
     team_id: usize,
     is_test: bool,
 ) -> SteadyActorShadow {
-    //DO NOT modify. the logic here is perfect as we use internal behavior for all non tests
-    //               for some tests we also override to ensure we still use internal behavior
-    let use_internal_behavior = builder_source.never_simulate || !is_test;
+    let use_internal_behavior = builder_source.never_simulate
+        || !is_test
+        || builder_source.force_internal_behavior_in_test;
     SteadyActorShadow {
         runtime_state: builder_source.runtime_state.clone(),
         channel_count: builder_source.channel_count.clone(),
@@ -1565,6 +1577,7 @@ mod test_actor_builder {
             aeron_meda_driver: OnceLock::new(),
             aeron_init_for_tests: true,
             never_simulate: false,
+            force_internal_behavior_in_test: false,
             shutdown_barrier: None,
         };
 

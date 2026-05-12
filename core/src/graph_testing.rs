@@ -9,7 +9,8 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::Mutex as StdMutex;
+use std::time::{Duration, Instant};
 use async_ringbuf::AsyncRb;
 use async_ringbuf::consumer::AsyncConsumer;
 use async_ringbuf::producer::AsyncProducer;
@@ -245,6 +246,8 @@ impl StageManager {
 pub struct SideChannelResponder {
     pub(crate) arc: Arc<Mutex<(SideChannel, Receiver<()>)>>,
     pub(crate) identity: ActorIdentity,
+    /// Wall-clock start of the current [`StageWaitFor`] command (peeked, not yet completed).
+    pub(crate) stage_wait_start: Arc<StdMutex<Option<Instant>>>,
 }
 
 /// Constant for the "ok" message.
@@ -278,30 +281,37 @@ impl SideChannelResponder {
         <X as TxCore>::MsgOut: Sync,
         <X as TxCore>::MsgOut: 'static,
     {
+        let wait_reset = self.stage_wait_start.clone();
         let r = self.respond_with(
-            move |message, actor| match message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() {
-                Some(msg) => match msg {
+            move |message, actor| {
+                let Some(msg) = message.downcast_ref::<StageDirection<X::MsgIn<'a>>>() else {
+                    return None;
+                };
+                match msg {
                     StageDirection::Echo(m) => match actor.try_send(tx_core, m.clone()) {
-                        SendOutcome::Success => Some(Box::new(OK_MESSAGE)),
+                        SendOutcome::Success => {
+                            if let Ok(mut w) = wait_reset.lock() {
+                                *w = None;
+                            }
+                            Some(Box::new(OK_MESSAGE))
+                        }
                         SendOutcome::Blocked(msg) | SendOutcome::Timeout(msg) | SendOutcome::Closed(msg) => Some(Box::new(msg)),
                     },
                     StageDirection::EchoAt(i, m) => {
                         if *i == index {
                             match actor.try_send(tx_core, m.clone()) {
-                                SendOutcome::Success => Some(Box::new(OK_MESSAGE)),
+                                SendOutcome::Success => {
+                                    if let Ok(mut w) = wait_reset.lock() {
+                                        *w = None;
+                                    }
+                                    Some(Box::new(OK_MESSAGE))
+                                }
                                 SendOutcome::Blocked(msg) | SendOutcome::Timeout(msg) | SendOutcome::Closed(msg) => Some(Box::new(msg)),
                             }
                         } else {
                             None
                         }
                     }
-                },
-                None => {
-                    error!(
-                        "direction Unable to cast stage direction to target type: {}",
-                        std::any::type_name::<StageDirection<X::MsgIn<'a>>>()
-                    );
-                    None
                 }
             },
             actor,
@@ -320,7 +330,6 @@ impl SideChannelResponder {
     /// * `rx_core` - The receiver core.
     /// * `actor` - The actor instance.
     /// * `index` - The index for the action.
-    /// * `run_duration` - The duration to wait.
     ///
     /// # Returns
     /// The simulation step result or error.
@@ -333,20 +342,16 @@ impl SideChannelResponder {
         rx_core: &mut X,
         actor: &mut C,
         index: usize,
-        run_duration: Duration,
     ) -> Result<SimStepResult, Box<dyn Error>>
     where
         <X as RxCore>::MsgOut: std::fmt::Debug,
     {
+        let wait_clock = self.stage_wait_start.clone();
         let r = self.respond_with(
             move |message, actor_guard| {
-                let wait_for: &StageWaitFor<T> = message.downcast_ref::<StageWaitFor<X::MsgOut>>()
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "Unable to take message and downcast it to: {}",
-                            std::any::type_name::<T>()
-                        )
-                    });
+                let Some(wait_for) = message.downcast_ref::<StageWaitFor<X::MsgOut>>() else {
+                    return None;
+                };
 
                 let message = match wait_for {
                     StageWaitFor::Message(m, t) => Some((m, t)),
@@ -362,6 +367,9 @@ impl SideChannelResponder {
                 if let Some((expected, timeout)) = message {
                     match actor_guard.try_take(rx_core) {
                         Some(measured) => {
+                            if let Ok(mut w) = wait_clock.lock() {
+                                *w = None;
+                            }
                             if expected.eq(&measured) {
                                 Some(Box::new(OK_MESSAGE))
                             } else {
@@ -370,11 +378,21 @@ impl SideChannelResponder {
                             }
                         }
                         None => {
-                            if run_duration.gt(timeout) {
-                                error!("timeout: {:?}", timeout);
-                                Some(Box::new(TIMEOUT.to_string()))
-                            } else {
-                                None
+                            let mut g = wait_clock.lock().ok()?;
+                            match *g {
+                                None => {
+                                    *g = Some(Instant::now());
+                                    None
+                                }
+                                Some(start) => {
+                                    if start.elapsed() >= *timeout {
+                                        *g = None;
+                                        error!("timeout: {:?}", timeout);
+                                        Some(Box::new(TIMEOUT.to_string()))
+                                    } else {
+                                        None
+                                    }
+                                }
                             }
                         }
                     }
@@ -403,7 +421,11 @@ impl SideChannelResponder {
         arc: Arc<Mutex<(SideChannel, Receiver<()>)>>,
         identity: ActorIdentity,
     ) -> Self {
-        SideChannelResponder { arc, identity }
+        SideChannelResponder {
+            arc,
+            identity,
+            stage_wait_start: Arc::new(StdMutex::new(None)),
+        }
     }
 
     /// Waits for a specified number of requests to be available.
@@ -574,7 +596,8 @@ impl SideChannelResponder {
     /// * `actor` - The actor instance.
     ///
     /// # Returns
-    /// `true` if a message was handled, `false` if not, or an error.
+    /// `true` if a message was handled and a response was sent to the test thread,
+    /// `false` if there was nothing to do or the handler could not complete yet, or an error.
     pub fn respond_with<F, C>(
         &self,
         mut f: F,
@@ -588,7 +611,7 @@ impl SideChannelResponder {
         let ((tx, rx), _shutdown) = guard.deref_mut();
 
         if rx.is_empty() {
-            return Ok(true);
+            return Ok(false);
         }
         if let Some(q) = rx.try_peek() {
             if let Some(r) = f(q, actor) {
@@ -609,7 +632,7 @@ impl SideChannelResponder {
                 Ok(false)
             }
         } else {
-            Ok(true)
+            Ok(false)
         }
     }
 }
@@ -930,6 +953,152 @@ mod graph_testing_tests {
         let result_wrong = core_exec::block_on(responder.should_apply::<String>());
         assert_eq!(result_wrong, Some(false));
         Ok(())
+    }
+
+    async fn pipeline_generator_edge(
+        actor: SteadyActorShadow,
+        tx: SteadyTx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor = actor.into_spotlight([], [&tx]);
+        if actor.use_internal_behavior {
+            Ok(())
+        } else {
+            actor.simulated_behavior(sim_runners!(tx)).await
+        }
+    }
+
+    async fn pipeline_heartbeat_edge(
+        actor: SteadyActorShadow,
+        tx: SteadyTx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor = actor.into_spotlight([], [&tx]);
+        if actor.use_internal_behavior {
+            Ok(())
+        } else {
+            actor.simulated_behavior(sim_runners!(tx)).await
+        }
+    }
+
+    async fn pipeline_logger_edge(
+        actor: SteadyActorShadow,
+        rx: SteadyRx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor = actor.into_spotlight([&rx], []);
+        if actor.use_internal_behavior {
+            Ok(())
+        } else {
+            actor.simulated_behavior(sim_runners!(rx)).await
+        }
+    }
+
+    async fn pipeline_worker_internal<A: SteadyActor>(
+        mut actor: A,
+        heartbeat: SteadyRx<u64>,
+        generator: SteadyRx<u64>,
+        logger: SteadyTx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut heartbeat = heartbeat.lock().await;
+        let mut generator = generator.lock().await;
+        let mut logger = logger.lock().await;
+
+        while actor.is_running(
+            || heartbeat.is_closed_and_empty()
+                && generator.is_closed_and_empty()
+                && logger.mark_closed(),
+        ) {
+            let clean = await_for_all!(
+                actor.wait_avail(&mut heartbeat, 1),
+                actor.wait_avail(&mut generator, 1),
+                actor.wait_vacant(&mut logger, 1)
+            );
+
+            if actor.try_take(&mut heartbeat).is_some() || !clean {
+                if let Some(&value) = actor.try_peek(&mut generator) {
+                    match actor.try_send(&mut logger, value) {
+                        SendOutcome::Success => {
+                            actor.try_take(&mut generator).expect("internal error");
+                        }
+                        SendOutcome::Blocked(_) => continue,
+                        SendOutcome::Timeout(_) | SendOutcome::Closed(_) => continue,
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn pipeline_worker_run(
+        actor: SteadyActorShadow,
+        heartbeat_rx: SteadyRx<u64>,
+        generator_rx: SteadyRx<u64>,
+        logger_tx: SteadyTx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor = actor.into_spotlight([&heartbeat_rx, &generator_rx], [&logger_tx]);
+        if actor.use_internal_behavior {
+            pipeline_worker_internal(actor, heartbeat_rx, generator_rx, logger_tx).await
+        } else {
+            actor
+                .simulated_behavior(sim_runners!(
+                    heartbeat_rx,
+                    generator_rx,
+                    logger_tx
+                ))
+                .await
+        }
+    }
+
+    #[test]
+    fn staged_pipeline_four_actor_graph_regression() -> Result<(), Box<dyn Error>> {
+        const NAME_GENERATOR: &str = "GENERATOR";
+        const NAME_HEARTBEAT: &str = "HEARTBEAT";
+        const NAME_WORKER: &str = "WORKER";
+        const NAME_LOGGER: &str = "LOGGER";
+
+        SteadyRunner::test_build().run((), |mut graph| {
+            let (gen_lazy, gen_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+            let (hb_lazy, hb_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+            let (log_lazy, log_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+            let gen_st_close = gen_lazy.clone();
+            let hb_st_close = hb_lazy.clone();
+
+            graph
+                .actor_builder()
+                .with_name(NAME_GENERATOR)
+                .build(move |ctx| pipeline_generator_edge(ctx, gen_lazy.clone()), SoloAct);
+            graph
+                .actor_builder()
+                .with_name(NAME_HEARTBEAT)
+                .build(move |ctx| pipeline_heartbeat_edge(ctx, hb_lazy.clone()), SoloAct);
+            graph.actor_builder().with_name(NAME_WORKER).build(
+                move |ctx| pipeline_worker_run(ctx, hb_rx.clone(), gen_rx.clone(), log_lazy.clone()),
+                SoloAct,
+            );
+            graph
+                .actor_builder()
+                .with_name(NAME_LOGGER)
+                .build(move |ctx| pipeline_logger_edge(ctx, log_rx.clone()), SoloAct);
+
+            graph.start();
+
+            let sm = graph.stage_manager();
+            sm.actor_perform(NAME_GENERATOR, StageDirection::Echo(15_u64))?;
+            sm.actor_perform(NAME_HEARTBEAT, StageDirection::Echo(100_u64))?;
+            sm.actor_perform(
+                NAME_LOGGER,
+                StageWaitFor::Message(15_u64, Duration::from_secs(2)),
+            )?;
+            sm.final_bow();
+
+            for st in [&gen_st_close, &hb_st_close] {
+                core_exec::block_on(async {
+                    let mut g = st.lock().await;
+                    g.mark_closed();
+                });
+            }
+
+            graph.request_shutdown();
+            graph.block_until_stopped(Duration::from_secs(5))
+        })
     }
 
     // #[test]

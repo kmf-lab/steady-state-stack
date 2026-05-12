@@ -17,12 +17,24 @@ use crate::{ActorIdentity, GraphLivelinessState, RxCoreBundle, SendSaturation, S
 use aeron::aeron::Aeron;
 use futures_util::future::FusedFuture;
 use std::any::Any;
+use std::future::Future;
 
 /// The `SimRunner` trait defines the interface for actors that can be simulated in edge case tests.
-pub trait SimRunner {
+pub trait SimRunner<C: SteadyActor + ?Sized> {
     /// Called each simulation iteration. Return `SimStepResult::DidWork` if work was done,
     /// `SimStepResult::NoWork` if no work was done.
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>>;
+
+    /// Stage-manager integration: handle [`crate::graph_testing::StageDirection`] / [`crate::graph_testing::StageWaitFor`]
+    /// on the side channel for this runner's channel slot.
+    fn stage_step(
+        &mut self,
+        actor: &mut C,
+        responder: &SideChannelResponder,
+    ) -> Result<SimStepResult, Box<dyn Error>> {
+        let _ = (actor, responder);
+        Ok(SimStepResult::NoWork)
+    }
 }
 
 /// Result of a single simulation step.
@@ -35,36 +47,50 @@ pub enum SimStepResult {
 }
 
 /// Trait for converting channels (or bundles) into simulation runners.
-pub trait IntoSimRunner<C> {
+pub trait IntoSimRunner<C: SteadyActor + ?Sized> {
     /// Converts this channel/bundle into a `SimRunner` that can be driven by `simulated_behavior`.
-    fn into_sim_runner(&self) -> Box<dyn SimRunner>;
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>>;
 }
 
 pub(crate) async fn simulated_behavior<C: SteadyActor>(
     actor: &mut C,
     sims: Vec<&dyn IntoSimRunner<C>>,
 ) -> Result<(), Box<dyn Error>> {
-    // Convert each sim runner to a boxed SimRunner
-    let mut sim_runners: Vec<Box<dyn SimRunner>> = sims
-        .into_iter()
-        .map(|s| s.into_sim_runner())
-        .collect();
+    let mut sim_runners: Vec<Box<dyn SimRunner<C>>> =
+        sims.into_iter().map(|s| s.into_sim_runner()).collect();
 
-    // Main simulation loop
     while actor.is_running(|| true) {
         let mut did_work = false;
-        for runner in sim_runners.iter_mut() {
-            match runner.step() {
-                Ok(SimStepResult::DidWork) => did_work = true,
-                Ok(SimStepResult::NoWork) => {}
-                Err(e) => {
-                    warn!("Simulation step error: {:?}", e);
-                    return Err(e);
+        if let Some(responder) = actor.sidechannel_responder() {
+            // Integration / StageManager mode: only `stage_step` may touch channels. Plain `step()`
+            // auto-sends or discards messages and races `simulate_direction` / `simulate_wait_for`.
+            for runner in sim_runners.iter_mut() {
+                match runner.stage_step(actor, &responder) {
+                    Ok(SimStepResult::DidWork) => {
+                        did_work = true;
+                    }
+                    Ok(SimStepResult::NoWork) => {}
+                    Err(e) => {
+                        warn!("Simulation stage_step error: {:?}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        } else {
+            for runner in sim_runners.iter_mut() {
+                match runner.step() {
+                    Ok(SimStepResult::DidWork) => {
+                        did_work = true;
+                    }
+                    Ok(SimStepResult::NoWork) => {}
+                    Err(e) => {
+                        warn!("Simulation step error: {:?}", e);
+                        return Err(e);
+                    }
                 }
             }
         }
         if !did_work {
-            // Yield a bit to avoid busy-waiting
             actor.yield_now().await;
         }
     }
@@ -72,8 +98,8 @@ pub(crate) async fn simulated_behavior<C: SteadyActor>(
 }
 
 /// Implementation for `SteadyRx` (single receiver) as a simulation runner.
-impl<C: SteadyActor, T: 'static + Send + Debug + Clone> IntoSimRunner<C> for Arc<Mutex<Rx<T>>> {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> IntoSimRunner<C> for Arc<Mutex<Rx<T>>> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimRx::new(self.clone()))
     }
 }
@@ -88,7 +114,7 @@ impl<T: 'static + Send + Debug + Clone> SimRx<T> {
     }
 }
 
-impl<T: 'static + Send + Debug + Clone> SimRunner for SimRx<T> {
+impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> SimRunner<C> for SimRx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.rx.try_lock() {
             if guard.shared_avail_units() > 0 {
@@ -101,11 +127,23 @@ impl<T: 'static + Send + Debug + Clone> SimRunner for SimRx<T> {
             Ok(SimStepResult::NoWork)
         }
     }
+
+    fn stage_step(
+        &mut self,
+        actor: &mut C,
+        responder: &SideChannelResponder,
+    ) -> Result<SimStepResult, Box<dyn Error>> {
+        if let Some(mut guard) = self.rx.try_lock() {
+            responder.simulate_wait_for(&mut *guard, actor, 0)
+        } else {
+            Ok(SimStepResult::NoWork)
+        }
+    }
 }
 
 /// Implementation for `SteadyTx` (single transmitter) as a simulation runner.
-impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Default> IntoSimRunner<C> for Arc<Mutex<Tx<T>>> {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> IntoSimRunner<C> for Arc<Mutex<Tx<T>>> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimTx::new(self.clone()))
     }
 }
@@ -115,18 +153,16 @@ struct SimTx<T> {
     msg: Option<T>,
 }
 
-impl<T: 'static + Send + Debug + Clone + Default> SimTx<T> {
+impl<T: 'static + Send + Sync + Debug + Clone + Default> SimTx<T> {
     fn new(tx: Arc<Mutex<Tx<T>>>) -> Self {
         SimTx { tx, msg: None }
     }
 }
 
-impl<T: 'static + Send + Debug + Clone + Default> SimRunner for SimTx<T> {
+impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunner<C> for SimTx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.tx.try_lock() {
             if !guard.shared_is_full() {
-                // Generate a test message – for simplicity use a clone of the previous message
-                // or a default.
                 let msg = self.msg.clone().unwrap_or_default();
                 let _ = guard.shared_try_send(msg.clone());
                 self.msg = Some(msg);
@@ -138,11 +174,23 @@ impl<T: 'static + Send + Debug + Clone + Default> SimRunner for SimTx<T> {
             Ok(SimStepResult::NoWork)
         }
     }
+
+    fn stage_step(
+        &mut self,
+        actor: &mut C,
+        responder: &SideChannelResponder,
+    ) -> Result<SimStepResult, Box<dyn Error>> {
+        if let Some(mut guard) = self.tx.try_lock() {
+            responder.simulate_direction(&mut *guard, actor, 0)
+        } else {
+            Ok(SimStepResult::NoWork)
+        }
+    }
 }
 
 /// Implementation for `SteadyStreamRx` (receiver side of a stream) as a simulation runner.
 impl<C: SteadyActor, T: StreamControlItem> IntoSimRunner<C> for Arc<Mutex<StreamRx<T>>> {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimStreamRx::new(self.clone()))
     }
 }
@@ -157,11 +205,9 @@ impl<T: StreamControlItem> SimStreamRx<T> {
     }
 }
 
-impl<T: StreamControlItem> SimRunner for SimStreamRx<T> {
+impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamRx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.rx.try_lock() {
-            // Use the control channel's `RxCore` directly; the payload channel is part
-            // of the stream but for simulation we only track control items.
             if guard.control_channel.shared_avail_units() > 0 {
                 guard.control_channel.shared_try_take();
                 Ok(SimStepResult::DidWork)
@@ -176,7 +222,7 @@ impl<T: StreamControlItem> SimRunner for SimStreamRx<T> {
 
 /// Implementation for `SteadyStreamTx` (transmitter side of a stream) as a simulation runner.
 impl<C: SteadyActor, T: StreamControlItem> IntoSimRunner<C> for Arc<Mutex<StreamTx<T>>> {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimStreamTx::new(self.clone()))
     }
 }
@@ -191,14 +237,11 @@ impl<T: StreamControlItem> SimStreamTx<T> {
     }
 }
 
-impl<T: StreamControlItem> SimRunner for SimStreamTx<T> {
+impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.tx.try_lock() {
-            // Use the control channel's `TxCore` methods directly; the payload channel is
-            // part of the stream but for simulation we only check control capacity.
             let ctrl_vacant = guard.control_channel.shared_vacant_units();
             if ctrl_vacant > 0 {
-                // Generate a dummy control item and payload
                 let dummy = T::testing_new(8);
                 let payload = vec![0u8; 8];
                 guard.control_channel.shared_try_send(dummy);
@@ -214,10 +257,10 @@ impl<T: StreamControlItem> SimRunner for SimStreamTx<T> {
 }
 
 /// Implementation for `SteadyRxBundle` (bundle of receivers) as a simulation runner.
-impl<C: SteadyActor, T: 'static + Send + Debug + Clone, const N: usize> IntoSimRunner<C>
+impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> IntoSimRunner<C>
     for Arc<[SteadyRx<T>; N]>
 {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimRxBundle::new(self.clone()))
     }
 }
@@ -227,13 +270,15 @@ struct SimRxBundle<T, const N: usize> {
     index: usize,
 }
 
-impl<T: 'static + Send + Debug + Clone, const N: usize> SimRxBundle<T, N> {
+impl<T: 'static + Send + Debug + Clone + Eq, const N: usize> SimRxBundle<T, N> {
     fn new(rx_bundle: Arc<[SteadyRx<T>; N]>) -> Self {
         SimRxBundle { rx_bundle, index: 0 }
     }
 }
 
-impl<T: 'static + Send + Debug + Clone, const N: usize> SimRunner for SimRxBundle<T, N> {
+impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> SimRunner<C>
+    for SimRxBundle<T, N>
+{
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         let i = self.index % N;
         let rx = &self.rx_bundle[i];
@@ -249,13 +294,29 @@ impl<T: 'static + Send + Debug + Clone, const N: usize> SimRunner for SimRxBundl
             Ok(SimStepResult::NoWork)
         }
     }
+
+    fn stage_step(
+        &mut self,
+        actor: &mut C,
+        responder: &SideChannelResponder,
+    ) -> Result<SimStepResult, Box<dyn Error>> {
+        for lane in 0..N {
+            if let Some(mut guard) = self.rx_bundle[lane].try_lock() {
+                let r = responder.simulate_wait_for(&mut *guard, actor, lane)?;
+                if r == SimStepResult::DidWork {
+                    return Ok(SimStepResult::DidWork);
+                }
+            }
+        }
+        Ok(SimStepResult::NoWork)
+    }
 }
 
 /// Implementation for `SteadyTxBundle` (bundle of transmitters) as a simulation runner.
-impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Default, const N: usize> IntoSimRunner<C>
+impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> IntoSimRunner<C>
     for Arc<[SteadyTx<T>; N]>
 {
-    fn into_sim_runner(&self) -> Box<dyn SimRunner> {
+    fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimTxBundle::new(self.clone()))
     }
 }
@@ -265,13 +326,15 @@ struct SimTxBundle<T, const N: usize> {
     index: usize,
 }
 
-impl<T: 'static + Send + Debug + Clone + Default, const N: usize> SimTxBundle<T, N> {
+impl<T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> SimTxBundle<T, N> {
     fn new(tx_bundle: Arc<[SteadyTx<T>; N]>) -> Self {
         SimTxBundle { tx_bundle, index: 0 }
     }
 }
 
-impl<T: 'static + Send + Debug + Clone + Default, const N: usize> SimRunner for SimTxBundle<T, N> {
+impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> SimRunner<C>
+    for SimTxBundle<T, N>
+{
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         let i = self.index % N;
         let tx = &self.tx_bundle[i];
@@ -287,6 +350,22 @@ impl<T: 'static + Send + Debug + Clone + Default, const N: usize> SimRunner for 
         } else {
             Ok(SimStepResult::NoWork)
         }
+    }
+
+    fn stage_step(
+        &mut self,
+        actor: &mut C,
+        responder: &SideChannelResponder,
+    ) -> Result<SimStepResult, Box<dyn Error>> {
+        for lane in 0..N {
+            if let Some(mut guard) = self.tx_bundle[lane].try_lock() {
+                let r = responder.simulate_direction(&mut *guard, actor, lane)?;
+                if r == SimStepResult::DidWork {
+                    return Ok(SimStepResult::DidWork);
+                }
+            }
+        }
+        Ok(SimStepResult::NoWork)
     }
 }
 
@@ -387,8 +466,8 @@ mod tests {
     fn test_simulate_single_rx() {
         let builder = ChannelBuilder::default().with_capacity(4);
         let (tx, rx) = builder.build_channel::<i32>();
-        tx.testing_send_all(vec![10, 20, 30], false);  // tx is LazySteadyTx
-        let mut runner: Box<dyn SimRunner> = IntoSimRunner::<TestActor>::into_sim_runner(&rx.clone());
+        tx.testing_send_all(vec![10, 20, 30], false);
+        let mut runner: Box<dyn SimRunner<TestActor>> = IntoSimRunner::<TestActor>::into_sim_runner(&rx.clone());
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
@@ -399,10 +478,9 @@ mod tests {
     fn test_simulate_single_tx() {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx, _rx) = builder.build_channel::<i32>();
-        let mut runner: Box<dyn SimRunner> = IntoSimRunner::<TestActor>::into_sim_runner(&tx.clone());
+        let mut runner: Box<dyn SimRunner<TestActor>> = IntoSimRunner::<TestActor>::into_sim_runner(&tx.clone());
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
-        // Channel now full
         assert_eq!(runner.step().unwrap(), SimStepResult::NoWork);
     }
 }

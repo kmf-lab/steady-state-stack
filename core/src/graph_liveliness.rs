@@ -3,6 +3,7 @@
 //! and the liveliness state handles the shutdown process and state transitions.
 
 use crate::{logging_util, Troupe};
+use std::collections::HashSet;
 use std::ops::{Deref};
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -587,6 +588,8 @@ pub struct GraphBuilder {
     block_fail_fast: bool,
     /// Minimum size for bundles.
     bundle_floor_size: usize,
+    /// Actor base names that use real `internal_behavior` in test graphs (StageManager on edges).
+    test_pipeline_internal_names: HashSet<&'static str>,
 }
 
 impl Default for GraphBuilder {
@@ -625,6 +628,7 @@ impl GraphBuilder {
             default_stack_size: None,
             block_fail_fast: false,
             bundle_floor_size: 4,
+            test_pipeline_internal_names: HashSet::new(),
         }
     }
 
@@ -650,7 +654,19 @@ impl GraphBuilder {
             default_stack_size: None,
             block_fail_fast: true,
             bundle_floor_size: 4,
+            test_pipeline_internal_names: HashSet::new(),
         }
+    }
+
+    /// Replaces the set of actor base names that run real `internal_behavior` in **test** graphs
+    /// (for pipeline processors while edges use StageManager simulation). Empty clears the set.
+    pub fn with_test_pipeline_internal_behavior_names(
+        &self,
+        names: HashSet<&'static str>,
+    ) -> Self {
+        let mut result = self.clone();
+        result.test_pipeline_internal_names = names;
+        result
     }
 
     /// Sets the queue length for I/O uring operations.
@@ -873,6 +889,8 @@ pub struct Graph {
     pub(crate) default_stack_size: Option<usize>,
     /// Minimum size for bundles.
     pub(crate) bundle_floor_size: usize,
+    /// Names of actors that use `internal_behavior` in test graphs (pipeline processors).
+    pub(crate) test_pipeline_internal_names: Arc<HashSet<&'static str>>,
     /// Univeral list of all actor identifiers
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
 }
@@ -1331,6 +1349,7 @@ impl Graph {
             shutdown_barrier: builder.shutdown_barrier,
             default_stack_size: builder.default_stack_size,
             bundle_floor_size: builder.bundle_floor_size,
+            test_pipeline_internal_names: Arc::new(builder.test_pipeline_internal_names.clone()),
             actor_catalog: actor_catalog.clone(),
         };
         if builder.telemetry_metric_features {

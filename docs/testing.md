@@ -102,8 +102,12 @@ The `StageManager` lets you send side‑channel commands to an actor while the g
 When you call `GraphBuilder::for_testing()` with a `StageManager`:
 
 1. A **backplane** is created – a set of side channels (one per actor).
-2. Each actor’s `run()` function detects `use_internal_behavior == false` and enters **simulated behavior**.
+2. Each actor’s `run()` function detects `use_internal_behavior == false` and enters **simulated behavior**, which **services the side channel** each simulation cycle (so `StageManager` commands are not left unanswered).
 3. The `StageManager` can **send commands** to an actor via its side channel, and the actor responds automatically (echoing, waiting, etc.).
+
+**`SimRx` / `SimTx` stepping** pulls or pushes staged channel traffic. A **middle** actor that only simulates cannot reliably **forward** data from upstream to downstream. For pipeline processors in tests, either set `never_simulate(true)` on that actor, or add its **base name** to the graph allowlist with [`GraphBuilder::with_test_pipeline_internal_behavior_names`]. [`SteadyRunner::test_build`] prepopulates that set with **`WORKER`** (lessons use that name for the pipeline node). Disable that default with [`SteadyRunner::without_default_test_pipeline_worker`]; add more base names with [`SteadyRunner::with_test_pipeline_internal_behavior_names`].
+
+When an actor has a registered side channel, simulation runs **only** the stage pass on each runner (plain `step()` auto‑traffic is disabled) so default `SimTx` / `SimRx` behavior cannot race stage commands.
 
 ### Example: Testing a consumer with a StageManager
 
@@ -239,6 +243,7 @@ fn test_backpressure() -> Result<(), Box<dyn Error>> {
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | Test hangs | Calling `run()` instead of `internal_behavior` | Always call `internal_behavior` in unit tests. |
+| `actor_perform` hangs | Side channel never serviced | Use a test graph; keep `simulated_behavior` running; for pipeline **middle** actors use real `internal_behavior` (`never_simulate`, allowlist, or `SteadyRunner` `WORKER` default). |
 | Test times out | Missing `mark_closed()` in veto closure | Include `tx.mark_closed()` in `is_running` closure. |
 | Data appears incomplete | Channels not flushed before shutdown | Wait for `block_until_stopped` before reading output. |
 | State not initialized | `SteadyState` lock not called | Use `state.lock(|| MyState::default()).await` before use. |

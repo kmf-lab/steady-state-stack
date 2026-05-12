@@ -106,6 +106,7 @@ pub(crate) use abstract_executor_nuclei::core_exec;
 mod abstract_executor_async_std;
 
 use std::any::Any;
+use std::collections::HashSet;
 #[cfg(all(feature = "exec_async_std", not(any(feature = "proactor_nuclei", feature = "proactor_tokio"))))]
 pub(crate) use abstract_executor_async_std::core_exec;
 
@@ -674,6 +675,11 @@ pub struct SteadyRunner {
     telemetry_colors: Option<(String, String)>,
     for_test: bool,
     bundle_floor_size: Option<usize>,
+    /// When false (default for [`SteadyRunner::test_build`]), the base name `WORKER` uses real
+    /// `internal_behavior` in test graphs. Set to true to disable that default.
+    skip_default_test_pipeline_worker: bool,
+    /// Additional actor base names (beyond the optional `WORKER` default) that use `internal_behavior` in test graphs.
+    extra_test_pipeline_internal_names: HashSet<&'static str>,
 }
 
 impl SteadyRunner {
@@ -690,6 +696,8 @@ impl SteadyRunner {
             telemetry_colors: None,
             for_test: true,
             bundle_floor_size: None,
+            skip_default_test_pipeline_worker: false,
+            extra_test_pipeline_internal_names: HashSet::new(),
         }
     }
     /// Creates a new SteadyRunner with default settings.
@@ -705,6 +713,8 @@ impl SteadyRunner {
             telemetry_colors: None,
             for_test: false,
             bundle_floor_size: None,
+            skip_default_test_pipeline_worker: false,
+            extra_test_pipeline_internal_names: HashSet::new(),
         }
     }
 
@@ -763,6 +773,22 @@ impl SteadyRunner {
         self
     }
 
+    /// Do not add the default `WORKER` base name to the test-graph pipeline allowlist (see [`GraphBuilder::with_test_pipeline_internal_behavior_names`]).
+    pub fn without_default_test_pipeline_worker(mut self) -> Self {
+        self.skip_default_test_pipeline_worker = true;
+        self
+    }
+
+    /// Names merged into the test-graph allowlist for actors that should run real `internal_behavior`.
+    /// The default `WORKER` entry is still added unless [`SteadyRunner::without_default_test_pipeline_worker`] was used.
+    pub fn with_test_pipeline_internal_behavior_names(
+        mut self,
+        names: HashSet<&'static str>,
+    ) -> Self {
+        self.extra_test_pipeline_internal_names = names;
+        self
+    }
+
     /// Spawns a guarded thread, initializes a production graph, and executes the provided closure.
     /// The result (including errors) from the closure is propagated back to the caller as a boxed,
     /// thread-safe error. Panics in the thread are unwound (propagated) to the calling thread.
@@ -808,6 +834,15 @@ impl SteadyRunner {
             }
             if let Some(size) = self.bundle_floor_size {
                 graph = graph.with_bundle_floor_size(size);
+            }
+
+            if self.for_test {
+                let mut names = HashSet::new();
+                if !self.skip_default_test_pipeline_worker {
+                    names.insert("WORKER");
+                }
+                names.extend(self.extra_test_pipeline_internal_names.iter().copied());
+                graph = graph.with_test_pipeline_internal_behavior_names(names);
             }
 
             let graph = graph.build(args);
