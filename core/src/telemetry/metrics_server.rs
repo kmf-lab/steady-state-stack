@@ -450,47 +450,85 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
     }
 }
 
+// --- Telemetry assets embedded at compile time (gzip or raw bytes) ---------------------------
+//
+// **Never** embed build-generated telemetry blobs using paths under `../../target/...` or only
+// `CARGO_TARGET_DIR`. Those paths are not guaranteed to match where `build.rs` wrote the files
+// (workspace `target/` vs `core/target/`), which once produced binaries that served empty
+// `viz-lite.js` and broke `importScripts` in the web worker.
+//
+// `build.rs` writes the following **flat basenames** into Cargo’s `OUT_DIR`; `env!("OUT_DIR")`
+// here resolves to that same directory when `rustc` compiles this crate. Keep names in sync with
+// `build.rs` (`viz-lite.js.gz`, `index.html.gz`, `webworker.js.gz`, `dot-viewer.js.gz`,
+// `dot-viewer.css.gz`, `spinner.gif`).
+//
+// Repo-tracked SVGs under `../../static/telemetry/...` stay on those paths — they are not
+// `build.rs` outputs and are not placed in `OUT_DIR`.
 #[allow(dead_code)]
 #[cfg(any(docsrs, feature = "telemetry_server_cdn", not(feature = "telemetry_server_builtin")))]
 const CONTENT_VIZ_LITE_GZ: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin"))]
-const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/viz-lite.js.gz") } else { &[] };
+const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/viz-lite.js.gz"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_INDEX_HTML_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/index.html.gz") } else { &[] };
+const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_DOT_VIEWER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.js.gz") } else { &[] };
+const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/dot-viewer.js.gz"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_DOT_VIEWER_CSS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/dot-viewer.css.gz") } else { &[] };
+const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/dot-viewer.css.gz"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_WEBWORKER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/webworker.js.gz") } else { &[] };
+const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/webworker.js.gz"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
 const CONTENT_SPINNER_GIF_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
-const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../target/static/telemetry/images/spinner.gif") } else { &[] };
+const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER {
+    include_bytes!(concat!(env!("OUT_DIR"), "/spinner.gif"))
+} else {
+    &[]
+};
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
@@ -841,8 +879,10 @@ mod http_telemetry_tests {
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
                 print!(".");
+                // Regression: HTTP 200 with an empty or corrupt embedded gzip once broke browser
+                // `importScripts` for viz-lite — `validate_path(..., None)` did not catch it.
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, None, "viz-lite.js");
+                validate_viz_lite_js_gzip_payload(addr);
                 print!(".");
                 #[cfg(feature = "prometheus_metrics")]
                 validate_path(&addr, Some("="), "metric");
@@ -994,6 +1034,53 @@ mod http_telemetry_tests {
                 info!("unable to test port: {}",&addr);
             }
         };
+    }
+
+    /// Decodes `/viz-lite.js` (gzip on the wire) and asserts the script is non-trivial.
+    ///
+    /// A prior bug embedded an empty or wrong gzip while still returning HTTP 200; browsers then
+    /// failed `importScripts` for viz-lite. Plain `validate_path(..., None)` did not catch that.
+    #[cfg(feature = "telemetry_server_builtin")]
+    fn validate_viz_lite_js_gzip_payload(addr: &str) {
+        use flate2::read::GzDecoder;
+        use std::io::Read;
+
+        const MIN_DECODED_SCRIPT_BYTES: usize = 5000;
+
+        let url = format!("http://{}/viz-lite.js", addr);
+        let response = isahc::get(url).expect("GET viz-lite.js");
+        assert_eq!(response.status(), 200);
+        let mut raw = Vec::new();
+        response
+            .into_body()
+            .read_to_end(&mut raw)
+            .expect("read viz-lite.js body");
+        assert!(
+            !raw.is_empty(),
+            "viz-lite.js body empty"
+        );
+        // `isahc` may transparently gunzip even when the server sets `Content-Encoding: gzip`; handle
+        // both raw gzip on the wire and already-decoded bodies.
+        let decoded = if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
+            let mut decoder = GzDecoder::new(&raw[..]);
+            let mut s = String::new();
+            decoder
+                .read_to_string(&mut s)
+                .expect("gunzip viz-lite.js");
+            s
+        } else {
+            String::from_utf8_lossy(&raw).into_owned()
+        };
+        assert!(
+            decoded.len() >= MIN_DECODED_SCRIPT_BYTES,
+            "viz-lite.js decoded script unexpectedly small: {} bytes",
+            decoded.len()
+        );
+        assert!(
+            decoded.contains("Viz") && decoded.contains("function"),
+            "decoded viz-lite.js missing expected markers (len {})",
+            decoded.len()
+        );
     }
 
 }
