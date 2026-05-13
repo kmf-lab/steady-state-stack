@@ -1,7 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
 version = "0.2.12"
-documentation = "https://docs.rs/steady_state/0.2.11/steady_state/"
+documentation = "https://docs.rs/steady_state/0.2.12/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2024"
 description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
@@ -79,25 +79,25 @@ cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
 async-std        = { version = "1.13", optional = true, features = ["default"]}
-ringbuf          = "0.4"  # foundational bounded message passing
-async-ringbuf    = "=0.3.5"  # align with ringbuf 0.4 (0.3.6 pulls ringbuf 0.5 and breaks trait coherence)
+ringbuf          = "0.4"  # MUST stay on 0.4.x while async-ringbuf = 0.3.5 (same trait graph); do not bump to 0.5 without upgrading async-ringbuf in the same PR
+async-ringbuf    = "=0.3.5"  # pinned: 0.3.6+ may pull ringbuf 0.5 and break AsyncWrap trait coherence with sync channels
 log              = "0.4"  # common logging traits
 flexi_logger     = { version="0.31", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0"   # for async Delay::new(check_rate).await used places where we poll
 hdrhistogram     = "7.5"  # for latency histograms
 bytes            = { version = "1.11", features = [] }
 lazy_static      = "1.5"
-uuid             = { version = "1.19", features = ["v4"] }
+uuid             = { version = "1.23", features = ["v4"] }
 num-traits       = "0.2" # for num::Zero and other generic math traits
 itoa             = "1.0"
 ctrlc            = "3.5"
 time             = { version = "0.3", features = ["macros", "formatting", "parsing"] } # used in dot regardles of what IDE reports
 dirs             = "6.0.0"
-clap             = { version = "4.5", features = ["derive"] }  # Use clap with derive feature
+clap             = { version = "4.6", features = ["derive"] }  # Use clap with derive feature
 futures          = "0.3"  # for Select! Barrier etc and lock::Mutex
 futures-util     = "0.3"
 parking_lot      = "0.12"
-tempfile         = "3.24"
+tempfile         = "3.27"
 
 ahash            = "0.8" # fastest hash map so far
 async-io         = "2.6"

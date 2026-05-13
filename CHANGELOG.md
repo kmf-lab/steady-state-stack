@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Dependencies
+
+- **`ringbuf`** is pinned to **0.4.x** again so it matches **`async-ringbuf` 0.3.5** (same `ringbuf` trait graph). Using **ringbuf 0.5** alongside that `async-ringbuf` caused hundreds of `AsyncWrap` trait-bound errors in stream/channel code. **Do not bump one without the other** in the same change (see comments in `core/Cargo.toml`).
+
 ### Coverage (pre-release scope)
 
 - **Goal:** Raise merged `llvm-cov` coverage incrementally (Tier 1/2 tests below); do **not** treat full **Aeron** / **aqueduct** stacks or huge **spotlight/shadow** surfaces as release blockers without dedicated CI (e.g. media driver jobs).
