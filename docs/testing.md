@@ -109,6 +109,16 @@ When you call `GraphBuilder::for_testing()` with a `StageManager`:
 
 When an actor has a registered side channel, simulation runs **only** the stage pass on each runner (plain `step()` auto‑traffic is disabled) so default `SimTx` / `SimRx` behavior cannot race stage commands.
 
+### Simulated producers and clean shutdown
+
+When a **simulated** actor (StageManager / `GraphBuilder::for_testing()`) exits `simulated_behavior` **normally**—after the graph requests shutdown and its `is_running` loop ends—the framework **marks all of that actor’s simulated transmitters closed** (`SimTx`, `SimTxBundle`, `SimStreamTx`). That matches “this producer is finished” in lesson-style pipelines so downstream actors that veto until `rx.is_closed_and_empty()` can shut down **without** manual `mark_closed()` on upstream lazy transmitters.
+
+This hook runs only on the success path (after the simulation loop); an early `Err` from `step` / `stage_step` does not run it. Bundle simulated producers close **every** `SimTx` lane in the bundle the same way.
+
+### Debugging unclean shutdown
+
+If `block_until_stopped` reports an unclean shutdown, a **veto** is usually the cause: some actor’s `is_running` closure still returns false for “safe to stop”. Set `RUST_LOG=steady_state=debug` (or `RUST_LOG=debug`) so veto diagnostics from the graph can identify which condition blocked shutdown.
+
 ### Example: Testing a consumer with a StageManager
 
 ```rust
@@ -244,9 +254,15 @@ fn test_backpressure() -> Result<(), Box<dyn Error>> {
 |-------|-------|-----|
 | Test hangs | Calling `run()` instead of `internal_behavior` | Always call `internal_behavior` in unit tests. |
 | `actor_perform` hangs | Side channel never serviced | Use a test graph; keep `simulated_behavior` running; for pipeline **middle** actors use real `internal_behavior` (`never_simulate`, allowlist, or `SteadyRunner` `WORKER` default). |
-| Test times out | Missing `mark_closed()` in veto closure | Include `tx.mark_closed()` in `is_running` closure. |
+| Test times out | Veto: downstream not closed or work left | Ensure real consumers drain inputs; simulated **producers** auto-close their `Tx` on simulated stop—avoid extra upstream `mark_closed` unless you intentionally keep a channel open. |
 | Data appears incomplete | Channels not flushed before shutdown | Wait for `block_until_stopped` before reading output. |
 | State not initialized | `SteadyState` lock not called | Use `state.lock(|| MyState::default()).await` before use. |
+
+---
+
+## Maintainer: downstream lesson checks
+
+Merges that only run `cargo test` in **this** workspace can still break external lessons (for example the **standard** lesson’s full-graph `graph_test`). After changing `steady_state`, run that lesson’s tests with a **path** dependency pointing at this repo’s `core` crate (or publish a pre-release and bump the lesson). No submodule is required if you clone the lesson beside this tree and edit its `Cargo.toml` temporarily.
 
 ---
 

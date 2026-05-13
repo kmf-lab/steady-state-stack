@@ -1047,6 +1047,60 @@ mod graph_testing_tests {
         }
     }
 
+    async fn sim_tx_producer_edge(
+        actor: SteadyActorShadow,
+        tx: SteadyTx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let actor = actor.into_spotlight([], [&tx]);
+        if actor.use_internal_behavior {
+            Ok(())
+        } else {
+            actor.simulated_behavior(sim_runners!(tx)).await
+        }
+    }
+
+    async fn one_u64_consumer_internal<A: SteadyActor>(
+        mut actor: A,
+        rx: SteadyRx<u64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut rx = rx.lock().await;
+        while actor.is_running(|| rx.is_closed_and_empty()) {
+            let _clean = await_for_all!(actor.wait_avail(&mut rx, 1));
+            let _ = actor.try_take(&mut rx);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn staged_single_sim_producer_and_real_consumer_shuts_down_cleanly() -> Result<(), Box<dyn Error>> {
+        SteadyRunner::test_build().run((), |mut graph| {
+            let (prod_tx, prod_rx) = graph.channel_builder().with_capacity(8).build::<u64>();
+
+            graph.actor_builder().with_name("PRODUCER").build(
+                move |ctx| sim_tx_producer_edge(ctx, prod_tx.clone()),
+                SoloAct,
+            );
+            graph.actor_builder().with_name("CONSUMER").build(
+                move |ctx| {
+                    let rx = prod_rx.clone();
+                    async move {
+                        let actor = ctx.into_spotlight([&rx], []);
+                        one_u64_consumer_internal(actor, rx).await
+                    }
+                },
+                SoloAct,
+            );
+
+            graph.start();
+            let sm = graph.stage_manager();
+            sm.actor_perform("PRODUCER", StageDirection::Echo(42_u64))?;
+            sm.final_bow();
+
+            graph.request_shutdown();
+            graph.block_until_stopped(Duration::from_secs(5))
+        })
+    }
+
     #[test]
     fn staged_pipeline_four_actor_graph_regression() -> Result<(), Box<dyn Error>> {
         const NAME_GENERATOR: &str = "GENERATOR";
@@ -1058,8 +1112,6 @@ mod graph_testing_tests {
             let (gen_lazy, gen_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
             let (hb_lazy, hb_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
             let (log_lazy, log_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
-            let gen_st_close = gen_lazy.clone();
-            let hb_st_close = hb_lazy.clone();
 
             graph
                 .actor_builder()
@@ -1088,13 +1140,6 @@ mod graph_testing_tests {
                 StageWaitFor::Message(15_u64, Duration::from_secs(2)),
             )?;
             sm.final_bow();
-
-            for st in [&gen_st_close, &hb_st_close] {
-                core_exec::block_on(async {
-                    let mut g = st.lock().await;
-                    g.mark_closed();
-                });
-            }
 
             graph.request_shutdown();
             graph.block_until_stopped(Duration::from_secs(5))

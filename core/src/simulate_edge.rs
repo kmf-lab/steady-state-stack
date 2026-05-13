@@ -35,6 +35,14 @@ pub trait SimRunner<C: SteadyActor + ?Sized> {
         let _ = (actor, responder);
         Ok(SimStepResult::NoWork)
     }
+
+    /// After [`simulated_behavior`]'s loop exits successfully, mark this runner's simulated **outputs**
+    /// closed so downstream actors can satisfy shutdown vetoes (e.g. `rx.is_closed_and_empty()`).
+    ///
+    /// Default: no-op. Implemented for transmit-side runners (`SimTx`, `SimTxBundle`, `SimStreamTx`).
+    fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
 }
 
 /// Result of a single simulation step.
@@ -93,6 +101,9 @@ pub(crate) async fn simulated_behavior<C: SteadyActor>(
         if !did_work {
             actor.yield_now().await;
         }
+    }
+    for runner in sim_runners.iter_mut() {
+        runner.close_outputs_on_simulated_stop()?;
     }
     Ok(())
 }
@@ -186,6 +197,14 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunn
             Ok(SimStepResult::NoWork)
         }
     }
+
+    fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
+        core_exec::block_on(async {
+            let mut g = self.tx.lock().await;
+            g.mark_closed();
+        });
+        Ok(())
+    }
 }
 
 /// Implementation for `SteadyStreamRx` (receiver side of a stream) as a simulation runner.
@@ -253,6 +272,14 @@ impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
         } else {
             Ok(SimStepResult::NoWork)
         }
+    }
+
+    fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
+        core_exec::block_on(async {
+            let mut g = self.tx.lock().await;
+            g.mark_closed();
+        });
+        Ok(())
     }
 }
 
@@ -367,6 +394,17 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N
         }
         Ok(SimStepResult::NoWork)
     }
+
+    fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
+        for lane in 0..N {
+            let tx = &self.tx_bundle[lane];
+            core_exec::block_on(async {
+                let mut g = tx.lock().await;
+                g.mark_closed();
+            });
+        }
+        Ok(())
+    }
 }
 
 // Test actor used for simulation
@@ -461,6 +499,7 @@ impl SteadyActor for TestActor {
 mod tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    use crate::core_exec;
 
     #[test]
     fn test_simulate_single_rx() {
@@ -482,5 +521,18 @@ mod tests {
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
         assert_eq!(runner.step().unwrap(), SimStepResult::DidWork);
         assert_eq!(runner.step().unwrap(), SimStepResult::NoWork);
+    }
+
+    #[test]
+    fn test_sim_tx_close_outputs_on_simulated_stop() {
+        let builder = ChannelBuilder::default().with_capacity(4);
+        let (tx, rx) = builder.build_channel::<i32>();
+        let mut runner: Box<dyn SimRunner<TestActor>> = IntoSimRunner::<TestActor>::into_sim_runner(&tx.clone());
+        runner.close_outputs_on_simulated_stop().unwrap();
+        core_exec::block_on(async {
+            let rx_est = rx.clone();
+            let mut g = rx_est.lock().await;
+            assert!(g.is_closed_and_empty());
+        });
     }
 }
