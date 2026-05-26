@@ -1,3 +1,4 @@
+// ss[related platform.executor-features]
 use std::error::Error;
 use futures::channel::oneshot;
 use futures::FutureExt;
@@ -14,24 +15,31 @@ pub(crate) mod core_exec {
     //! io_uring backend on Linux.
 
     // ## Imports
+    // ss[related platform.executor-features]
     use std::net::{SocketAddr, TcpListener}; // For network-related operations, unused here but likely for future expansion.
     use std::future::Future; // Core trait for asynchronous operations.
     use std::io::{self, Result}; // Standard IO types for error handling.
+    // ss[related platform.executor-features]
     use std::pin::Pin; // For pinning futures in memory, required by the `Future` trait.
     use std::sync::Arc; // Atomic reference counting for thread-safe sharing, unused here but potentially for future use.
     use std::task::{Context, Poll}; // Core components of Rust's async runtime for polling futures.
+    // ss[related platform.executor-features]
     use std::thread; // For thread management, used in `InfiniteSleep` and driver loop.
     use std::time::Duration; // For timing operations, used in driver restart delay.
     use bytes::BytesMut; // Efficient byte buffer, unused here but likely for IO operations elsewhere.
+    // ss[related platform.executor-features]
     use lazy_static::lazy_static; // For static initialization of `INIT`, ensuring thread-safe setup.
     use log::{error, trace, warn}; // Logging utilities for debugging and error reporting.
     use nuclei::config::{IoUringConfiguration, NucleiConfig}; // `nuclei`-specific configuration for io_uring.
+    // ss[related platform.executor-features]
     use parking_lot::Once; // High-performance synchronization primitive for one-time initialization.
     use crate::ProactorConfig; // Custom configuration enum for selecting proactor modes.
     use futures::{AsyncRead, AsyncWrite}; // Traits for asynchronous IO, unused here but likely for compatibility.
+    // ss[related platform.executor-features]
     use futures_util::AsyncWriteExt; // Extensions for `AsyncWrite`, unused but potentially for future IO tasks.
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use futures_util::future::FusedFuture;
+    // ss[related platform.executor-features]
     use futures::FutureExt;
     // Panic handling for robustness in the driver loop.
 
@@ -41,6 +49,7 @@ pub(crate) mod core_exec {
     /// and its output to be safely transferred between threads. It uses `nuclei::spawn` to schedule
     /// the task on the global multi-threaded executor, with `detach` ensuring it runs without
     /// returning a handle. Useful for tasks requiring thread mobility.
+    // ss[related platform.executor-features]
     pub fn spawn_detached<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) -> () {
         nuclei::spawn(future).detach();
     }
@@ -48,6 +57,7 @@ pub(crate) mod core_exec {
 
     // Get the current core (platform-specific)
     #[cfg(all(unix, feature = "libc"))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         let cpu = unsafe { libc::sched_getcpu() };
         if cpu >= 0 {
@@ -58,6 +68,7 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(all(windows, feature = "winapi"))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         let cpu = unsafe { winapi::um::processthreadsapi::GetCurrentProcessorNumber() };
         if cpu != 0xFFFFFFFF {
@@ -68,12 +79,14 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         None
     }
 
     // Set thread affinity (platform-specific)
     #[cfg(all(unix, feature = "libc"))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use libc::{cpu_set_t, pthread_setaffinity_np, pthread_self};
         let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
@@ -89,6 +102,7 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(all(windows, feature = "winapi"))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         use winapi::um::processthreadsapi::GetCurrentThread;
         use winapi::shared::basetsd::DWORD_PTR;
@@ -103,6 +117,7 @@ pub(crate) mod core_exec {
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(_core: usize) -> std::result::Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
@@ -118,6 +133,7 @@ pub(crate) mod core_exec {
     ///
     /// # Returns
     /// A future that can be awaited to obtain the result of `f`.
+    // ss[related platform.executor-features]
     pub fn spawn_blocking<F, T>(f: F) -> Pin<Box<dyn futures::future::FusedFuture<Output = T> + Send>>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -150,6 +166,7 @@ pub(crate) mod core_exec {
     /// driving the future to completion. It’s useful in contexts like `main` or tests where async
     /// runtime isn’t otherwise available. The lack of `Send` bounds allows flexibility for non-thread-safe
     /// futures, but it blocks the calling thread entirely.
+    // ss[related platform.executor-features]
     pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
         nuclei::block_on(future)
     }
@@ -160,6 +177,7 @@ pub(crate) mod core_exec {
     /// `nuclei::spawn_more_threads`, which increases the global executor’s thread count up to a
     /// configured maximum, returning the number of threads spawned or an error. For some executors,
     /// this might be a no-op, but with `nuclei`, it enhances scalability for IO-bound workloads.
+    // ss[related platform.executor-features]
     pub async fn spawn_more_threads(count: usize) -> Result<usize> {
         nuclei::spawn_more_threads(count).await
     }
@@ -170,6 +188,7 @@ pub(crate) mod core_exec {
         /// The `Once` from `parking_lot` guarantees that the `init` function’s setup logic executes
         /// exactly once, even in a multi-threaded environment, preventing redundant or conflicting
         /// initialization of the `nuclei` executor.
+        // ss[related platform.executor-features]
         static ref INIT: Once = Once::new();
     }
 
@@ -179,6 +198,7 @@ pub(crate) mod core_exec {
     /// optionally starting a driver thread. It uses `INIT.call_once` to ensure thread-safe, one-time
     /// execution. The setup is `nuclei`-specific, leveraging io_uring configurations for efficient IO
     /// handling on Linux.
+    // ss[related platform.executor-features]
     pub(crate) fn init(enable_driver: bool, proactor_config: ProactorConfig, queue_length: u32) {
         INIT.call_once(|| {
             // THIS ENTIRE BLOCK IS ONLY FOR nuclei. {}
@@ -189,9 +209,11 @@ pub(crate) mod core_exec {
             /// `InfiniteSleep` is used in the driver loop to maintain a thread that processes IO events
             /// via `nuclei::drive`. It wakes itself via the waker and parks the thread, ensuring the
             /// executor remains active without busy-waiting, a clever optimization for resource efficiency.
+            // ss[related platform.executor-features]
             struct InfiniteSleep;
 
             impl Future for InfiniteSleep {
+                // ss[related platform.executor-features]
                 type Output = (); // No output, as it never completes.
 
                 /// Polls the future, waking itself and parking the thread.
@@ -199,6 +221,7 @@ pub(crate) mod core_exec {
                 /// This implementation ensures the thread remains alive, ready to process tasks, by
                 /// waking the waker (to reschedule itself) and then parking (yielding control). It
                 /// always returns `Poll::Pending`, never completing, which keeps the driver loop running.
+                // ss[related platform.executor-features]
                 fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                     cx.waker().wake_by_ref(); // Reschedule this future.
                     trace!("InfiniteSleep started"); // Log for debugging.

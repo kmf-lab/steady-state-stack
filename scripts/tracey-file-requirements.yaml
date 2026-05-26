@@ -1,0 +1,357 @@
+# File → Tracey requirement mapping for steady-state/rust-core.
+# Used by tracey_map_unmapped.py and annotate_tracey_tests.py.
+#
+# Fields per file:
+#   primary: default requirement id
+#   verb: impl | related (default related)
+#   requirements: extra ids (file-level related on unmapped units)
+#   test_default_verify: apply to all tests in file when set
+#   test_rules: [{substr, id}] for annotate_tracey_tests.py
+#   impl_patterns: [{substr, id, verb?}] prefer impl on name match
+
+defaults:
+  verb: related
+
+files:
+  monitor.rs:
+    primary: philosophy.single-wake-up
+    verb: related
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - actor.index-wait-truthful
+      - bundle.index-wait-readiness
+      - bundle.deprecated-bundle-waits
+    test_default_verify: philosophy.single-wake-up
+    test_rules:
+      - {substr: wait_avail_bundle, id: bundle.deprecated-bundle-waits}
+      - {substr: wait_avail_index, id: actor.index-wait-round-robin}
+      - {substr: wait_vacant, id: actor.wait-avail-vacant}
+      - {substr: wait_for_index, id: bundle.wait-for-index-macro}
+      - {substr: index_wait, id: bundle.index-wait-readiness}
+    impl_patterns:
+      - {substr: wait_avail_index, id: actor.index-wait-round-robin, verb: impl}
+      - {substr: wait_avail_bundle, id: bundle.deprecated-bundle-waits, verb: impl}
+      - {substr: wait_vacant_index, id: actor.index-wait-truthful, verb: impl}
+
+  dot.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  dot_edge.rs:
+    primary: telemetry.dot-export
+
+  dot_node.rs:
+    primary: telemetry.dot-export
+
+  dot_unify.rs:
+    primary: telemetry.dot-export
+    test_rules:
+      - {substr: "", id: telemetry.dot-export}
+
+  actor_stats.rs:
+    primary: telemetry.prometheus-metrics
+    requirements:
+      - telemetry.channel-labels
+
+  actor_stats_tests.rs:
+    primary: telemetry.prometheus-metrics
+    test_default_verify: telemetry.prometheus-metrics
+
+  channel_stats.rs:
+    primary: telemetry.channel-labels
+    test_default_verify: telemetry.channel-labels
+
+  channel_stats_labels.rs:
+    primary: telemetry.channel-labels
+    test_default_verify: telemetry.channel-labels
+
+  channel_stats_tests.rs:
+    primary: telemetry.channel-labels
+    test_rules:
+      - {substr: "", id: telemetry.channel-labels}
+
+  steady_actor_core.rs:
+    primary: actor.run-dispatcher
+    verb: impl
+    requirements:
+      - actor.internal-behavior-logic
+      - actor.lock-first.channels
+      - actor.is-running-loop
+    test_default_verify: actor.run-dispatcher
+    impl_patterns:
+      - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+      - {substr: run, id: actor.run-dispatcher, verb: impl}
+      - {substr: lock, id: actor.lock-first.channels, verb: impl}
+
+  steady_actor.rs:
+    primary: actor.run-dispatcher
+    requirements:
+      - actor.index-wait-round-robin
+      - actor.wait-avail-vacant
+      - bundle.deprecated-bundle-waits
+    test_rules:
+      - {substr: next_index_wait, id: actor.index-wait-round-robin}
+      - {substr: index_wait, id: actor.index-wait-repeat-bypass}
+
+  steady_actor_shadow.rs:
+    primary: actor.shadow-spotlight
+    requirements:
+      - actor.index-wait-truthful
+      - actor.index-wait-round-robin
+    test_rules:
+      - {substr: wait_avail_index, id: actor.index-wait-truthful}
+      - {substr: index_wait, id: actor.index-wait-round-robin}
+
+  steady_actor_spotlight.rs:
+    primary: actor.shadow-spotlight
+    requirements:
+      - actor.run-dispatcher
+
+  core_tx_stream.rs:
+    primary: channel.stream-dual-buffer
+    requirements:
+      - philosophy.zero-copy-discipline
+    test_default_verify: channel.stream-dual-buffer
+
+  core_rx_stream.rs:
+    primary: channel.stream-dual-buffer
+    requirements:
+      - philosophy.zero-copy-discipline
+    test_default_verify: channel.stream-dual-buffer
+
+  core_tx_guard.rs:
+    primary: actor.lock-first.channels
+
+  core_rx_guard.rs:
+    primary: actor.lock-first.channels
+    verb: impl
+
+  core_rx.rs:
+    primary: philosophy.zero-copy-discipline
+    requirements:
+      - channel.backpressure-never-drop
+    test_rules:
+      - {substr: peek, id: philosophy.zero-copy-discipline}
+      - {substr: take, id: philosophy.zero-copy-discipline}
+      - {substr: avail, id: actor.wait-avail-vacant}
+
+  core_tx.rs:
+    primary: channel.backpressure-never-drop
+    test_rules:
+      - {substr: send, id: channel.backpressure-never-drop}
+      - {substr: vacant, id: channel.backpressure-never-drop}
+
+  steady_rx.rs:
+    primary: philosophy.zero-copy-discipline
+    requirements:
+      - bundle.index-wait-readiness
+      - bundle.trait-vs-actor-index
+    test_rules:
+      - {substr: wait_avail, id: actor.wait-avail-vacant}
+      - {substr: bundle, id: bundle.girth-const-generic}
+
+  steady_tx.rs:
+    primary: channel.backpressure-never-drop
+    test_rules:
+      - {substr: wait_vacant, id: actor.wait-avail-vacant}
+      - {substr: bundle, id: bundle.index-wait-readiness}
+
+  channel_builder.rs:
+    primary: channel.lazy.defer-allocation
+    requirements:
+      - channel.backpressure-never-drop
+      - bundle.girth-const-generic
+    test_rules:
+      - {substr: memory_usage, id: channel.memory-usage-telemetry}
+      - {substr: bundle, id: bundle.girth-const-generic}
+      - {substr: stream, id: channel.stream-dual-buffer}
+
+  channel_builder_lazy.rs:
+    primary: channel.lazy.establish-on-clone
+    test_rules:
+      - {substr: lazy, id: channel.lazy.establish-on-clone}
+      - {substr: testing, id: channel.testing-send-all}
+
+  channel_builder_units.rs:
+    primary: channel.default-capacity
+    test_default_verify: channel.default-capacity
+
+  graph_liveliness.rs:
+    primary: graph.for-testing
+    requirements:
+      - graph.shutdown.veto
+      - graph.liveliness-voters
+    test_rules:
+      - {substr: veto, id: graph.shutdown.veto}
+      - {substr: shutdown, id: graph.shutdown.accept}
+      - {substr: voter, id: graph.liveliness-voters}
+
+  graph_testing.rs:
+    primary: testing.graph-for-testing
+    test_rules:
+      - {substr: stage, id: testing.stage-manager-integration}
+      - {substr: pipeline, id: testing.pipeline-worker-allowlist}
+      - {substr: graph, id: testing.graph-for-testing}
+
+  actor_builder.rs:
+    primary: actor.regeneration-survives
+    requirements:
+      - testing.never-run-in-unit
+      - graph.panic-restart
+    test_rules:
+      - {substr: regeneration, id: actor.regeneration-survives}
+      - {substr: panic, id: graph.panic-restart}
+      - {substr: troupe, id: graph.troupes}
+
+  actor_builder_units.rs:
+    primary: actor.regeneration-survives
+    test_default_verify: actor.regeneration-survives
+
+  loop_driver.rs:
+    primary: philosophy.single-wake-up
+    test_rules:
+      - {substr: await_for, id: philosophy.single-wake-up}
+      - {substr: steady_await, id: philosophy.single-wake-up}
+
+  state_management.rs:
+    primary: state.lock-init-once
+    test_rules:
+      - {substr: persistent, id: state.persistent-load}
+      - {substr: clone, id: state.clone-shared}
+
+  simulate_edge.rs:
+    primary: testing.sim-producer-close
+    test_rules:
+      - {substr: simulate, id: testing.stage-manager-integration}
+
+  macros.rs:
+    primary: bundle.split-macro
+    test_rules:
+      - {substr: split_bundle, id: bundle.split-macro}
+      - {substr: wait_for_index, id: bundle.wait-for-index-macro}
+
+  lib.rs:
+    primary: philosophy.structural-hierarchy
+
+  monitor_telemetry.rs:
+    primary: telemetry.prometheus-metrics
+    requirements:
+      - actor.shadow-spotlight
+
+  telemetry/setup.rs:
+    primary: telemetry.builtin-server
+
+  telemetry/metrics_server.rs:
+    primary: telemetry.builtin-server
+    test_default_verify: telemetry.builtin-server
+
+  telemetry/metrics_collector.rs:
+    primary: telemetry.prometheus-metrics
+    test_default_verify: telemetry.prometheus-metrics
+
+  telemetry_window.rs:
+    primary: telemetry.shutdown-complete
+
+  abstract_executor_async_std.rs:
+    primary: platform.executor-features
+    test_default_verify: platform.executor-features
+
+  abstract_executor_nuclei.rs:
+    primary: platform.executor-features
+
+  abstract_executor_tests.rs:
+    primary: platform.executor-features
+    test_rules:
+      - {substr: "", id: platform.executor-features}
+
+  yield_now.rs:
+    primary: philosophy.mechanical-sympathy
+    verb: impl
+
+  logging_util.rs:
+    primary: philosophy.structural-hierarchy
+
+  expression_steady_eye.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  steady_config.rs:
+    primary: philosophy.structural-hierarchy
+    test_default_verify: philosophy.structural-hierarchy
+
+  test_panic_capture.rs:
+    primary: testing.never-run-in-unit
+    test_default_verify: testing.never-run-in-unit
+
+  install/local_cli.rs:
+    primary: platform.executor-features
+    test_default_verify: platform.executor-features
+
+  install/serviced.rs:
+    primary: platform.executor-features
+    test_default_verify: platform.executor-features
+
+  serialize/byte_buffer_packer.rs:
+    primary: stream.control-payload
+    test_default_verify: stream.control-payload
+
+  serialize/fast_protocol_packed.rs:
+    primary: stream.control-payload
+    test_default_verify: stream.control-payload
+
+  distributed/aeron_channel_builder.rs:
+    primary: distributed.aeron-uri
+    requirements:
+      - distributed.subscribe-publish
+
+  distributed/aeron_channel_structs.rs:
+    primary: distributed.aeron-uri
+    test_default_verify: distributed.aeron-uri
+
+  distributed/aeron_publish.rs:
+    primary: distributed.subscribe-publish
+
+  distributed/aeron_publish_bundle.rs:
+    primary: distributed.subscribe-publish
+    requirements:
+      - bundle.girth-const-generic
+
+  distributed/aeron_subscribe.rs:
+    primary: distributed.subscribe-publish
+
+  distributed/aeron_subscribe_bundle.rs:
+    primary: distributed.subscribe-publish
+
+  distributed/aqueduct_builder.rs:
+    primary: distributed.aqueduct-stream
+    test_default_verify: distributed.aqueduct-stream
+
+  distributed/aqueduct_stream.rs:
+    primary: distributed.aqueduct-stream
+    test_default_verify: distributed.aqueduct-stream
+
+  distributed/polling.rs:
+    primary: distributed.media-driver-testing
+    test_default_verify: distributed.media-driver-testing
+
+  distributed/scheduling.rs:
+    primary: distributed.media-driver-testing
+    test_default_verify: distributed.media-driver-testing
+
+cargo_steady_state:
+  main.rs:
+    primary: tooling.cargo-driver-strings
+    test_rules:
+      - {substr: extract_percent, id: tooling.cargo-percent-parse}
+      - {substr: capacity, id: tooling.cargo-capacity-driven}
+      - {substr: bundle, id: tooling.cargo-bundle-codegen}
+  extract_details.rs:
+    primary: tooling.cargo-driver-strings
+    test_rules:
+      - {substr: percent, id: tooling.cargo-percent-parse}
+      - {substr: bundle, id: tooling.cargo-bundle-codegen}
+  templates.rs:
+    primary: tooling.cargo-driver-strings
+    test_rules:
+      - {substr: bundle, id: tooling.cargo-bundle-codegen}

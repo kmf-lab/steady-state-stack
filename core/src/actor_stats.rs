@@ -1,17 +1,22 @@
+// ss[related telemetry.prometheus-metrics]
 use std::collections::VecDeque;
 use hdrhistogram::{Counter, Histogram};
 #[allow(unused_imports)]
+// ss[related telemetry.prometheus-metrics]
 use log::*;
 use std::cmp;
 
+// ss[related telemetry.prometheus-metrics]
 use crate::*;
 use crate::channel_stats::{DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
 use crate::channel_stats_labels::{compute_labels, ComputeLabelsConfig, ComputeLabelsLabels};
+// ss[related telemetry.prometheus-metrics]
 use crate::monitor::ThreadInfo;
 
 /// The `ActorStatsComputer` struct is responsible for computing and maintaining statistics for an actor within the system.
 /// It tracks CPU and workload utilization, manages histograms for percentile calculations, and evaluates trigger conditions for alerts.
 #[derive(Default)]
+// ss[related telemetry.prometheus-metrics]
 pub struct ActorStatsComputer {
     /// The unique identifier for the actor, including its name and optional suffix.
     pub(crate) ident: ActorIdentity,
@@ -99,6 +104,7 @@ pub struct ActorStatsComputer {
 }
 
 /// Escapes text embedded in a Graphviz double-quoted `label` attribute fragment.
+// ss[related telemetry.prometheus-metrics]
 fn append_escaped_dot_label_line(out: &mut String, src: &str) {
     for ch in src.chars() {
         match ch {
@@ -111,6 +117,7 @@ fn append_escaped_dot_label_line(out: &mut String, src: &str) {
     }
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl ActorStatsComputer {
     /// Computes the actor's statistics and updates the provided labels for visualization and metrics.
     ///
@@ -134,6 +141,7 @@ impl ActorStatsComputer {
     ///
     /// A tuple containing the line color and line width for visualization.
     #[allow(clippy::too_many_arguments)]
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn compute(
         &mut self,
         dot_label: &mut String,
@@ -291,6 +299,7 @@ impl ActorStatsComputer {
     ///
     /// * `meta` - The metadata of the actor, containing configuration for telemetry and triggers.
     /// * `frame_rate_ms` - The frame rate in milliseconds for telemetry data collection.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn init(&mut self, meta: Arc<ActorMetaData>, frame_rate_ms: u64) {
         self.ident = meta.ident;
 
@@ -385,6 +394,7 @@ impl ActorStatsComputer {
     ///
     /// * `mcpu` - The CPU utilization value for the current frame.
     /// * `work` - The workload utilization value for the current frame.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn accumulate_data_frame(&mut self, mcpu: u16, work: u16) {
         assert!(mcpu <= 1024, "mcpu out of range {}", mcpu);
         // trace!("accumulating data frame on mCPU {}",mcpu);
@@ -470,6 +480,7 @@ impl ActorStatsComputer {
     /// # Returns
     ///
     /// `true` if any trigger for the specified alert level is active, otherwise `false`.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
         //TODO: create vec for each color to avoid the filter here.
 
@@ -489,6 +500,7 @@ impl ActorStatsComputer {
     /// # Returns
     ///
     /// `true` if the trigger condition is satisfied, otherwise `false`.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn triggered_mcpu(&self, rule: &Trigger<MCPU>) -> bool {
         match rule {
             Trigger::AvgBelow(mcpu) => {
@@ -530,6 +542,7 @@ impl ActorStatsComputer {
     /// # Returns
     ///
     /// `true` if the trigger condition is satisfied, otherwise `false`.
+    // ss[related telemetry.prometheus-metrics]
     fn triggered_work(&self, rule: &Trigger<Work>) -> bool {
         match rule {
             Trigger::AvgBelow(work) => {
@@ -569,6 +582,7 @@ impl ActorStatsComputer {
     ///
     /// The standard deviation as a float, or 0.0 if no data is available.
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn mcpu_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_mcpu {
             compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits, 1 << (self.refresh_rate_in_bits + self.window_bucket_in_bits), c.runner, c.sum_of_squares)
@@ -586,6 +600,7 @@ impl ActorStatsComputer {
     ///
     /// The standard deviation as a float, or 0.0 if no data is available.
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn work_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_work {
             compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
@@ -611,6 +626,7 @@ impl ActorStatsComputer {
 /// # Returns
 ///
 /// A string representing the duration in a human-readable format.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) fn time_label(total_ms: u128) -> String {
     let seconds = total_ms as f64 / 1000.0;
     let minutes = seconds / 60.0;
@@ -640,6 +656,7 @@ pub(crate) fn time_label(total_ms: u128) -> String {
 /// # Returns
 ///
 /// A `cmp::Ordering` indicating whether the average is less than, equal to, or greater than the threshold.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
     if let Some(current) = current {
         //println!("current.runner {} run_divisor {} rational.0 {} rational.1 {}", current.runner, run_divisor, rational.0, rational.1);
@@ -665,6 +682,7 @@ pub(crate) fn avg_rational<T: Counter>(run_divisor: u128, units: u128, current: 
 /// # Returns
 ///
 /// A `cmp::Ordering` indicating whether the computed value is less than, equal to, or greater than the threshold.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) fn stddev_rational<T: Counter>(
     _std_dev: f32,
     window_bits: u8,
@@ -693,6 +711,7 @@ pub(crate) fn stddev_rational<T: Counter>(
 /// # Returns
 ///
 /// A `cmp::Ordering` indicating whether the percentile value is less than, equal to, or greater than the threshold.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed: &Option<ChannelBlock<T>>, rational: (u64, u64)) -> cmp::Ordering {
     if let Some(current_consumed) = consumed {
         if let Some(h) = &current_consumed.histogram {
@@ -721,6 +740,7 @@ pub(crate) fn percentile_rational<T: Counter>(percentile: &Percentile, consumed:
 ///
 /// THE computed standard deviation as a float.
 #[inline]
+// ss[related telemetry.prometheus-metrics]
 pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u128) -> f32 {
     if runner < SQUARE_LIMIT {
         let r2_scaled = (runner * runner) >> bits;
@@ -735,6 +755,7 @@ pub(crate) fn compute_std_dev(bits: u8, window: usize, runner: u128, sum_sqr: u1
 }
 
 /// The maximum value for the runner before special handling is needed in standard deviation calculations.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) const SQUARE_LIMIT: u128 = (1 << 64) - 1;
 
 /// The `ChannelBlock` struct holds statistical data for a channel, including an optional histogram and running totals for calculations.
@@ -743,6 +764,7 @@ pub(crate) const SQUARE_LIMIT: u128 = (1 << 64) - 1;
 ///
 /// * `T` - The counter type used in the histogram.
 #[derive(Default, Debug)]
+// ss[related telemetry.prometheus-metrics]
 pub(crate) struct ChannelBlock<T> where T: Counter {
     /// An optional histogram for storing distribution data.
     pub(crate) histogram: Option<Histogram<T>>,
@@ -755,10 +777,12 @@ pub(crate) struct ChannelBlock<T> where T: Counter {
 }
 
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod actor_stats_tests {
     use super::*;
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_time_label() {
         assert_eq!(time_label(500), "sec");
         assert_eq!(time_label(1000), "sec");
@@ -769,6 +793,7 @@ mod actor_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_std_dev_large_numbers() {
         let bits = 10;
         let window = 1024;
@@ -779,6 +804,7 @@ mod actor_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_avg_rational_none() {
         let run_divisor = 1000;
         let units = 1;
@@ -789,15 +815,19 @@ mod actor_stats_tests {
 }
 
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod test_actor_stats {
     use std::cmp;
     use crate::actor_stats::*;
+    // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
     use crate::actor_builder_units::{Percentile, Work, MCPU};
+    // ss[related telemetry.prometheus-metrics]
     use crate::channel_stats::DOT_GREEN;
     use crate::monitor::ActorMetaData;
 
+    // ss[related telemetry.prometheus-metrics]
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1,"test_actor", None),
@@ -818,6 +848,7 @@ mod test_actor_stats {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_init() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -839,6 +870,7 @@ mod test_actor_stats {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_accumulate_data_frame() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -854,6 +886,7 @@ mod test_actor_stats {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_labels() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -884,6 +917,7 @@ mod test_actor_stats {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_dot_subtitle_escaped_in_label_only() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -917,6 +951,7 @@ mod test_actor_stats {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_percentile_rational() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -935,13 +970,16 @@ mod test_actor_stats {
 }
 
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod test_actor_stats_triggers {
     use crate::actor_stats::*;
     use std::sync::Arc;
+    // ss[related telemetry.prometheus-metrics]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
     use crate::actor_builder_units::{Percentile, Work, MCPU};
     use crate::monitor::ActorMetaData;
 
+    // ss[related telemetry.prometheus-metrics]
     fn create_mock_metadata() -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test_actor", None),
@@ -968,6 +1006,7 @@ mod test_actor_stats_triggers {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_avg_above_mcpu() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -994,6 +1033,7 @@ mod test_actor_stats_triggers {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_avg_below_mcpu() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -1019,6 +1059,7 @@ mod test_actor_stats_triggers {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_avg_above_work() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -1044,6 +1085,7 @@ mod test_actor_stats_triggers {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_avg_below_work() {
         let metadata = create_mock_metadata();
         let mut actor_stats = ActorStatsComputer::default();
@@ -1071,12 +1113,14 @@ mod test_actor_stats_triggers {
 
 /// Additional tests to achieve 100% coverage for all utility functions and edge cases.
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod extra_tests {
     use crate::actor_stats::*;
 
 
     /// Verify `time_label` produces the correct text for various durations.
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_time_label_thresholds() {
         // sub-second
         assert_eq!(time_label(500), "sec");
@@ -1098,6 +1142,7 @@ mod extra_tests {
 
     /// Test both branches of `compute_std_dev`.
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_std_dev_branches() {
         // runner < SQUARE_LIMIT: should compute a finite non-negative value
         let val = compute_std_dev(1, 2, 1, 2);
@@ -1108,14 +1153,17 @@ mod extra_tests {
         assert_eq!(val, 0.0, "expected 0.0 due to safety guard");
     }
 
+    // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
     use crate::monitor::ActorMetaData;
     use crate::{logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
+    // ss[related telemetry.prometheus-metrics]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
     use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
 
     /// Test init method with actor suffix
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_init_with_actor_suffix() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1145,6 +1193,7 @@ mod extra_tests {
 
     /// Test compute method with actor suffix
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_actor_suffix() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1165,6 +1214,7 @@ mod extra_tests {
     /// Test compute method with SHOW_ACTORS feature enabled
     #[cfg(feature = "core_display")]
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_show_actors() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1183,6 +1233,7 @@ mod extra_tests {
 
     /// Test compute method with window display
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_window_display() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1204,6 +1255,7 @@ mod extra_tests {
 
     /// Test compute method with restart count
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_restarts() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1230,6 +1282,7 @@ mod extra_tests {
 
     /// Test compute method with stopped actor
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_stopped_actor() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1249,6 +1302,7 @@ mod extra_tests {
 
     /// Test compute method with current work data
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_current_work() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1274,6 +1328,7 @@ mod extra_tests {
 
     /// Test compute method with current mcpu data
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_with_current_mcpu() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1299,6 +1354,7 @@ mod extra_tests {
 
     /// Test alert level triggers - Yellow
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_alert_level_yellow() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1324,6 +1380,7 @@ mod extra_tests {
 
     /// Test alert level triggers - Orange
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_trigger_alert_level_orange() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1349,6 +1406,7 @@ mod extra_tests {
 
     /// Test histogram creation errors during init
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_init_histogram_creation_errors() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1381,6 +1439,7 @@ mod extra_tests {
 
     /// Test Percentile triggers for mcpu
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_triggered_mcpu_percentiles() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1404,6 +1463,7 @@ mod extra_tests {
 
     /// Test std dev functions when current data is None
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_std_dev_functions_with_none_current() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1416,6 +1476,7 @@ mod extra_tests {
 
     /// Test compute_std_dev alternative calculation branch
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_compute_std_dev_alternative_branch() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1426,6 +1487,7 @@ mod extra_tests {
 
     /// Test accumulate_data_frame with histogram recording errors
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_accumulate_data_frame_histogram_errors() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1441,6 +1503,7 @@ mod extra_tests {
 
     /// Test bucket refresh with histogram creation errors
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_bucket_refresh_histogram_errors() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -1460,6 +1523,7 @@ mod extra_tests {
     }
 
     /// Helper function to set up actor with basic data
+    // ss[related telemetry.prometheus-metrics]
     fn setup_actor_with_data() -> ActorStatsComputer {
         let metadata = Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test", None),
@@ -1484,6 +1548,7 @@ mod extra_tests {
     }
 
     /// Helper function to set up actor with triggers
+    // ss[related telemetry.prometheus-metrics]
     fn setup_actor_with_triggers() -> ActorStatsComputer {
         let metadata = Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test", None),
@@ -1509,6 +1574,7 @@ mod extra_tests {
 
     /// Test comprehensive alert combinations
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_comprehensive_alert_combinations() {
         let _ = logging_util::steady_logger::initialize();
 

@@ -5,6 +5,7 @@
 //! receive one merged sample per frame, so refresh/window bit depths must use the same
 //! frame-based math.
 
+// ss[related telemetry.shutdown-complete]
 use std::time::Duration;
 
 /// Computes `(refresh_rate_in_bits, window_bucket_in_bits)` for rolling telemetry windows.
@@ -12,6 +13,7 @@ use std::time::Duration;
 /// One **sample** = one telemetry frame (one collector tick). This matches
 /// [`crate::channel_stats::ChannelStatsComputer`] and [`crate::actor_stats::ActorStatsComputer`]
 /// behavior after each `accumulate_data_frame` / channel equivalent.
+// ss[related telemetry.shutdown-complete]
 pub(crate) fn compute_refresh_window_frames(
     frame_rate_ms: u128,
     refresh: Duration,
@@ -45,10 +47,12 @@ pub(crate) fn compute_refresh_window_frames(
 }
 
 #[cfg(test)]
+// ss[related telemetry.shutdown-complete]
 mod tests {
     use super::*;
 
     #[test]
+    // ss[verify telemetry.shutdown-complete]
     fn zero_frame_rate_returns_zeros() {
         assert_eq!(
             compute_refresh_window_frames(0, Duration::from_secs(1), Duration::from_secs(10)),
@@ -57,6 +61,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.shutdown-complete]
     fn hundred_ms_frame_one_ten_seconds_sized() {
         let (r, w) = compute_refresh_window_frames(
             100,

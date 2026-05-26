@@ -1,23 +1,29 @@
+// ss[related telemetry.channel-labels]
 use std::backtrace::Backtrace;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 #[allow(unused_imports)]
+// ss[related telemetry.channel-labels]
 use log::*;
 use crate::*;
 use hdrhistogram::{Histogram};
 
+// ss[related telemetry.channel-labels]
 use crate::actor_stats::{ChannelBlock};
 use crate::channel_stats_labels;
 use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
 
 /// Constants representing the colors used in the dot graph.
+// ss[related telemetry.channel-labels]
 pub(crate) const DOT_GREEN: &str = "green";
 pub(crate) const DOT_YELLOW: &str = "yellow";
 pub(crate) const DOT_ORANGE: &str = "orange";
+// ss[related telemetry.channel-labels]
 pub(crate) const DOT_RED: &str = "red";
 pub(crate) const DOT_GREY: &str = "grey";
 
 /// Array representing the pen width values for the dot graph.
+// ss[related telemetry.channel-labels]
 static _DOT_PEN_WIDTH: [&str; 16] = [
     "4", "6", "8", "10", "12", "14", "16", "18", "20", "22", "24", "26", "28", "30", "32", "34"
 ];
@@ -26,6 +32,7 @@ static _DOT_PEN_WIDTH: [&str; 16] = [
 
 /// Struct for computing statistics of a communication channel.
 #[derive(Default, Debug)]
+// ss[related telemetry.channel-labels]
 pub struct ChannelStatsComputer {
     pub(crate) display_labels: Option<Vec<&'static str>>,
     pub(crate) line_expansion: f32,
@@ -83,6 +90,7 @@ pub struct ChannelStatsComputer {
 
 /// How DOT multi-lane rollup treats the filled block when rebuilding an edge label from [`ChannelStatsComputer`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// ss[related telemetry.channel-labels]
 pub(crate) enum FilledVisualMode {
     /// Full filled block (avg/min/max/percentiles/stddev) — normal `compute` path.
     Full,
@@ -90,6 +98,7 @@ pub(crate) enum FilledVisualMode {
     SuppressAvgOnly,
 }
 
+// ss[related telemetry.channel-labels]
 impl ChannelStatsComputer {
 
     /// Initializes the `ChannelStatsComputer` with metadata and settings.
@@ -100,6 +109,7 @@ impl ChannelStatsComputer {
     /// * `from_actor` - The ID of the actor sending data.
     /// * `to_actor` - The ID of the actor receiving data.
     /// * `frame_rate_ms` - The frame rate in milliseconds.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn init(&mut self, meta: &Arc<ChannelMetaData>, from_actor: ActorName, to_actor: ActorName, frame_rate_ms: u64) {
         assert!(meta.capacity > 0, "capacity must be greater than 0");
         self.capacity = meta.capacity;
@@ -254,6 +264,7 @@ impl ChannelStatsComputer {
     ///
     /// * `filled` - The filled value.
     /// *
+    // ss[related telemetry.channel-labels]
     pub(crate) fn accumulate_data_frame(&mut self, filled: u64, rate: u64) {
         self.history_filled.iter_mut().for_each(|f| {
             if let Some(h) = &mut f.histogram {
@@ -367,6 +378,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for rate.
     #[inline]
+    // ss[related telemetry.channel-labels]
     pub(crate) fn rate_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_rate {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
@@ -385,6 +397,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for filled.
     #[inline]
+    // ss[related telemetry.channel-labels]
     pub(crate) fn filled_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_filled {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
@@ -402,6 +415,7 @@ impl ChannelStatsComputer {
     ///
     /// The computed standard deviation for latency.
     #[inline]
+    // ss[related telemetry.channel-labels]
     pub(crate) fn latency_std_dev(&self) -> f32 {
         if let Some(c) = &self.current_latency {
             actor_stats::compute_std_dev(self.refresh_rate_in_bits + self.window_bucket_in_bits
@@ -419,6 +433,7 @@ impl ChannelStatsComputer {
     /// Returning `None` for idle channels is critical so that bundle/partner rollup logic
     /// treats them uniformly as "no data" and omits the `Avg fill:` line entirely rather than
     /// printing "0%, 0%, 0%, …" which is unhelpful noise.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn avg_filled_whole_percent(&self) -> Option<u8> {
         if !self.show_avg_filled {
             return None;
@@ -439,6 +454,7 @@ impl ChannelStatsComputer {
     }
 
     /// DOT label body: type lines, optional display labels, rate / filled / latency blocks.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn append_visual_metric_lines(
         &self,
         display_label: &mut String,
@@ -483,6 +499,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A tuple containing the line color and line thickness.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn compute(&mut self, display_label: &mut String, metric_text: &mut String, from_id: Option<ActorName>, send: i64, take: i64) -> (&'static str, String) {
         display_label.clear();
 
@@ -585,6 +602,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the alert level is met.
+    // ss[related telemetry.channel-labels]
     fn trigger_alert_level(&mut self, c1: &AlertColor) -> bool {
         self.rate_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_rate(&f.0))
             || self.filled_trigger.iter().filter(|f| f.1.eq(c1)).any(|f| self.triggered_filled(&f.0))
@@ -600,6 +618,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the latency trigger is met.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn triggered_latency(&self, rule: &Trigger<Duration>) -> bool {
         match rule {
             Trigger::AvgAbove(duration) => self.avg_latency(duration).is_gt(),
@@ -620,6 +639,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the rate trigger is met.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn triggered_rate(&self, rule: &Trigger<Rate>) -> bool {
         match rule {
             Trigger::AvgBelow(rate) => {
@@ -652,6 +672,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// A boolean indicating if the filled trigger is met.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn triggered_filled(&self, rule: &Trigger<Filled>) -> bool {
         match rule {
             Trigger::AvgAbove(Filled::Percentage(percent_full_num, percent_full_den)) => self.avg_filled_percentage(percent_full_num, percent_full_den).is_gt(),
@@ -687,6 +708,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn avg_filled_percentage(&self, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             (current_inflight.runner * *percent_full_den as u128)
@@ -706,6 +728,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn avg_filled_exact(&self, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             current_inflight.runner
@@ -716,6 +739,7 @@ impl ChannelStatsComputer {
         }
     }
 
+    // ss[related telemetry.channel-labels]
     pub(crate) fn compute_rate_labels(&self, target_telemetry_label: &mut String, target_metric: &mut String, current_block: &&ChannelBlock<u64>) {
         // Per-frame rollup: each sample represents one collector/server frame tick.
         // Because PLACES_TENS == 1000, the conversion to per/sec is:
@@ -744,6 +768,7 @@ impl ChannelStatsComputer {
 
     }
 
+    // ss[related telemetry.channel-labels]
     pub(crate) fn compute_filled_labels_inner(
         &self,
         display_label: &mut String,
@@ -791,6 +816,7 @@ impl ChannelStatsComputer {
         channel_stats_labels::compute_labels(config, current_block, labels, &self.std_dev_filled, &self.percentiles_filled, metric_target, display_label);
     }
 
+    // ss[related telemetry.channel-labels]
     pub(crate) fn compute_latency_labels(&self, display_label: &mut String, metric_target: &mut String, current_block: &&ChannelBlock<u64>) {
         let config = ComputeLabelsConfig::channel_config(self, (1, 1), (1, 1), u64::MAX
                                                          , self.show_avg_latency, self.show_min_latency, self.show_max_latency);
@@ -805,6 +831,7 @@ impl ChannelStatsComputer {
     }
 
     /// Milliseconds per second constant.
+    // ss[related telemetry.channel-labels]
     const MS_PER_SEC: u64 = 1000;
 
     /// Computes the average latency.
@@ -816,6 +843,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn avg_latency(&self, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             assert_eq!(Self::MS_PER_SEC, PLACES_TENS); // We assume this with as_micros below
@@ -836,6 +864,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn stddev_filled_exact(&self, std_devs: &StdDev, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             let std_deviation = (self.filled_std_dev() * std_devs.value()) as u128;
@@ -858,6 +887,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn stddev_filled_percentage(&self, std_devs: &StdDev, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             let std_deviation = (self.filled_std_dev() * std_devs.value()) as u128;
@@ -879,6 +909,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn stddev_latency(&self, std_devs: &StdDev, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             assert_eq!(1000, PLACES_TENS); // We assume this with as_micros below
@@ -901,6 +932,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn percentile_filled_exact(&self, percentile: &Percentile, exact_full: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             if let Some(h) = &current_inflight.histogram {
@@ -925,6 +957,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn percentile_filled_percentage(&self, percentile: &Percentile, percent_full_num: &u64, percent_full_den: &u64) -> Ordering {
         if let Some(current_inflight) = &self.current_filled {
             if let Some(h) = &current_inflight.histogram {
@@ -948,6 +981,7 @@ impl ChannelStatsComputer {
     /// # Returns
     ///
     /// An ordering indicating the comparison result.
+    // ss[related telemetry.channel-labels]
     pub(crate) fn percentile_latency(&self, percentile: &Percentile, duration: &Duration) -> Ordering {
         if let Some(current_latency) = &self.current_latency {
             if let Some(h) = &current_latency.histogram {
@@ -963,15 +997,19 @@ impl ChannelStatsComputer {
 }
 
 /// The number of decimal places used for tens.
+// ss[related telemetry.channel-labels]
 pub(crate) const PLACES_TENS: u64 = 1000u64;
 
 #[cfg(test)]
+// ss[related telemetry.channel-labels]
 mod channel_stats_tests {
     use super::*;
     use std::time::Duration;
+    // ss[related telemetry.channel-labels]
     use crate::monitor::ChannelMetaData;
     use std::sync::Arc;
 
+    // ss[related telemetry.channel-labels]
     fn mock_meta() -> Arc<ChannelMetaData> {
         Arc::new(ChannelMetaData {
             capacity: 100,
@@ -985,6 +1023,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_filled_percentage_none() {
         let computer = ChannelStatsComputer {
             capacity: 100,
@@ -994,12 +1033,14 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_latency_none() {
         let computer = ChannelStatsComputer::default();
         assert_eq!(computer.avg_latency(&Duration::from_millis(100)), Ordering::Equal);
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_init_and_label_building() {
         let mut computer = ChannelStatsComputer::default();
         let meta = mock_meta();
@@ -1015,6 +1056,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_init_builds_labels_without_suffix_on_to_actor() {
         let mut computer = ChannelStatsComputer::default();
         let meta = mock_meta();
@@ -1030,6 +1072,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_monotonic_total_and_resets() {
         let mut computer = ChannelStatsComputer::default();
         computer.init(&mock_meta(), ActorName::new("a", None), ActorName::new("b", None), 1000);
@@ -1048,6 +1091,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_bundle_and_memory_display() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1063,6 +1107,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_alert_color_priority() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1083,6 +1128,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_trigger_gauntlet_latency() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1107,6 +1153,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_trigger_gauntlet_rate() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1125,6 +1172,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_trigger_gauntlet_filled() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1143,6 +1191,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_std_dev_triggers() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1161,6 +1210,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_zero_capacity_safety() {
         let mut computer = ChannelStatsComputer::default();
         // Capacity 0 is invalid but we test the safety return
@@ -1171,6 +1221,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_histogram_creation_failure_handling() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
@@ -1191,6 +1242,7 @@ mod channel_stats_tests {
     // ========================================================================
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_filled_whole_percent_none_when_show_disabled() {
         let c = ChannelStatsComputer {
             capacity: 100,
@@ -1204,6 +1256,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_filled_whole_percent_none_when_no_current_block() {
         let c = ChannelStatsComputer {
             capacity: 100,
@@ -1215,6 +1268,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_filled_whole_percent_none_when_runner_zero() {
         // THIS IS THE KEY FIX TEST: runner == 0 (idle/cold channel) → None, not Some(0)
         let c = ChannelStatsComputer {
@@ -1233,6 +1287,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_avg_filled_whole_percent_returns_some_when_nonzero() {
         // Sanity: non-zero runner still produces a valid percentage
         let c = ChannelStatsComputer {
@@ -1247,6 +1302,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_compute_filled_labels_inner_omits_avg_when_runner_zero() {
         // When runner is zero, no "Avg filled:" line should appear.
         let c = ChannelStatsComputer {
@@ -1269,6 +1325,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_compute_filled_labels_inner_shows_avg_when_nonzero_runner() {
         // Sanity: non-zero runner still shows "Avg filled:" line
         let c = ChannelStatsComputer {
@@ -1291,6 +1348,7 @@ mod channel_stats_tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_edge_label_no_avg_filled_when_runner_zero_via_compute() {
         // Integration-style: calling compute() on an idle channel should not
         // produce an "Avg filled" line in the display_label.

@@ -1,21 +1,28 @@
+// ss[related channel.backpressure-never-drop]
 use std::sync::Arc;
 use log::{error, warn};
 use futures_util::{FutureExt};
+// ss[related channel.backpressure-never-drop]
 use std::any::type_name;
 use std::backtrace::Backtrace;
 use std::time::{Instant};
+// ss[related channel.backpressure-never-drop]
 use futures::channel::oneshot;
 use futures_util::lock::{Mutex, MutexLockFuture};
 use ringbuf::traits::Observer;
+// ss[related channel.backpressure-never-drop]
 use ringbuf::producer::Producer;
 use futures_util::future::{select_all};
 use std::fmt::Debug;
+// ss[related channel.backpressure-never-drop]
 use std::ops::Deref;
 use std::thread;
 use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
+// ss[related channel.backpressure-never-drop]
 use crate::channel_builder::InternalSender;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{TxChannelMetaDataWrapper};
+// ss[related channel.backpressure-never-drop]
 use crate::monitor::{ChannelMetaData};
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
@@ -23,6 +30,7 @@ use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 /// Represents a transmission channel for sending messages of type `T`.
 ///
 /// This struct encapsulates the core functionality for transmitting messages within a steady-state actor system. It manages an internal ring buffer for queuing messages, tracks channel metadata for logging and telemetry, and provides mechanisms for lifecycle management, such as closing the channel and detecting shutdown signals. It is designed to support both synchronous and asynchronous workflows, ensuring reliable and efficient message delivery.
+// ss[related channel.backpressure-never-drop]
 pub struct Tx<T> {
     /// The internal sender that manages the ring buffer for message transmission.
     pub(crate) tx: InternalSender<T>,
@@ -40,6 +48,7 @@ pub struct Tx<T> {
     pub(crate) registry_key: usize,
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T> Drop for Tx<T> {
     fn drop(&mut self) {
         if self.registry_key != 0 {
@@ -48,28 +57,33 @@ impl<T> Drop for Tx<T> {
     }
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T> Debug for Tx<T> {
     /// Formats the `Tx` struct for debugging purposes.
     ///
     /// This implementation provides a basic representation of the struct. Future enhancements may include additional details for improved debugging visibility.
+    // ss[related channel.backpressure-never-drop]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Tx") // TODO: Enhance with more detailed information in the future.
     }
 }
 
 // Satisfy the trait for the raw struct
+// ss[related channel.backpressure-never-drop]
 impl<T> TxMetaDataProvider for Tx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.channel_meta_data.meta_data)
     }
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T> Tx<T> {
 
     /// Retrieves metadata for this transmitter in a single-element array.
     ///
     /// This provides consistency with bundle interfaces, allowing a single
     /// transmitter to be treated as a collection of metadata providers.
+    // ss[related channel.backpressure-never-drop]
     pub fn meta_data(&self) -> [&dyn TxMetaDataProvider; 1] {
         [self as &dyn TxMetaDataProvider]
     }
@@ -80,6 +94,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `usize` representing the channel's unique identifier.
+    // ss[related channel.backpressure-never-drop]
     pub fn id(&self) -> usize {
         self.channel_meta_data.meta_data.id
     }
@@ -90,6 +105,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` indicating `true` if the channel was successfully marked as closed, `false` otherwise.
+    // ss[related channel.backpressure-never-drop]
     pub fn mark_closed(&mut self) -> bool {
         self.shared_mark_closed();
         true
@@ -101,6 +117,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `usize` representing the total capacity of the channel.
+    // ss[related channel.backpressure-never-drop]
     pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
@@ -111,6 +128,7 @@ impl<T> Tx<T> {
     ///
     /// # Parameters
     /// - `ident`: The identity of the actor associated with this channel, providing context for the warning.
+    // ss[related channel.backpressure-never-drop]
     pub(crate) fn report_tx_full_warning(&mut self, ident: ActorIdentity) {
         if self.last_error_send.elapsed().as_secs() > steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             let type_name = type_name::<T>().split("::").last();
@@ -132,6 +150,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel is full, `false` otherwise.
+    // ss[related channel.backpressure-never-drop]
     pub fn find_is_full(&self) -> bool {
         self.shared_is_full()
     }
@@ -142,6 +161,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel is empty, `false` otherwise.
+    // ss[related channel.backpressure-never-drop]
     pub fn find_is_empty(&self) -> bool {
         self.shared_is_empty()
     }
@@ -152,6 +172,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `usize` representing the number of vacant units in the channel.
+    // ss[related channel.backpressure-never-drop]
     pub fn vacant_units(&self) -> usize {
         self.shared_vacant_units()
     }
@@ -165,6 +186,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the required vacant units are available, `false` if the wait is interrupted by a shutdown signal.
+    // ss[related channel.backpressure-never-drop]
     pub async fn wait_vacant_units(&mut self, count: usize) -> bool {
         self.shared_wait_shutdown_or_vacant_units(count).await
     }
@@ -175,6 +197,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `bool` returning `true` if the channel becomes empty, `false` if the wait is interrupted by a shutdown signal.
+    // ss[related channel.backpressure-never-drop]
     pub async fn wait_empty(&mut self) -> bool {
         self.shared_wait_empty().await
     }
@@ -188,6 +211,7 @@ impl<T> Tx<T> {
     ///
     /// # Returns
     /// A `usize` indicating the number of messages successfully sent.
+    // ss[related channel.backpressure-never-drop]
     pub(crate) fn shared_send_slice_until_full(&mut self, slice: &[T]) -> usize
     where
         T: Copy,
@@ -207,6 +231,7 @@ impl<T> Tx<T> {
     /// # Parameters
     /// - `done`: The transmission operation result containing the count of items sent.
     /// - `tel`: The telemetry send structure to record the event in.
+    // ss[related channel.backpressure-never-drop]
     pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         // CRITICAL FIX: Resolve lazy index if not yet established
         if self.local_monitor_index == MONITOR_UNKNOWN {
@@ -231,6 +256,7 @@ impl<T> Tx<T> {
 /// Defines an interface for accessing metadata about a transmission channel.
 ///
 /// This trait ensures that implementing types can provide metadata, such as channel ID and labels, for purposes like logging, debugging, or telemetry.
+// ss[related channel.backpressure-never-drop]
 pub trait TxMetaDataProvider: Debug {
     /// Retrieves the metadata associated with the transmission channel.
     ///
@@ -238,9 +264,11 @@ pub trait TxMetaDataProvider: Debug {
     ///
     /// # Returns
     /// An atomically reference-counted pointer (`Arc`) to the channel's metadata.
+    // ss[related channel.backpressure-never-drop]
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
     /// Retrieves the metadata for a transmission channel wrapped in a `Mutex`.
     ///
@@ -248,6 +276,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
     ///
     /// # Returns
     /// An `Arc` pointing to the channel's metadata.
+    // ss[related channel.backpressure-never-drop]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let mut count = 0;
         loop {
@@ -267,6 +296,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Mutex<Tx<T>> {
     }
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
     /// Retrieves the metadata for a transmission channel wrapped in an `Arc<Mutex>`.
     ///
@@ -274,6 +304,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
     ///
     /// # Returns
     /// An `Arc` pointing to the channel's metadata, or a default instance if not found.
+    // ss[related channel.backpressure-never-drop]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let key = Arc::as_ptr(self) as usize;
         if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {
@@ -286,6 +317,7 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
 /// Defines an interface for managing a fixed-size bundle of transmission channels.
 ///
 /// This trait provides methods for synchronized operations across multiple channels, such as locking or waiting for vacant units, which is valuable in systems requiring coordinated channel management.
+// ss[related channel.backpressure-never-drop]
 pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     /// Acquires locks on all channels in the bundle.
     ///
@@ -293,6 +325,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// A `JoinAll` future resolving to a collection of mutex guards for the channels.
+    // ss[related channel.backpressure-never-drop]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
 
     /// Retrieves metadata for all transmission channels in the bundle.
@@ -301,6 +334,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// An array of references to metadata providers, one for each channel in the bundle.
+    // ss[related channel.backpressure-never-drop]
     fn meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
 
     /// Asynchronously waits until a specified number of channels have a certain number of vacant units.
@@ -313,6 +347,7 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// A future that resolves when the specified conditions are satisfied.
+    // ss[related channel.backpressure-never-drop]
     fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
 
     /// Waits for the first transmitter in the bundle to have at least its required vacant count.
@@ -325,13 +360,16 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     /// that API is graph-shutdown-aware, returns `Option<usize>`, and uses round-robin among lanes.
     /// This bundle-trait method returns `usize` only, does not integrate the actor shutdown signal,
     /// and does not apply monitor round-robin state.
+    // ss[related channel.backpressure-never-drop]
     fn wait_vacant_index(&self, vacant_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for SteadyTxBundle<T, GIRTH> {
     /// Locks all channels in the bundle concurrently.
     ///
     /// This implementation uses a join operation to acquire locks on all channels simultaneously, ensuring synchronized access.
+    // ss[related channel.backpressure-never-drop]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
@@ -339,6 +377,7 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
     /// Collects metadata from all channels in the bundle.
     ///
     /// This implementation iterates over the bundle, converting each channel into a metadata provider reference and returning them as a fixed-size array.
+    // ss[related channel.backpressure-never-drop]
     fn meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|x| x as &dyn TxMetaDataProvider)
@@ -350,6 +389,7 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
     /// Waits asynchronously until the specified number of channels have the required vacant units.
     ///
     /// This implementation creates a set of futures to monitor each channel, resolving when enough channels meet the vacancy condition or all channels have been checked.
+    // ss[related channel.backpressure-never-drop]
     async fn wait_vacant_units(&self, avail_count: usize, ready_channels: usize) {
         let futures = self.iter().map(|tx| {
             let tx = tx.clone();
@@ -373,6 +413,7 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
         }
     }
 
+    // ss[related channel.backpressure-never-drop]
     async fn wait_vacant_index(&self, vacant_counts: &[usize]) -> usize {
         debug_assert_eq!(GIRTH, vacant_counts.len(), "wait_vacant_index: bundle and counts length mismatch");
 
@@ -402,6 +443,7 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
 /// Defines an interface for managing a collection of transmission channels.
 ///
 /// This trait focuses on lifecycle operations across a group of channels, such as marking them all as closed.
+// ss[related channel.backpressure-never-drop]
 pub trait TxBundleTrait {
     /// Marks all channels in the bundle as closed.
     ///
@@ -409,22 +451,27 @@ pub trait TxBundleTrait {
     ///
     /// # Returns
     /// A `bool` returning `true` to indicate the request was processed successfully.
+    // ss[related channel.backpressure-never-drop]
     fn mark_closed(&mut self) -> bool;
     
 /// Returns true if all channels have been fully consumed
+    // ss[related channel.backpressure-never-drop]
     fn is_all_empty(&mut self) -> bool;
 }
 
+// ss[related channel.backpressure-never-drop]
 impl<T> TxBundleTrait for TxBundle<'_, T> {
     /// Closes all channels in the bundle.
     ///
     /// This implementation iterates over the bundle, marking each channel as closed. It always completes the operation fully and returns `true` to confirm the request was handled.
+    // ss[related channel.backpressure-never-drop]
     fn mark_closed(&mut self) -> bool {
         // Ensures all channels are closed, never stopping early.
         self.iter_mut().for_each(|f| { let _ = f.mark_closed(); });
         true // Always returns true, as the close request is never rejected by this method.
     }
 
+    // ss[related channel.backpressure-never-drop]
     fn is_all_empty(&mut self) -> bool {
         // Ensures all channels are empty and fully consumed
         self.iter().all(|f| f.find_is_empty())
@@ -435,6 +482,7 @@ impl<T> TxBundleTrait for TxBundle<'_, T> {
 ///
 /// This enum distinguishes between standard and stream-based transmission outcomes, tracking the number of items sent and, for streams, the number of bytes transmitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related channel.backpressure-never-drop]
 pub enum TxDone {
     /// Represents a standard transmission with the count of items sent.
     Normal(usize),
@@ -442,6 +490,7 @@ pub enum TxDone {
     Stream(usize, usize),
 }
 
+// ss[related channel.backpressure-never-drop]
 impl TxDone {
     /// Retrieves the number of items sent during the transmission.
     ///
@@ -449,6 +498,7 @@ impl TxDone {
     ///
     /// # Returns
     /// A `usize` representing the number of items sent.
+    // ss[related channel.backpressure-never-drop]
     pub fn item_count(&self) -> usize {
         match *self {
             TxDone::Normal(count) => count,
@@ -462,6 +512,7 @@ impl TxDone {
     ///
     /// # Returns
     /// An `Option<usize>` containing the byte count for stream operations, or `None` for normal operations.
+    // ss[related channel.backpressure-never-drop]
     pub fn payload_count(&self) -> Option<usize> {
         match *self {
             TxDone::Normal(_) => None,
@@ -470,12 +521,14 @@ impl TxDone {
     }
 }
 
+// ss[related channel.backpressure-never-drop]
 impl Deref for TxDone {
     type Target = usize;
 
     /// Allows dereferencing to the item count of the transmission.
     ///
     /// This implementation enables `TxDone` to be used as a `usize` representing the item count in contexts where such dereferencing is supported.
+    // ss[related channel.backpressure-never-drop]
     fn deref(&self) -> &usize {
         match self {
             TxDone::Normal(count) => count,
@@ -486,12 +539,15 @@ impl Deref for TxDone {
 
 // Smoke tests for LazySteadyTx and LazySteadyRx to verify basic functionality.
 #[cfg(test)]
+// ss[related channel.backpressure-never-drop]
 mod steady_lazy_tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    // ss[related channel.backpressure-never-drop]
     use crate::*;
 
     /// Tests the basic flow of sending and receiving messages through lazy transmitter and receiver channels.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_lazy_flow() {
         let builder = ChannelBuilder::default().with_capacity(3);
@@ -529,6 +585,8 @@ mod steady_lazy_tests {
     }
 
     /// Tests `shared_send_slice_until_full` on a raw `Tx` (not lazy).
+    // ss[verify channel.backpressure-never-drop]
+    // ss[verify channel.eager-build-test]
     #[test]
     fn test_shared_send_slice_until_full() {
         // Build a channel eagerly so we get a raw Tx.
@@ -551,6 +609,7 @@ mod steady_lazy_tests {
         assert!(tx.shared_is_full());
     }
 
+    // ss[verify bundle.index-wait-readiness]
     #[async_std::test]
     async fn test_steady_rx_bundle_wait_avail_index() {
         use crate::SteadyRxBundleTrait;
@@ -565,6 +624,7 @@ mod steady_lazy_tests {
         assert!(idx == 0 || idx == 1);
     }
 
+    // ss[verify bundle.index-wait-readiness]
     #[async_std::test]
     async fn test_steady_rx_bundle_wait_avail_index_first_zero_lane() {
         use crate::SteadyRxBundleTrait;
@@ -577,6 +637,7 @@ mod steady_lazy_tests {
         assert_eq!(idx, 0);
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[async_std::test]
     async fn test_steady_tx_bundle_wait_vacant_index() {
         use crate::SteadyTxBundleTrait;
@@ -589,6 +650,7 @@ mod steady_lazy_tests {
         assert!(idx == 0 || idx == 1);
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[async_std::test]
     async fn test_steady_tx_bundle_wait_vacant_index_first_zero_lane() {
         use crate::SteadyTxBundleTrait;
@@ -603,10 +665,12 @@ mod steady_lazy_tests {
 }
 
 #[cfg(test)]
+// ss[related channel.backpressure-never-drop]
 mod tx_done_tests {
     use super::*;
 
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_done_payload_count_normal() {
         let done = TxDone::Normal(5);
         assert_eq!(done.item_count(), 5);
@@ -614,6 +678,7 @@ mod tx_done_tests {
     }
 
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_done_payload_count_stream() {
         let done = TxDone::Stream(3, 100);
         assert_eq!(done.item_count(), 3);
@@ -621,6 +686,7 @@ mod tx_done_tests {
     }
 
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_done_deref() {
         let normal: usize = *TxDone::Normal(7);
         assert_eq!(normal, 7);

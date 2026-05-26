@@ -1,24 +1,31 @@
+// ss[related distributed.subscribe-publish]
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+// ss[related distributed.subscribe-publish]
 use futures_timer::Delay;
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
+// ss[related distributed.subscribe-publish]
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
 use aeron::subscription::Subscription;
+// ss[related distributed.subscribe-publish]
 use log::{error, warn};
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
+// ss[related distributed.subscribe-publish]
 use crate::{SteadyActor, StreamTx};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
+// ss[related distributed.subscribe-publish]
 use crate::distributed::polling;
 use crate::state_management::SteadyState;
 use crate::yield_now;
 
 /// Steady state for the single-channel Aeron subscriber, tracking the subscription registration ID.
 #[derive(Default)]
+// ss[related distributed.subscribe-publish]
 pub struct AeronSubscribeSteadyState {
     /// The registration ID of the single subscription, None if not yet registered.
     sub_reg_id: Option<i64>,
@@ -38,6 +45,7 @@ pub struct AeronSubscribeSteadyState {
 ///
 /// # Returns
 /// * `Result<(), Box<dyn Error>>` - Ok on success, Err on failure.
+// ss[related distributed.subscribe-publish]
 pub async fn run(
     context: SteadyActorShadow,
     tx: SteadyStreamTx<StreamIngress>,
@@ -83,6 +91,7 @@ pub async fn run(
 ///
 /// # Returns
 /// * `Result<(), Box<dyn Error>>` - Ok on success, Err on failure.
+// ss[related distributed.subscribe-publish]
 async fn internal_behavior<C: SteadyActor>(
     mut actor: C,
     tx: SteadyStreamTx<StreamIngress>,
@@ -180,6 +189,7 @@ async fn internal_behavior<C: SteadyActor>(
 ///
 /// # Returns
 /// * `Duration` - The computed delay until the next poll.
+// ss[related distributed.subscribe-publish]
 async fn poll_aeron_subscription<C: SteadyActor>(
     tx: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
@@ -263,17 +273,21 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 /// Unit tests for the single-channel Aeron subscriber.
 #[cfg(test)]
 pub(crate) mod aeron_media_driver_tests {
+    // ss[related distributed.subscribe-publish]
     use log::info;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aqueduct_stream::StreamEgress;
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aeron_publish::STREAM_ID;
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aqueduct_builder::AqueductBuilder;
     use crate::{GraphBuilder, SoloAct};
 
     /// Tests the processing of bytes through the single-channel Aeron subscriber.
     #[test]
+    // ss[verify distributed.subscribe-publish]
     fn test_bytes_process() -> Result<(), Box<dyn Error>> {
         if std::env::var("GITHUB_ACTIONS").is_ok() {
             return Ok(()); // Skip in CI environment

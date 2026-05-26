@@ -1,15 +1,20 @@
+// ss[related distributed.subscribe-publish]
 use std::error::Error;
 use std::sync::Arc;
 use futures_timer::Delay;
+// ss[related distributed.subscribe-publish]
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
+// ss[related distributed.subscribe-publish]
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamRx, StreamEgress};
+// ss[related distributed.subscribe-publish]
 use crate::{await_for_any, RxCore, SteadyActor};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use std::time::Duration;
+// ss[related distributed.subscribe-publish]
 use log::*;
 use crate::state_management::SteadyState;
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
@@ -17,16 +22,19 @@ use crate::state_management::SteadyState;
 
 // **Constants for Testing and Configuration**
 /// Number of items to send in tests; increase for extended load testing.
+// ss[related distributed.subscribe-publish]
 pub const TEST_ITEMS: usize = 200_000_000;
 /// Base stream ID for test publications.
 pub const STREAM_ID: i32 = 11;
 /// Term buffer size in MB; 64MB targets high message rates (e.g., 12M messages/sec).
+// ss[related distributed.subscribe-publish]
 pub const _TERM_MB: i32 = 64;
 // A single stream at 64MB maps 400MB of shared memory. For optimal performance,
 // tune SO_RCVBUF/SO_SNDBUF and check loopback queue length (e.g., `ip link set lo txqueuelen 10000`).
 
 /// Manages Aeron-based message publishing for a single stream within the Steady State framework.
 #[derive(Default)]
+// ss[related distributed.subscribe-publish]
 pub struct AeronPublishSteadyState {
     /// Optional registration ID for the Aeron publication, persisted across actor restarts.
     pub(crate) pub_reg_id: Option<i64>,
@@ -35,6 +43,7 @@ pub struct AeronPublishSteadyState {
 }
 
 /// Launches an Aeron publishing actor to transmit messages from a single stream.
+// ss[related distributed.subscribe-publish]
 pub async fn run(
     context: SteadyActorShadow,
     rx: SteadyStreamRx<StreamEgress>,
@@ -61,6 +70,7 @@ pub async fn run(
 }
 
 /// Core logic for publishing messages to a single Aeron stream.
+// ss[related distributed.subscribe-publish]
 async fn internal_behavior<C: SteadyActor>(
     mut actor: C,
     rx: SteadyStreamRx<StreamEgress>,
@@ -192,17 +202,21 @@ async fn internal_behavior<C: SteadyActor>(
 /// Test module for validating Aeron publishing functionality for a single channel.
 #[cfg(test)]
 pub(crate) mod aeron_tests {
+    // ss[related distributed.subscribe-publish]
     use log::info;
     use super::*;
     use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
     use crate::distributed::aqueduct_builder::AqueductBuilder;
     use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
+    // ss[related distributed.subscribe-publish]
     use crate::{await_for_all, AlertColor, GraphBuilder, RxCore, ScheduleAs, Trigger};
     use crate::actor_builder_units::Percentile;
     use crate::channel_builder_units::Filled;
 
     /// Mock sender actor for testing message transmission to Aeron.
+    // ss[related distributed.subscribe-publish]
     pub async fn mock_sender_run(
         context: SteadyActorShadow,
         tx: SteadyStreamTx<StreamEgress>,
@@ -213,6 +227,7 @@ pub(crate) mod aeron_tests {
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
+        // ss[related distributed.subscribe-publish]
         const BATCH_SIZE: usize = 5000;
         let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8); BATCH_SIZE];
         let mut data: [[u8; 8]; BATCH_SIZE] = [data1; BATCH_SIZE];
@@ -252,6 +267,7 @@ pub(crate) mod aeron_tests {
     }
 
     /// Mock receiver actor for testing message consumption from Aeron.
+    // ss[related distributed.subscribe-publish]
     pub async fn mock_receiver_run(
         context: SteadyActorShadow,
         rx: SteadyStreamRx<StreamIngress>,
@@ -262,6 +278,7 @@ pub(crate) mod aeron_tests {
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
 
+        // ss[related distributed.subscribe-publish]
         const LEN: usize = 100_000;
 
         let mut received_count = 0;
@@ -286,6 +303,7 @@ pub(crate) mod aeron_tests {
 
     /// Tests the end-to-end byte processing through Aeron for a single channel.
     #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
     async fn test_bytes_process() -> Result<(), Box<dyn Error>> {
         if true {
             return Ok(()); // Skip test by default.

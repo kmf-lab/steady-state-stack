@@ -1,17 +1,22 @@
+// ss[related distributed.aeron-uri]
 use std::ffi::CString;
 use std::fmt::Debug;
 use std::net::{IpAddr};
 
 pub(crate) mod aeron_utils {
+    // ss[related distributed.aeron-uri]
     use std::sync::Arc;
     use futures_util::lock::Mutex;
     use aeron::aeron::Aeron;
+    // ss[related distributed.aeron-uri]
     use aeron::context::Context;
     use aeron::utils::errors::AeronError;
     use log::*;
+    // ss[related distributed.aeron-uri]
     use std::time::Instant;
     use std::fs::File;
     use std::io::{Read, Seek, SeekFrom};
+    // ss[related distributed.aeron-uri]
     use std::time::{Duration};
     use std::path::Path;
 
@@ -19,6 +24,7 @@ pub(crate) mod aeron_utils {
     ///
     /// # Arguments
     /// - `error`: The `AeronError` encountered during operation.
+    // ss[related distributed.aeron-uri]
     fn error_handler(error: AeronError) {
         error!("Aeron Error: {:?}", error);
     }
@@ -26,6 +32,7 @@ pub(crate) mod aeron_utils {
 
 
     /// if this is still zero then the driver is not ready for use
+    // ss[related distributed.aeron-uri]
     fn is_cnc_version_marker_set<P: AsRef<Path>>(cnc_path: P) -> bool {
         // The version marker is a 32-bit int at offset 0
         const VERSION_OFFSET: u64 = 0;
@@ -47,6 +54,7 @@ pub(crate) mod aeron_utils {
         version != 0
     }
 
+    // ss[related distributed.aeron-uri]
     pub(crate) fn aeron_context_with_retry(
         mut aeron_context: Context,
         max_wait: Duration,
@@ -104,9 +112,11 @@ pub(crate) mod aeron_utils {
         }
     }
 
+    // ss[related distributed.aeron-uri]
     use std::path::PathBuf;
 
     /// Checks if the CNC file's modification time has stabilized for `stabilization_period`.
+    // ss[related distributed.aeron-uri]
     fn is_cnc_stable(aeron: &Aeron, stabilization_period: Duration) -> bool {
         use std::fs;
         // Convert String to PathBuf correctly
@@ -151,6 +161,7 @@ pub(crate) mod aeron_utils {
 /// - `SpyUdp`: Observes traffic on a UDP channel without sending or receiving.
 /// - `SpyIpc`: Observes traffic on an IPC channel without sending or receiving.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related distributed.aeron-uri]
 pub enum MediaType {
     /// Standard UDP channel: used for point-to-point or multicast communication.
     /// Example: `aeron:udp?endpoint=127.0.0.1:40456`
@@ -175,6 +186,7 @@ pub enum MediaType {
 /// - `Dynamic`: Control messages are managed automatically by Aeron.
 /// - `Manual`: The user must manage control messages manually.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related distributed.aeron-uri]
 pub enum ControlMode {
     /// Control messages are managed automatically by Aeron.
     /// This is the most common mode and is easier to use for most applications.
@@ -194,6 +206,7 @@ pub enum ControlMode {
 /// - `ip`: The IP address of the endpoint.
 /// - `port`: The port number associated with the endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related distributed.aeron-uri]
 pub struct Endpoint {
     /// The IP address of the endpoint (e.g., `127.0.0.1` or `::1`).
     pub ip: IpAddr,
@@ -211,6 +224,7 @@ pub struct Endpoint {
 /// - `ip`: The IP address of the interface.
 /// - `port`: The port number for the interface.
 #[derive(Debug, Clone, Copy)]
+// ss[related distributed.aeron-uri]
 pub struct Interface {
     /// The IP address of the network interface (e.g., `192.168.1.1`).
     pub ip: IpAddr,
@@ -232,6 +246,7 @@ pub struct Interface {
 /// the multicast packet. A TTL of `0` means the packet stays on the host, while
 /// higher values allow it to travel further.
 #[derive(Debug, Clone, Copy)]
+// ss[related distributed.aeron-uri]
 pub struct MulticastConfig {
     /// The control endpoint used to manage the multicast group.
     pub control: Endpoint,
@@ -248,6 +263,7 @@ pub struct MulticastConfig {
 /// - `interface`: An optional network interface for binding.
 /// - `reliable`: An optional setting for reliable communication.
 #[derive(Debug, Clone, Copy)]
+// ss[related distributed.aeron-uri]
 pub struct PointServiceConfig {
     /// Optional network interface for binding the channel.
     pub interface: Option<Interface>,
@@ -263,6 +279,7 @@ pub struct PointServiceConfig {
 /// - `Reliable`: Ensures reliable communication with retransmissions.
 /// - `Unreliable`: Best-effort communication without retransmissions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related distributed.aeron-uri]
 pub enum ReliableConfig {
     /// Ensures reliable communication. Lost packets are retransmitted.
     Reliable,
@@ -279,6 +296,7 @@ pub enum ReliableConfig {
 /// - `PointToPoint`: Used for unicast or IPC communication.
 /// - `Multicast`: Used for multicast communication.
 #[derive(Debug, Clone)]
+// ss[related distributed.aeron-uri]
 pub enum Channel {
     /// Represents a point-to-point unicast or IPC channel.
     ///
@@ -322,6 +340,7 @@ pub enum Channel {
     },
 }
 
+// ss[related distributed.aeron-uri]
 impl Channel {
     /// Builds a valid Aeron channel string according to official docs.
     ///
@@ -339,6 +358,7 @@ impl Channel {
     /// # Note
     /// For IPv6, the current implementation produces `endpoint=[::1]40123`, which omits the colon
     /// before the port. The correct format should be `endpoint=[::1]:40123`.
+    // ss[related distributed.aeron-uri]
     pub fn cstring(&self) -> CString {
         let channel_str = match self {
             Channel::PointToPoint {
@@ -473,6 +493,7 @@ impl Channel {
 ///
 /// # Returns
 /// A `String` representing the formatted IP address.
+// ss[related distributed.aeron-uri]
 fn ip_to_string(ip: &IpAddr) -> String {
     match ip {
         IpAddr::V4(ipv4) => format!("{}:", ipv4),
@@ -481,12 +502,14 @@ fn ip_to_string(ip: &IpAddr) -> String {
 }
 
 #[cfg(test)]
+// ss[related distributed.aeron-uri]
 mod aeron_channel_tests {
     use super::*;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     /// Tests a basic PointToPoint UDP channel with an IPv4 endpoint.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_ipv4() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -510,6 +533,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint UDP channel with an IPv6 endpoint.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_ipv6() {
         let endpoint = Endpoint {
             ip: IpAddr::V6(Ipv6Addr::LOCALHOST),
@@ -533,6 +557,7 @@ mod aeron_channel_tests {
 
     /// Tests a basic PointToPoint IPC channel.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_ipc() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -553,6 +578,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast UDP channel with TTL and manual control mode.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -586,6 +612,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint UDP channel with interface and reliability settings.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_with_interface_reliability() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -616,6 +643,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint SpyUdp channel.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_spy_udp_point_to_point() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -639,6 +667,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint SpyIpc channel.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_spy_ipc() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -662,6 +691,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast SpyUdp channel.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_spy_udp_multicast() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -695,6 +725,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint UDP channel with an IPv6 interface.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_udp_with_ipv6_interface() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -720,6 +751,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint IPC channel with a term length.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_ipc_with_term_length() {
         let channel = Channel::PointToPoint {
             media_type: MediaType::Ipc,
@@ -737,6 +769,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint SpyIpc channel with a term length.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_spy_ipc_with_term_length() {
         let channel = Channel::PointToPoint {
             media_type: MediaType::SpyIpc,
@@ -754,6 +787,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast UDP channel with IPv6 endpoint and control.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast_udp_with_ipv6() {
         let endpoint = Endpoint {
             ip: IpAddr::V6(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1)),
@@ -783,6 +817,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast IPC channel (unusual but allowed by current code).
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast_ipc() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -812,6 +847,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast SpyIpc channel (unusual but allowed by current code).
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast_spy_ipc() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -841,6 +877,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast UDP channel with a term length.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast_udp_with_term_length() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -870,6 +907,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint UDP channel with unreliable configuration.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_udp_with_unreliable() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -891,6 +929,7 @@ mod aeron_channel_tests {
 
     /// Tests a Multicast UDP channel with dynamic control mode and no TTL.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_multicast_udp_with_dynamic_control() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -920,6 +959,7 @@ mod aeron_channel_tests {
 
     /// Tests a PointToPoint IPC channel with endpoint, interface, and reliability ignored.
     #[test]
+    // ss[verify distributed.aeron-uri]
     fn test_point_to_point_ipc_with_endpoint_interface_reliability() {
         let endpoint = Endpoint {
             ip: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),

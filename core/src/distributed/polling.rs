@@ -24,6 +24,7 @@
 //! - If there’s no variation (standard deviation is zero), it waits exactly until the expected moment if it hasn’t happened yet, or checks immediately if it’s already passed.
 
 #[allow(unused_imports)]
+// ss[related distributed.media-driver-testing]
 use log::*;
 
 /// A scheduler for polling with adaptive delays based on a bell curve.
@@ -31,6 +32,7 @@ use log::*;
 /// This structure holds all the information needed to decide when to check for an event next.
 /// It keeps track of when the event is expected, how much its timing might vary, and the shortest
 /// and longest times allowed between checks.
+// ss[related distributed.media-driver-testing]
 pub struct PollScheduler {
     /// The expected moment for the next event (in nanoseconds).
     /// This is when the scheduler thinks the event will most likely happen.
@@ -48,6 +50,7 @@ pub struct PollScheduler {
     max_delay_ns: u64,
 }
 
+// ss[related distributed.media-driver-testing]
 impl Default for PollScheduler {
     /// Sets up a scheduler with default values if you don’t specify anything.
     fn default() -> Self {
@@ -55,6 +58,7 @@ impl Default for PollScheduler {
     }
 }
 
+// ss[related distributed.media-driver-testing]
 impl PollScheduler {
     /// Creates a new scheduler with starting values.
     ///
@@ -65,6 +69,7 @@ impl PollScheduler {
     /// - Maximum delay is 1 second (1,000,000,000 nanoseconds), a reasonable longest wait.
     ///
     /// You can change these later if needed.
+    // ss[related distributed.media-driver-testing]
     pub fn new() -> Self {
         PollScheduler {
             expected_moment_ns: 0,
@@ -78,6 +83,7 @@ impl PollScheduler {
     ///
     /// Use this to tell the scheduler when you think the event will occur.
     /// The time is in nanoseconds (1 billion nanoseconds = 1 second).
+    // ss[related distributed.media-driver-testing]
     pub fn set_expected_moment_ns(&mut self, time_ns: u64) {
         self.expected_moment_ns = time_ns;
     }
@@ -86,6 +92,7 @@ impl PollScheduler {
     ///
     /// This is the standard deviation in nanoseconds. A bigger number means the event could happen
     /// farther from the expected time, making the scheduler more flexible in its timing.
+    // ss[related distributed.media-driver-testing]
     pub fn set_std_dev_ns(&mut self, std_dev_ns: u64) {
         self.std_dev_ns = std_dev_ns;
     }
@@ -94,6 +101,7 @@ impl PollScheduler {
     ///
     /// This is the minimum delay in nanoseconds. It stops the scheduler from checking too often,
     /// which could slow down the system.
+    // ss[related distributed.media-driver-testing]
     pub fn set_min_delay_ns(&mut self, min_delay_ns: u64) {
         self.min_delay_ns = min_delay_ns;
     }
@@ -102,6 +110,7 @@ impl PollScheduler {
     ///
     /// This is the maximum delay in nanoseconds. It ensures the scheduler doesn’t wait too long
     /// and miss the event.
+    // ss[related distributed.media-driver-testing]
     pub fn set_max_delay_ns(&mut self, max_delay_ns: u64) {
         self.max_delay_ns = max_delay_ns;
     }
@@ -109,6 +118,7 @@ impl PollScheduler {
     /// Gets the current expected moment for the next event.
     ///
     /// This tells you when the scheduler thinks the event will happen, in nanoseconds.
+    // ss[related distributed.media-driver-testing]
     pub fn get_expected_moment_ns(&self) -> u64 {
         self.expected_moment_ns
     }
@@ -116,6 +126,7 @@ impl PollScheduler {
     /// Gets the current standard deviation.
     ///
     /// This shows how much variation the scheduler expects in the event’s timing, in nanoseconds.
+    // ss[related distributed.media-driver-testing]
     pub fn get_std_dev_ns(&self) -> u64 {
         self.std_dev_ns
     }
@@ -123,6 +134,7 @@ impl PollScheduler {
     /// Gets the minimum delay between checks.
     ///
     /// This is the shortest wait time the scheduler will use, in nanoseconds.
+    // ss[related distributed.media-driver-testing]
     pub fn get_min_delay_ns(&self) -> u64 {
         self.min_delay_ns
     }
@@ -130,6 +142,7 @@ impl PollScheduler {
     /// Gets the maximum delay between checks.
     ///
     /// This is the longest wait time the scheduler will use, in nanoseconds.
+    // ss[related distributed.media-driver-testing]
     pub fn get_max_delay_ns(&self) -> u64 {
         self.max_delay_ns
     }
@@ -159,6 +172,7 @@ impl PollScheduler {
     ///
     /// ### What You Get Back
     /// - The delay in nanoseconds before the next check.
+    // ss[related distributed.media-driver-testing]
     pub fn compute_next_delay_ns(&self, current_time_ns: u64) -> u64 {
         // Step 1: Calculate how far the current time is from the expected moment
         let distance = if current_time_ns > self.expected_moment_ns {
@@ -212,11 +226,13 @@ impl PollScheduler {
 
 /// Tests to make sure the scheduler works as expected in different situations.
 #[cfg(test)]
+// ss[related distributed.media-driver-testing]
 mod tests {
     use super::PollScheduler;
 
     /// Checks the delay when the current time is exactly at the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_at_expected_moment() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000; // 5 seconds
@@ -231,6 +247,7 @@ mod tests {
 
     /// Checks the delay when the current time is a little before the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_slightly_before_expected_moment() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -247,6 +264,7 @@ mod tests {
 
     /// Checks the delay when the current time is a little after the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_slightly_after_expected_moment() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -263,6 +281,7 @@ mod tests {
 
     /// Checks the delay when the current time is one standard deviation before the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_one_std_dev_before() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -279,6 +298,7 @@ mod tests {
 
     /// Checks the delay when the current time is three standard deviations before the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_three_std_dev_before() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -294,6 +314,7 @@ mod tests {
 
     /// Checks the delay when the current time is three standard deviations after the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_three_std_dev_after() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -309,6 +330,7 @@ mod tests {
 
     /// Checks the delay when there’s no variation (standard deviation is zero).
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_zero_std_dev() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -324,6 +346,7 @@ mod tests {
 
     /// Checks the delay when the current time is far beyond the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_beyond_max_delay() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;
@@ -339,6 +362,7 @@ mod tests {
 
     /// Checks a series of delays for different times relative to the expected moment.
     #[test]
+    // ss[verify distributed.media-driver-testing]
     fn test_poll_sequence_with_delay_vector() {
         let mut scheduler = PollScheduler::new();
         let expected_moment = 5_000_000_000;

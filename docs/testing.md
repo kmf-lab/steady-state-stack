@@ -1,5 +1,7 @@
 # Testing Steady State Actors
 
+> **Normative requirements:** [docs/spec/06-testing-and-simulation.md](spec/06-testing-and-simulation.md) · [Specification index](spec/README.md)
+
 Steady State provides a comprehensive testing framework that lets you verify actor logic without starting the full graph, and integration tests that exercise the whole pipeline. This guide explains both approaches.
 
 ---
@@ -268,10 +270,11 @@ Merges that only run `cargo test` in **this** workspace can still break external
 
 ## Next Steps
 
-- Read the **[Telemetry Guide](telemetry.md)** to understand how to configure and interpret metrics.
-- Explore the **[Distributed Systems Guide](distributed.md)** for testing Aeron pipelines.
+- Read the **[Telemetry Guide](telemetry.md)** (see also [spec/09-telemetry](spec/09-telemetry-and-observability.md)).
+- Explore the **[Distributed Systems Guide](distributed.md)** (see [spec/08-distributed](spec/08-streams-and-distributed.md)).
 - Check the **[Migration Guide](migration_guide.md)** when upgrading between versions.
+- Review the **[Steady State specification](spec/README.md)** for traceable requirements and Tracey annotations.
 
 ---
 
-**Reference**: For a deeper understanding of the actor lifecycle, shutdown voting, and channel configuration, see the [steady_state_tldr.md](../steady_state_tldr.md).
+**Reference**: [steady_state_tldr.md](../steady_state_tldr.md) (architecture summary) · [spec/README.md](spec/README.md) (full requirement catalog).

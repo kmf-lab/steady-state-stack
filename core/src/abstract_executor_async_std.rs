@@ -9,21 +9,27 @@ pub(crate) mod core_exec {
     //! local and global), handling blocking operations, and synchronously blocking on futures.
     //! The design ensures flexibility and compatibility with `async-std`’s OS-backed async mechanisms.
 
+    // ss[related platform.executor-features]
     use futures::FutureExt;
 use std::error::Error;
     // ## Imports
+    // ss[related platform.executor-features]
     use std::future::Future; // Core trait for asynchronous operations.
     use std::io::Result; // Standard IO types for error handling.
     use std::thread; // For thread management in the driver loop.
+    // ss[related platform.executor-features]
     use std::time::Duration; // For timing operations in driver restart delay.
     use lazy_static::lazy_static; // For static initialization of `INIT`.
     use log::{error, trace, warn}; // Logging utilities for debugging and error reporting.
+    // ss[related platform.executor-features]
     use parking_lot::Once; // Synchronization primitive for one-time initialization.
     use crate::ProactorConfig; // Custom configuration enum, ignored in this impl.
     use std::panic::{catch_unwind, AssertUnwindSafe}; // Panic handling for driver robustness.
+    // ss[related platform.executor-features]
     use async_std::task; // Core async-std module for task spawning and execution.
     use futures::channel::oneshot;
     use std::any::Any;
+    // ss[related platform.executor-features]
     use std::panic::resume_unwind;
     use std::pin::Pin;
     use futures_util::future::FusedFuture;
@@ -32,6 +38,7 @@ use std::error::Error;
     ///
     /// This function uses `async_std::task::spawn` to schedule the future on the global multi-threaded
     /// executor. Ignoring the `Task` handle detaches it, allowing thread-safe tasks to run independently.
+    // ss[related platform.executor-features]
     pub fn spawn_detached<F: Future<Output=T> + Send + 'static, T: Send + 'static>(future: F) {
         let _ = task::spawn(future);
     } // only 5x calls in metric_server and actor_builder
@@ -40,6 +47,7 @@ use std::error::Error;
 
     // Get the current core (platform-specific)
     #[cfg(all(unix, feature = "libc"))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         let cpu = unsafe { libc::sched_getcpu() };
         if cpu >= 0 {
@@ -50,6 +58,7 @@ use std::error::Error;
     }
 
     #[cfg(all(windows, feature = "winapi"))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         let cpu = unsafe { winapi::um::processthreadsapi::GetCurrentProcessorNumber() };
         if cpu != 0xFFFFFFFF {
@@ -60,12 +69,14 @@ use std::error::Error;
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    // ss[related platform.executor-features]
     fn get_current_core() -> Option<usize> {
         None
     }
 
     // Set thread affinity (platform-specific)
     #[cfg(all(unix, feature = "libc"))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
         use libc::{cpu_set_t, pthread_setaffinity_np, pthread_self};
         let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
@@ -81,6 +92,7 @@ use std::error::Error;
     }
 
     #[cfg(all(windows, feature = "winapi"))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
         use winapi::um::processthreadsapi::GetCurrentThread;
         use winapi::shared::basetsd::DWORD_PTR;
@@ -95,6 +107,7 @@ use std::error::Error;
     }
 
     #[cfg(not(any(all(unix, feature = "libc"), all(windows, feature = "winapi"))))]
+    // ss[related platform.executor-features]
     fn set_thread_affinity(_core: usize) -> std::result::Result<(), Box<dyn Error>> {
         Ok(())
     }
@@ -110,6 +123,7 @@ use std::error::Error;
     ///
     /// # Returns
     /// A future that can be awaited to obtain the result of `f`.
+    // ss[related platform.executor-features]
     pub fn spawn_blocking<F, T>(f: F) -> Pin<Box<dyn futures::future::FusedFuture<Output = T> + Send>>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -145,6 +159,7 @@ use std::error::Error;
     ///
     /// This function uses `async_std::task::block_on` to run the future to completion on the current
     /// thread, useful in synchronous contexts like `main` or tests where an async runtime isn’t running.
+    // ss[related platform.executor-features]
     pub fn block_on<F: Future<Output = T>, T>(future: F) -> T {
        // futures::executor::block_on(future)??
         task::block_on(future)
@@ -155,12 +170,14 @@ use std::error::Error;
     /// Since `async-std` does not support dynamically adding threads to its executor, this function
     /// returns `Ok(0)` as a no-op, maintaining interface compatibility with the `nuclei` version.
     #[allow(dead_code)]
+    // ss[related platform.executor-features]
     pub async fn spawn_more_threads(_count: usize) -> Result<usize> {
         Ok(0) // async-std does not allow dynamic thread addition
     }
 
     lazy_static! {
         /// Ensures initialization runs only once across all threads using a thread-safe static.
+        // ss[related platform.executor-features]
         static ref INIT: Once = Once::new();
     }
 
@@ -169,6 +186,7 @@ use std::error::Error;
     /// This function optionally starts a driver thread that runs the `async-std` executor indefinitely
     /// if `enable_driver` is true. The `proactor_config` and `queue_length` parameters are ignored since
     /// `async-std` doesn’t use `nuclei`’s io_uring-based proactor model. Includes panic handling for robustness.
+    // ss[related platform.executor-features]
     pub(crate) fn init(enable_driver: bool, _proactor_config: ProactorConfig, _queue_length: u32) {
         INIT.call_once(|| {
             if enable_driver {
@@ -193,12 +211,15 @@ use std::error::Error;
 
 // Additional tests for async-std executor abstractions
 #[cfg(test)]
+// ss[related platform.executor-features]
 mod async_std_exec_tests {
     use std::{thread, time::Duration};
     use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    // ss[related platform.executor-features]
     use crate::abstract_executor_async_std::core_exec::*;
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_spawn_detached_async_std() {
         let flag = Arc::new(AtomicBool::new(false));
         let flag_clone = flag.clone();
@@ -208,12 +229,14 @@ mod async_std_exec_tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_spawn_blocking_async_std() {
         let result = block_on(async { spawn_blocking(|| 9).await });
         assert_eq!(result, 9);
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_spawn_more_threads_async_std() {
         let result = block_on(async { spawn_more_threads(3).await.expect("internal error") });
         assert_eq!(result, 0);

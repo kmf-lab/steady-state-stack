@@ -1,0 +1,7 @@
+# Tracey unmapped baseline (rust-core) — recorded at sprint start
+# Command: tracey query unmapped
+steady-state/rust-core: 2368 unmapped code units out of 2579 total (~8% mapped)
+
+# After sprint (automated ss[impl|related|verify] via scripts/tracey_map_unmapped.py)
+# steady-state/rust-core: ~306 unmapped / 2579 total (~88% mapped)
+# Gate: bash scripts/tracey-unmapped-gate.sh  (TRACEY_MAPPED_PERCENT=80)

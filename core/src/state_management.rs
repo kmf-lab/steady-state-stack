@@ -1,9 +1,12 @@
+// ss[related state.lock-init-once]
 use std::sync::Arc;
 use futures_util::lock::{Mutex, MutexGuard, MappedMutexGuard};
 use std::ops::{Deref, DerefMut};
+// ss[related state.lock-init-once]
 use std::fs::File;
 use std::io::{BufReader, Error};
 use std::path::{Path, PathBuf};
+// ss[related state.lock-init-once]
 use serde::{Serialize};
 use serde::de::DeserializeOwned;
 use serde_json;
@@ -17,17 +20,20 @@ use serde_json;
 ///
 /// # Type Parameters
 /// - `S`: The type of the state being stored.
+// ss[related state.lock-init-once]
 pub struct SteadyState<S> {
     inner: Arc<Mutex<Option<S>>>,
     on_drop: Option<Arc<dyn Fn(&S) + Send + Sync>>,
     on_persist: Option<Arc<dyn Fn(&S) -> Result<(), std::io::Error> + Send + Sync>>,
 }
 
+// ss[impl state.clone-shared]
 impl<S> Clone for SteadyState<S> {
 
     /// Creates a new reference to the same underlying state.
     ///
     /// This method clones the `Arc`, allowing multiple references to the same state.
+    // ss[related state.lock-init-once]
     fn clone(&self) -> Self {
         SteadyState {
             inner: self.inner.clone(),
@@ -37,6 +43,7 @@ impl<S> Clone for SteadyState<S> {
     }
 }
 
+// ss[related state.lock-init-once]
 impl<S> Default for SteadyState<S> {
     /// new simple state creation
     fn default() -> Self {
@@ -44,6 +51,7 @@ impl<S> Default for SteadyState<S> {
     }
 }
 
+// ss[related state.lock-init-once]
 impl<S> SteadyState<S> {
 
     /// Asynchronously locks the state, initializing it if absent.
@@ -59,6 +67,7 @@ impl<S> SteadyState<S> {
     /// # Type Constraints
     /// - `F: FnOnce() -> S`: The initialization function must produce a value of type `S`.
     /// - `S: Send`: The state must be sendable across threads.
+    // ss[related state.lock-init-once]
     pub async fn lock<F>(&self, init: F) -> StateGuard<'_, S>
     where
         F: FnOnce() -> S,
@@ -77,6 +86,7 @@ impl<S> SteadyState<S> {
     /// Lock state to review or modify its values after it has been created or initialized.
     /// This is most helpful in testing and in main after actors have shutdown to determine what
     /// was the final state of the SteadyState.
+    // ss[impl state.try-lock-sync]
     pub fn try_lock_sync(&self) -> Option<StateGuard<'_, S>>
     where
         S: Send,
@@ -110,6 +120,8 @@ impl<S> SteadyState<S> {
 ///
 /// # Remarks
 /// Should typically be called in `main` when setting up actors.
+// ss[impl state.steady-state-persistence]
+// ss[impl state.lock-init-once]
 pub fn new_state<S>() -> SteadyState<S> {
     SteadyState {
         inner: Arc::new(Mutex::new(None)),
@@ -132,6 +144,8 @@ pub fn new_state<S>() -> SteadyState<S> {
 ///
 /// # Returns
 /// - `SteadyState<S>`: A state wrapper with persistence enabled.
+// ss[impl state.save-on-drop]
+// ss[impl state.persistent-load]
 pub fn new_persistent_state<S, P>(file_path: P) -> SteadyState<S>
 where
     P: AsRef<Path>,
@@ -148,6 +162,7 @@ where
         });
 
     let drop_file = file_path.clone();
+    // ss[impl state.on-drop-hook]
     let on_drop = move |s: &S| {
         let _ = write_file(&drop_file, s);
     };
@@ -163,6 +178,7 @@ where
     }
 }
 
+// ss[related state.lock-init-once]
 fn write_file<S: serde::Serialize>(file_path: &PathBuf, s: &S) -> Result<(), std::io::Error> {
     if let Ok(file) = File::create(&file_path) {
         let result = serde_json::to_writer_pretty(file, s);
@@ -177,26 +193,31 @@ fn write_file<S: serde::Serialize>(file_path: &PathBuf, s: &S) -> Result<(), std
 
 ///
 /// Protect state access while the actor needs to use it. State reverts to lock when dropped.
+// ss[related state.lock-init-once]
 pub struct StateGuard<'a, S> {
     guard: MappedMutexGuard<'a, Option<S>, S>,
     on_drop: Option<Arc<dyn Fn(&S) + Send + Sync>>,
     on_persist: Option<Arc<dyn Fn(&S) -> Result<(), std::io::Error> + Send + Sync>>,
 }
 
+// ss[related state.lock-init-once]
 impl<'a, S> Deref for StateGuard<'a, S> {
     type Target = S;
 
+    // ss[related state.lock-init-once]
     fn deref(&self) -> &Self::Target {
         &self.guard
     }
 }
 
+// ss[related state.lock-init-once]
 impl<'a, S> DerefMut for StateGuard<'a, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
     }
 }
 
+// ss[impl state.on-drop-hook]
 impl<'a, S> Drop for StateGuard<'a, S> {
     fn drop(&mut self) {
         if let Some(on_drop) = &self.on_drop {
@@ -205,12 +226,14 @@ impl<'a, S> Drop for StateGuard<'a, S> {
     }
 }
 
+// ss[related state.lock-init-once]
 impl<'a, S> StateGuard<'a, S> {
 
     /// Persists the current state to disk if a persistence function was provided.
     ///
     /// # Returns
     /// - `Result<(), std::io::Error>`: The result of the persistence operation.
+    // ss[related state.lock-init-once]
     pub async fn persist(&self) -> Result<(), std::io::Error>
     where
         S: Serialize,
@@ -224,19 +247,25 @@ impl<'a, S> StateGuard<'a, S> {
 }
 
 #[cfg(test)]
+// ss[related state.lock-init-once]
 mod state_management_tests {
     use super::*;
     use serde::{Deserialize, Serialize};
+    // ss[related state.lock-init-once]
     use std::fs::File;
     use std::io::BufReader;
     use tempfile::tempdir;
 
     // Define a simple state type for testing persistence
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    // ss[related state.lock-init-once]
     struct MyState {
         value: i32,
     }
 
+    // ss[verify state.lock-init-once]
+    // ss[verify state.steady-state-persistence]
+    // ss[verify state.try-lock-sync]
     #[async_std::test]
     async fn test_basic_state() {
         let state = new_state::<i32>();
@@ -252,6 +281,7 @@ mod state_management_tests {
         }
     }
 
+    // ss[verify state.clone-shared]
     #[async_std::test]
     async fn test_cloning_shared_state() {
         let state1 = new_state::<i32>();
@@ -270,6 +300,7 @@ mod state_management_tests {
         }
     }
 
+    // ss[verify state.persistent-load]
     #[async_std::test]
     async fn test_persistent_state_load() {
         let dir = tempdir().unwrap();
@@ -285,6 +316,8 @@ mod state_management_tests {
         }
     }
 
+    // ss[verify state.save-on-drop]
+    // ss[verify state.on-drop-hook]
     #[async_std::test]
     async fn test_persistent_state_save() {
         let dir = tempdir().unwrap();
@@ -302,6 +335,7 @@ mod state_management_tests {
         assert_eq!(saved_state, MyState { value: 200 });
     }
 
+    // ss[verify state.persistent-load]
     #[async_std::test]
     async fn test_persistent_state_no_file() {
         let dir = tempdir().unwrap();
@@ -314,6 +348,7 @@ mod state_management_tests {
         }
     }
 
+    // ss[verify state.persistent-load]
     #[async_std::test]
     async fn test_persistent_state_invalid_file() {
         let dir = tempdir().unwrap();

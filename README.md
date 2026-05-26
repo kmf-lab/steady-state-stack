@@ -48,6 +48,10 @@ Time matters, and Steady State delivers:
 
 Factory automation, robotics, IoT, cloud, services... Steady State makes it simple. It’s serious for business and fun to use. Jump in, try it, and turbocharge your next project. Ready to ship faster?
 
+## Specification
+
+Normative framework requirements and Tracey traceability: **[docs/spec/README.md](docs/spec/README.md)**.
+
 ## Get Started
 
 1. **Begin Here**: Try [minimum example](https://github.com/kmf-lab/steady-state-minimum),[standard example](https://github.com/kmf-lab/steady-state-standard) then explore [robust](https://github.com/kmf-lab/steady-state-robust),[performant](https://github.com/kmf-lab/steady-state-performant) and [distributed](https://github.com/kmf-lab/steady-state-distributed).

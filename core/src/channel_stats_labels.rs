@@ -1,12 +1,15 @@
+// ss[related telemetry.channel-labels]
 use hdrhistogram::Counter;
 use log::error;
 use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
+// ss[related telemetry.channel-labels]
 use crate::channel_stats::{ChannelStatsComputer, PLACES_TENS};
 use crate::{actor_stats, StdDev};
 use crate::actor_builder_units::Percentile;
 
 /// Struct for configuring the computation of labels.
 #[derive(Copy, Clone)]
+// ss[related telemetry.channel-labels]
 pub(crate) struct ComputeLabelsConfig {
     pub(crate) frame_rate_ms: u64,
     pub(crate) runner_adjust: (u64, u64),
@@ -18,6 +21,7 @@ pub(crate) struct ComputeLabelsConfig {
     pub(crate) show_max: bool,
 }
 
+// ss[related telemetry.channel-labels]
 impl ComputeLabelsConfig {
     /// Creates a new `ComputeLabelsConfig` for a channel.
     ///
@@ -32,6 +36,7 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
+    // ss[related telemetry.channel-labels]
     pub(crate) fn channel_config(that: &ChannelStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
 
         Self {
@@ -59,6 +64,7 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
+    // ss[related telemetry.channel-labels]
     pub(crate) fn actor_config(that: &ActorStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms,
@@ -75,6 +81,7 @@ impl ComputeLabelsConfig {
 
 /// Struct for holding label information for computing labels.
 #[derive(Copy, Clone)]
+// ss[related telemetry.channel-labels]
 pub(crate) struct ComputeLabelsLabels<'a> {
 
 
@@ -97,6 +104,7 @@ pub(crate) struct ComputeLabelsLabels<'a> {
 /// * `metric_target` - A mutable reference to a string for storing the metric target.
 /// * `label_target` - A mutable reference to a string for storing the label target.
 #[inline]
+// ss[related telemetry.channel-labels]
 pub(crate) fn compute_labels<T: Counter>(
     config: ComputeLabelsConfig,
     current: &ChannelBlock<T>,
@@ -211,6 +219,7 @@ pub(crate) fn compute_labels<T: Counter>(
     });
 }
 
+// ss[related telemetry.channel-labels]
 fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, telemetry_name: &str, prometheus_name: &str) {
     // Prefix the label
     label_target.push_str(telemetry_name);
@@ -230,6 +239,7 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
 }
 
 /// Formats a large number into a compressed string with K, M, B, T suffixes.
+// ss[related telemetry.channel-labels]
 pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     let mut b = itoa::Buffer::new();
     let t = b.format(val);
@@ -250,6 +260,7 @@ pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     }
 }
 
+// ss[related telemetry.channel-labels]
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
     if labels.int_only {
@@ -300,10 +311,12 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
             } else {
                 // Genuine fraction: format with 3 decimal places
                 let mut value_buf = [0u8; 32];
+                // ss[related telemetry.channel-labels]
                 struct SliceWriter<'a> {
                     buf: &'a mut [u8],
                     pos: usize,
                 }
+                // ss[related telemetry.channel-labels]
                 impl core::fmt::Write for SliceWriter<'_> {
                     fn write_str(&mut self, s: &str) -> core::fmt::Result {
                         let bytes = s.as_bytes();
@@ -319,6 +332,7 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
                     buf: &mut value_buf,
                     pos: 0,
                 };
+                // ss[related telemetry.channel-labels]
                 use std::fmt::Write;
                 write!(&mut writer, " {:.3}", fv).unwrap();
                 let offset = writer.pos;
@@ -341,10 +355,12 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
 }
 
 #[cfg(test)]
+// ss[related telemetry.channel-labels]
 mod tests {
     use super::*;
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_format_value_int_padding() {
         let labels = ComputeLabelsLabels {
             label: "test",
@@ -362,6 +378,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_format_value_scaling() {
         let labels = ComputeLabelsLabels {
             label: "test",
@@ -388,6 +405,7 @@ mod tests {
         }
     }
 #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_format_value_whole_number_float() {
         // When float_value is a whole number (e.g., avg fill percentage),
         // it should NOT format with decimal places and leading space.
@@ -418,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.channel-labels]
     fn test_format_label_prefix_assertions() {
         let labels = ComputeLabelsLabels {
             label: "test",
@@ -437,6 +456,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "prometheus_name must be at least 1 character long")]
+    // ss[verify telemetry.channel-labels]
     fn test_format_label_prefix_empty_panic() {
         let labels = ComputeLabelsLabels {
             label: "test", unit: "u", _prometheus_labels: "", int_only: true, fixed_digits: 0,
@@ -446,6 +466,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "prometheus_metrics")]
+    // ss[verify telemetry.channel-labels]
     fn test_prometheus_metric_format() {
         let labels = ComputeLabelsLabels {
             label: "latency",

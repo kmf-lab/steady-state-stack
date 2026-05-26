@@ -1,16 +1,20 @@
 #[allow(unused_imports)]
+// ss[related distributed.aqueduct-stream]
 use log::*;
 use crate::{LazyStreamRx, LazyStreamTx, ScheduleAs};
 use crate::actor_builder::ActorBuilder;
+// ss[related distributed.aqueduct-stream]
 use crate::distributed::aeron_channel_builder::AqueTech;
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
 use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamEgress, StreamIngress};
+// ss[related distributed.aqueduct-stream]
 use crate::state_management::new_state;
 
 /// Trait defining a builder pattern for integrating distributed connectivity into an actor graph.
 ///
 /// The `AqueductBuilder` trait provides a unified interface for adding publish/subscribe
 /// pipelines (e.g., Aeron streams) to actors using a fluent builder API.
+// ss[related distributed.aqueduct-stream]
 pub trait AqueductBuilder {
     /// Build a distributed aqueduct for the specified technology, actor builder, and threading model.
     ///
@@ -18,6 +22,7 @@ pub trait AqueductBuilder {
     /// - `tech`: The distribution technology (e.g., Aeron) and its parameters.
     /// - `actor_builder`: The base `ActorBuilder` used to configure and build the actor.
     /// - `threading`: The scheduling strategy for actor execution.
+    // ss[related distributed.aqueduct-stream]
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -26,6 +31,7 @@ pub trait AqueductBuilder {
     );
 }
 
+// ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamRx<StreamEgress> {
     fn build_aqueduct(
         self,
@@ -65,6 +71,7 @@ impl AqueductBuilder for LazyStreamRx<StreamEgress> {
 
 }
 
+// ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamTx<StreamIngress> {
     fn build_aqueduct(
         self,
@@ -103,6 +110,7 @@ impl AqueductBuilder for LazyStreamTx<StreamIngress> {
     }
 
 }
+// ss[related distributed.aqueduct-stream]
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgress, GIRTH> {
     fn build_aqueduct(
         self,
@@ -140,6 +148,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgre
 
 }
 
+// ss[related distributed.aqueduct-stream]
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngress, GIRTH> {
     fn build_aqueduct(
         self,
@@ -179,12 +188,14 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngr
 }
 
 #[cfg(test)]
+// ss[related distributed.aqueduct-stream]
 mod distributed_builder_tests {
     use super::*;
     use crate::*;
 
     /// Test that `build_aqueduct` works for `LazyStreamRx<StreamSimpleMessage>` with `AqueTech::Aeron`.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_build_aqueduct_lazy_stream_rx() {
         let mut graph = GraphBuilder::for_testing().build(());
         if graph.aeron_media_driver().is_some() {
@@ -203,6 +214,7 @@ mod distributed_builder_tests {
 
     /// Test that `build_aqueduct` works for `LazyStreamTx<StreamSessionMessage>` with `AqueTech::Aeron`.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_build_aqueduct_lazy_stream_tx() {
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -217,9 +229,11 @@ mod distributed_builder_tests {
 
     /// Test that `build_aqueduct` works for `LazySteadyStreamRxBundle<StreamSimpleMessage, GIRTH>` with `AqueTech::Aeron`.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_build_aqueduct_lazy_stream_rx_bundle_simple() {
         let mut graph = GraphBuilder::for_testing().build(());
 
+        // ss[related distributed.aqueduct-stream]
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 
@@ -230,9 +244,11 @@ mod distributed_builder_tests {
     }
 
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_build_aqueduct_lazy_stream_tx_bundle_session() {
         let mut graph = GraphBuilder::for_testing().build(());
 
+        // ss[related distributed.aqueduct-stream]
         const GIRTH: usize = 1;
         let cb = graph.channel_builder();
 

@@ -1,0 +1,28 @@
+specs (
+    {
+        name steady-state
+        include (
+            docs/spec/**/*.md
+        )
+        impls (
+            {
+                name rust-core
+                include (
+                    core/src/**/*.rs
+                )
+                exclude (
+                    target/**
+                )
+            }
+            {
+                name rust-cli
+                include (
+                    cargo-steady-state/src/**/*.rs
+                )
+                exclude (
+                    target/**
+                )
+            }
+        )
+    }
+)

@@ -6,18 +6,23 @@
 //! `NodeDef`: numeric actor id, name, rx/tx channel telemetry ids plus `Arc` pointers—see
 //! [telemetry-edge-conflict.md](../../../docs/telemetry-edge-conflict.md).
 
+// ss[related telemetry.prometheus-metrics]
 use std::collections::{VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+// ss[related telemetry.prometheus-metrics]
 use parking_lot::RwLock;
 use crate::*;
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+// ss[related telemetry.prometheus-metrics]
 use crate::telemetry::{metrics_collector, metrics_server};
 
 /// The name of the metrics collector actor.
+// ss[related telemetry.prometheus-metrics]
 pub const NAME: &str = "metrics_collector";
 
 /// Represents a telemetry receiver and its associated metadata.
+// ss[related telemetry.prometheus-metrics]
 pub struct CollectorDetail {
     /// The identity of the actor being monitored.
     pub ident: ActorIdentity,
@@ -27,6 +32,7 @@ pub struct CollectorDetail {
 
 /// Data packet sent to the metrics server for visualization.
 #[derive(Clone, Debug)]
+// ss[related telemetry.prometheus-metrics]
 pub enum DiagramData {
     /// Definition of a node and its connected channels.
     NodeDef(u64, Box<(Arc<ActorMetaData>, Box<[Arc<ChannelMetaData>]>, Box<[Arc<ChannelMetaData>]>)>),
@@ -39,6 +45,7 @@ pub enum DiagramData {
 }
 
 /// Entry point to run the MetricsCollector actor.
+// ss[related telemetry.prometheus-metrics]
 pub async fn run(
     context: SteadyContext, 
     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>, 
@@ -50,6 +57,7 @@ pub async fn run(
 }
 
 /// The `MetricsCollector` actor gathers telemetry data from all actors and channels.
+// ss[related telemetry.prometheus-metrics]
 pub struct MetricsCollector {
     /// Shared telemetry receivers for all actors in the graph.
     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
@@ -75,6 +83,7 @@ pub struct MetricsCollector {
 }
 
 #[inline]
+// ss[related telemetry.prometheus-metrics]
 fn telemetry_edge_diag_enabled() -> bool {
     matches!(
         std::env::var("STEADY_TELEMETRY_EDGE_DIAG").as_deref(),
@@ -82,6 +91,7 @@ fn telemetry_edge_diag_enabled() -> bool {
     )
 }
 
+// ss[related telemetry.prometheus-metrics]
 fn format_diag_channel_slots(metas: &[Arc<ChannelMetaData>]) -> String {
     let mut pairs: Vec<(usize, usize)> =
         metas.iter().map(|m| (m.id, Arc::as_ptr(m) as usize)).collect();
@@ -93,6 +103,7 @@ fn format_diag_channel_slots(metas: &[Arc<ChannelMetaData>]) -> String {
         .join(";")
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl MetricsCollector {
     /// Creates a new `MetricsCollector` instance.
     pub(crate) fn new(
@@ -115,6 +126,7 @@ impl MetricsCollector {
         }
     }
 
+    // ss[related telemetry.prometheus-metrics]
     pub async fn run(self, context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
         // CRITICAL: MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry
         // feedback loops and prevent this internal actor from appearing in user-facing charts.
@@ -122,6 +134,7 @@ impl MetricsCollector {
         Box::pin(self.internal_behavior(context)).await
     }
     /// The main loop for the `MetricsCollector` actor.
+    // ss[related telemetry.prometheus-metrics]
     pub async fn internal_behavior(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         let runtime_state = context.runtime_state.clone();
@@ -320,9 +333,11 @@ impl MetricsCollector {
 
 #[cfg(test)]
 pub(crate) mod extra_tests {
+    // ss[related telemetry.prometheus-metrics]
     use super::*;
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_collect_channel_data_empty() {
         let all_telemetry_rx = Arc::new(RwLock::new(Vec::new()));
         let mut graph = GraphBuilder::for_testing().build(());
@@ -334,9 +349,11 @@ pub(crate) mod extra_tests {
 
 #[cfg(test)]
 pub(crate) mod metric_collector_tests {
+    // ss[related telemetry.prometheus-metrics]
     use super::*;
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_raw_diagram_state_default() {
         let all_telemetry_rx = Arc::new(RwLock::new(Vec::new()));
         let mut graph = GraphBuilder::for_testing().build(());
@@ -348,6 +365,7 @@ pub(crate) mod metric_collector_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn format_diag_channel_slots_orders_by_id() {
         let a = Arc::new(ChannelMetaData {
             id: 50,

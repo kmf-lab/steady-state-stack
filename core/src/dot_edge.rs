@@ -1,3 +1,4 @@
+// ss[related telemetry.dot-export]
 use crate::ActorName;
 use crate::channel_stats::ChannelStatsComputer;
 
@@ -6,6 +7,7 @@ use crate::channel_stats::ChannelStatsComputer;
 /// Diagnostic fields (`diag_*`) capture the **first claimant** numeric actor id + `Arc<ChannelMetaData>` pointer
 /// for each endpoint so WARN lines can correlate duplicate `channels_out` / `channels_in`.
 #[derive(Default, Debug)]
+// ss[related telemetry.dot-export]
 pub(crate) struct Edge {
     pub(crate) id: usize, // Position matches the channel ID
     pub(crate) from: Option<ActorName>,
@@ -28,6 +30,7 @@ pub(crate) struct Edge {
 
 /// Checks if a color string is recognized by the DOT renderer.
 /// This prevents "black on black" rendering issues caused by unrecognized color names.
+// ss[related telemetry.dot-export]
 fn is_recognized_color(color: &str) -> bool {
     matches!(
         color,
@@ -35,6 +38,7 @@ fn is_recognized_color(color: &str) -> bool {
     )
 }
 
+// ss[related telemetry.dot-export]
 impl Edge {
     /// Computes and refreshes the metrics for the edge based on send and take values.
     ///
@@ -42,6 +46,7 @@ impl Edge {
     ///
     /// * `send` - The send value.
     /// * `take` - The take value.
+    // ss[related telemetry.dot-export]
     pub(crate) fn compute_and_refresh(&mut self, send: i64, take: i64) {
         let (color, _pen) = self.stats_computer.compute(
             &mut self.display_label,

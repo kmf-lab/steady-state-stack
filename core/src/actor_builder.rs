@@ -2,34 +2,44 @@
 //! This module includes the `ActorBuilder` for building actors, `Troupe` for managing groups of actors, and various utility
 //! functions and types to support actor creation and telemetry monitoring.
 
+// ss[related actor.regeneration-survives]
 use crate::dot::RemoteDetails;
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 use crate::graph_testing::{SideChannel, StageManager};
+// ss[related actor.regeneration-survives]
 use crate::monitor::ActorMetaData;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::telemetry::metrics_collector::CollectorDetail;
+// ss[related actor.regeneration-survives]
 use crate::telemetry_window::compute_refresh_window_frames;
 use crate::*;
 use crate::{ActorName, AlertColor, Graph, StdDev, Trigger, steady_config};
+// ss[related actor.regeneration-survives]
 use aeron::aeron::Aeron;
 use async_lock::Barrier;
 use core::default::Default;
+// ss[related actor.regeneration-survives]
 use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
+// ss[related actor.regeneration-survives]
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures_util::future::Shared;
 use futures_util::lock::{Mutex, MutexGuard};
 #[allow(unused_imports)]
+// ss[related actor.regeneration-survives]
 use log::*;
 use parking_lot::RwLock;
 use std::any::Any;
+// ss[related actor.regeneration-survives]
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::error::Error;
+// ss[related actor.regeneration-survives]
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
+// ss[related actor.regeneration-survives]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -39,6 +49,7 @@ use std::time::{Duration, Instant};
 /// trigger conditions, and execution parameters. Once configured, the builder can spawn the actor either standalone
 /// or as part of a `Troupe`.
 #[derive(Clone)]
+// ss[related actor.regeneration-survives]
 pub struct ActorBuilder {
     /// THE name of the actor, used for identification in telemetry and logging.
     actor_name: ActorName,
@@ -115,11 +126,13 @@ pub struct ActorBuilder {
 /// `CoreBalancer` tracks the usage of each core and allocates actors to the least utilized cores, respecting any
 /// exclusions specified in the `ActorBuilder`.
 #[derive(Clone)]
+// ss[related actor.regeneration-survives]
 pub struct CoreBalancer {
     /// A vector where each element represents the number of actors assigned to that core.
     core_usage: Vec<usize>,
 }
 
+// ss[related actor.regeneration-survives]
 impl CoreBalancer {
     /// Allocates a core for an actor, choosing the least utilized core that is not excluded.
     ///
@@ -130,6 +143,7 @@ impl CoreBalancer {
     /// # Returns
     ///
     /// THE index of the allocated core.
+    // ss[related actor.regeneration-survives]
     fn allocate_core(&mut self, excluded_cores: &[usize]) -> usize {
         let core = self
             .core_usage
@@ -151,6 +165,7 @@ impl CoreBalancer {
 /// THE number of CPU cores available.
 #[cfg(feature = "core_affinity")]
 #[cfg(unix)]
+// ss[related actor.regeneration-survives]
 fn get_num_cores() -> usize {
     unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) as usize }
 }
@@ -165,6 +180,7 @@ fn get_num_cores() -> usize {
 ///
 /// A `Result` indicating success or an error message if pinning fails.
 #[cfg(feature = "core_affinity")]
+// ss[related actor.regeneration-survives]
 fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -200,6 +216,7 @@ fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
 ///
 /// `Troupe` allows grouping multiple actors to run concurrently on the same thread, improving efficiency by reducing
 /// thread management overhead.
+// ss[related actor.regeneration-survives]
 pub struct Troupe {
     /// A queue of future builders for the actors in the troupe.
     future_builder: VecDeque<FutureBuilderType>,
@@ -210,15 +227,19 @@ pub struct Troupe {
 }
 
 /// A type alias for a pinned future representing an actor's execution logic.
+// ss[related actor.regeneration-survives]
 pub type PinnedFuture = Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + 'static>>;
 
 /// A type alias for a dynamic function that takes a `SteadyActorShadow` and returns a `PinnedFuture`.
+// ss[related actor.regeneration-survives]
 pub type DynCall = Box<dyn Fn(SteadyActorShadow) -> PinnedFuture + Send + Sync + 'static>;
 
 /// A type alias for the runtime representation of an actor's execution logic, wrapped to avoid `Send` requirements.
+// ss[related actor.regeneration-survives]
 type ActorRuntime = NonSendWrapper<DynCall>;
 
 /// Represents a builder for a future, encapsulating the actor's execution logic and execution parameters.
+// ss[related actor.regeneration-survives]
 struct FutureBuilderType {
     /// THE archetype containing the actor's execution logic and context.
     fun: SteadyContextArchetype<DynCall>,
@@ -231,6 +252,7 @@ struct FutureBuilderType {
 }
 
 /// Represents a stable slot for an actor's execution state within a troupe.
+// ss[related actor.regeneration-survives]
 struct ActorSlot {
     fun: ActorRuntime,
     ctx: SteadyActorShadow,
@@ -238,11 +260,13 @@ struct ActorSlot {
 }
 
 /// Represents the outcome of an actor's execution, returning the slot for potential restart.
+// ss[related actor.regeneration-survives]
 struct ActorSlotOutcome {
     slot: ActorSlot,
     result: Result<Result<(), Box<dyn Error>>, Box<dyn Any + Send>>,
 }
 
+// ss[related actor.regeneration-survives]
 impl FutureBuilderType {
     /// Creates a new `FutureBuilderType` instance.
     ///
@@ -256,6 +280,7 @@ impl FutureBuilderType {
     /// # Returns
     ///
     /// A new `FutureBuilderType` instance.
+    // ss[related actor.regeneration-survives]
     fn new(
         fun: SteadyContextArchetype<DynCall>,
         frame_rate_ms: u64,
@@ -275,6 +300,7 @@ impl FutureBuilderType {
     /// # Returns
     ///
     /// THE `ActorRuntime` containing the registered execution logic.
+    // ss[related actor.regeneration-survives]
     fn register(&self) -> ActorRuntime {
         build_actor_registration(&self.fun)
     }
@@ -288,6 +314,7 @@ impl FutureBuilderType {
     /// # Returns
     ///
     /// A `SteadyActorShadow` instance representing the actor's runtime context.
+    // ss[related actor.regeneration-survives]
     fn context(&self, team_display_id: usize) -> SteadyActorShadow {
         build_actor_context(
             &self.fun,
@@ -301,15 +328,18 @@ impl FutureBuilderType {
 /// A guard that automatically spawns the troupe when it goes out of scope.
 ///
 /// This guard ensures that the troupe is spawned only when the guard is dropped, allowing for deferred execution.
+// ss[related actor.regeneration-survives]
 pub struct TroupeGuard {
     /// THE optional troupe to be spawned when the guard is dropped.
     pub(crate) troupe: Option<Troupe>,
 }
 
+// ss[related actor.regeneration-survives]
 impl std::ops::Deref for TroupeGuard {
     type Target = Troupe;
 
     /// Provides immutable access to the underlying troupe.
+    // ss[related actor.regeneration-survives]
     fn deref(&self) -> &Self::Target {
         self.troupe
             .as_ref()
@@ -317,6 +347,7 @@ impl std::ops::Deref for TroupeGuard {
     }
 }
 
+// ss[related actor.regeneration-survives]
 impl std::ops::DerefMut for TroupeGuard {
     /// Provides mutable access to the underlying troupe.
     fn deref_mut(&mut self) -> &mut Self::Target {
@@ -326,6 +357,7 @@ impl std::ops::DerefMut for TroupeGuard {
     }
 }
 
+// ss[related actor.regeneration-survives]
 impl Drop for TroupeGuard {
     /// Spawns the troupe when the guard is dropped, initiating the execution of the actors.
     fn drop(&mut self) {
@@ -335,6 +367,7 @@ impl Drop for TroupeGuard {
     }
 }
 
+// ss[related actor.regeneration-survives]
 impl TroupeGuard {
     /// Sets a custom name for the troupe, which will be used for the OS thread name.
     ///
@@ -345,6 +378,7 @@ impl TroupeGuard {
     /// # Returns
     ///
     /// THE `TroupeGuard` instance with the updated name.
+    // ss[related actor.regeneration-survives]
     pub fn with_name(mut self, name: &str) -> Self {
         if let Some(ref mut t) = self.troupe {
             t.with_name(name);
@@ -353,6 +387,7 @@ impl TroupeGuard {
     }
 }
 
+// ss[related actor.regeneration-survives]
 impl Troupe {
     /// Creates a new `Troupe` instance with a unique team identifier derived from the graph.
     ///
@@ -363,6 +398,7 @@ impl Troupe {
     /// # Returns
     ///
     /// A new `Troupe` instance.
+    // ss[related actor.regeneration-survives]
     pub(crate) fn new(graph: &Graph) -> Self {
         Troupe {
             future_builder: VecDeque::new(),
@@ -380,6 +416,7 @@ impl Troupe {
     /// # Returns
     ///
     /// A mutable reference to the `Troupe` instance.
+    // ss[related actor.regeneration-survives]
     pub fn with_name(&mut self, name: &str) -> &mut Self {
         self.name = Some(name.to_string());
         self
@@ -393,6 +430,7 @@ impl Troupe {
     /// * `frame_rate_ms` - THE frame rate in milliseconds for telemetry data collection.
     /// * `is_for_test` - Flag indicating whether the actor is for testing purposes.
     /// * `stack_size` - Optional stack size for the actor.
+    // ss[related actor.regeneration-survives]
     fn add_actor(
         &mut self,
         context_archetype: SteadyContextArchetype<DynCall>,
@@ -417,6 +455,7 @@ impl Troupe {
     /// # Returns
     ///
     /// `true` if an actor was transferred, `false` if the troupe is empty.
+    // ss[related actor.regeneration-survives]
     pub fn transfer_front_to(&mut self, other: &mut Self) -> bool {
         if let Some(f) = self.future_builder.pop_front() {
             other.future_builder.push_back(f);
@@ -435,6 +474,7 @@ impl Troupe {
     /// # Returns
     ///
     /// `true` if an actor was transferred, `false` if the troupe is empty.
+    // ss[related actor.regeneration-survives]
     pub fn transfer_back_to(&mut self, other: &mut Self) -> bool {
         if let Some(f) = self.future_builder.pop_back() {
             other.future_builder.push_back(f);
@@ -449,6 +489,7 @@ impl Troupe {
     /// # Returns
     ///
     /// THE number of actors spawned.
+    // ss[related actor.regeneration-survives]
     fn spawn(self) -> usize {
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
@@ -513,6 +554,8 @@ impl Troupe {
                         Ok(Err(e)) => {
                             // Actor returned an Error, restart it
                             error!("Actor {:?} error: {:?}", slot.ctx.ident, e);
+                            // ss[impl actor.regeneration-survives]
+                            // ss[impl graph.panic-restart]
                             slot.ctx.regeneration += 1;
                             futures.push(Self::build_async_fun(slot));
                         }
@@ -527,6 +570,8 @@ impl Troupe {
                             };
 
                             error!("PANIC in troupe actor {:?}: {}", slot.ctx.ident, msg);
+                            // ss[impl actor.regeneration-survives]
+                            // ss[impl graph.panic-restart]
                             slot.ctx.regeneration += 1;
                             futures.push(Self::build_async_fun(slot));
                         }
@@ -548,6 +593,7 @@ impl Troupe {
         count.load(Ordering::SeqCst)
     }
 
+    // ss[related actor.regeneration-survives]
     fn build_async_fun(slot: ActorSlot) -> Pin<Box<dyn Future<Output = ActorSlotOutcome>>> {
         let fun = slot.fun.clone();
         Box::pin(async move {
@@ -581,17 +627,20 @@ impl Troupe {
 /// # Returns
 ///
 /// THE result of the future execution.
+// ss[related actor.regeneration-survives]
 pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
     core_exec::block_on(future)
 }
 
 /// A type alias for a mutex containing a side-channel transmitter and shutdown receiver, used in testing.
+// ss[related actor.regeneration-survives]
 pub(crate) type NodeTxRx = Mutex<(SideChannel, Receiver<()>)>;
 
 /// A template for building actor contexts, encapsulating all necessary parameters and state for actor execution.
 ///
 /// This struct serves as a blueprint for creating `SteadyActorShadow` instances, which provide the runtime environment
 /// for actors.
+// ss[related actor.regeneration-survives]
 struct SteadyContextArchetype<DynCall: ?Sized> {
     /// THE execution logic for the actor, wrapped to avoid `Send` requirements.
     build_actor_exec: NonSendWrapper<DynCall>,
@@ -627,6 +676,7 @@ struct SteadyContextArchetype<DynCall: ?Sized> {
     shutdown_barrier: Option<Arc<Barrier>>,
 }
 
+// ss[related actor.regeneration-survives]
 impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
     fn clone(&self) -> Self {
         SteadyContextArchetype {
@@ -651,6 +701,7 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
 }
 
 /// Represents the scheduling options for an actor, either as a solo act or a member of a troupe.
+// ss[related actor.regeneration-survives]
 pub enum ScheduleAs<'a> {
     /// THE actor runs independently on its own thread.
     SoloAct,
@@ -658,6 +709,7 @@ pub enum ScheduleAs<'a> {
     MemberOf(&'a mut Troupe),
 }
 
+// ss[related actor.regeneration-survives]
 impl ScheduleAs<'_> {
     /// Determines the scheduling type based on the presence of a troupe guard.
     ///
@@ -668,6 +720,7 @@ impl ScheduleAs<'_> {
     /// # Returns
     ///
     /// THE appropriate `ScheduleAs` variant.
+    // ss[related actor.regeneration-survives]
     pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs<'_> {
         if let Some(t) = some_troupe {
             ScheduleAs::MemberOf(t)
@@ -677,6 +730,7 @@ impl ScheduleAs<'_> {
     }
 }
 
+// ss[related actor.regeneration-survives]
 impl ActorBuilder {
     /// Creates a new `ActorBuilder` instance, initializing it with default settings derived from the given `Graph`.
     ///
@@ -691,6 +745,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance configured with the graph's settings.
+    // ss[related actor.regeneration-survives]
     pub fn new(graph: &mut Graph) -> ActorBuilder {
         let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(
             graph.telemetry_production_rate_ms as u128,
@@ -754,6 +809,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the updated compute refresh window configuration.
+    // ss[related actor.regeneration-survives]
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let mut result = self.clone();
         let (refresh_in_bits, window_in_bits) = ActorBuilder::internal_compute_refresh_window(
@@ -777,6 +833,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified core exclusions.
+    // ss[related actor.regeneration-survives]
     pub fn with_core_exclusion(&self, cores: Vec<usize>) -> Self {
         let mut result = self.clone();
         result.excluded_cores = cores;
@@ -794,6 +851,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified core balancer.
+    // ss[related actor.regeneration-survives]
     pub fn with_core_balancing(&self, balancer: CoreBalancer) -> Self {
         let mut result = self.clone();
         result.core_balancer = Some(balancer);
@@ -809,6 +867,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the explicit core assignment.
+    // ss[related actor.regeneration-survives]
     pub fn with_explicit_core(&self, one_offset_core: u16) -> Self {
         let mut result = self.clone();
         assert!(
@@ -825,6 +884,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with telemetry disabled.
+    // ss[related actor.regeneration-survives]
     pub fn with_no_refresh_window(&self) -> Self {
         let mut result = self.clone();
         result.refresh_rate_in_bits = 0;
@@ -846,6 +906,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A tuple of `(refresh_in_bits, window_in_bits)` representing the computed values.
+    // ss[related actor.regeneration-survives]
     pub(crate) fn internal_compute_refresh_window(
         frame_rate_ms: u128,
         refresh: Duration,
@@ -863,6 +924,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified CPU usage percentile.
+    // ss[related actor.regeneration-survives]
     pub fn with_mcpu_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_mcpu.push(config);
@@ -879,6 +941,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified name and suffix.
+    // ss[related actor.regeneration-survives]
     pub fn with_name_and_suffix(&self, name: &'static str, suffix: usize) -> Self {
         let mut result = self.clone();
         result.actor_name = ActorName::new(name, Some(suffix));
@@ -894,6 +957,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the specified name.
+    // ss[related actor.regeneration-survives]
     pub fn with_name(&self, name: &'static str) -> Self {
         let mut result = self.clone();
         result.actor_name = ActorName::new(name, None);
@@ -909,6 +973,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the simulation setting.
+    // ss[related actor.regeneration-survives]
     pub fn never_simulate(&self, never_simulate: bool) -> Self {
         let mut result = self.clone();
         result.never_simulate = never_simulate;
@@ -924,6 +989,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// a new `ActorBuilder` instance with the specified workload percentile.
+    // ss[related actor.regeneration-survives]
     pub fn with_load_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_load.push(config);
@@ -935,6 +1001,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with average CPU monitoring enabled.
+    // ss[related actor.regeneration-survives]
     pub fn with_mcpu_avg(&self) -> Self {
         let mut result = self.clone();
         result.avg_mcpu = true;
@@ -946,6 +1013,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with average workload monitoring enabled.
+    // ss[related actor.regeneration-survives]
     pub fn with_load_avg(&self) -> Self {
         let mut result = self.clone();
         result.avg_load = true;
@@ -962,6 +1030,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the CPU trigger.
+    // ss[related actor.regeneration-survives]
     pub fn with_mcpu_trigger(&self, bound: Trigger<MCPU>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_mcpu.push((bound, color));
@@ -978,6 +1047,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the workload trigger.
+    // ss[related actor.regeneration-survives]
     pub fn with_load_trigger(&self, bound: Trigger<Work>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_load.push((bound, color));
@@ -996,6 +1066,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with remote details.
+    // ss[related actor.regeneration-survives]
     pub(crate) fn with_remote_details(
         &self,
         ip_vec: Vec<String>,
@@ -1018,6 +1089,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with thread info enabled.
+    // ss[related actor.regeneration-survives]
     pub fn with_thread_info(&self) -> Self {
         let mut result = self.clone();
         result.show_thread_info = true;
@@ -1033,6 +1105,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance with the updated stack size.
+    // ss[related actor.regeneration-survives]
     pub fn with_stack_size(&self, bytes_count: usize) -> Self {
         let mut result = self.clone();
         result.stack_size = Some(bytes_count);
@@ -1049,6 +1122,7 @@ impl ActorBuilder {
     /// # Arguments
     ///
     /// * `build_actor_exec` - THE execution logic for the actor.
+    // ss[related actor.regeneration-survives]
     fn build_spawn<F, I>(self, build_actor_exec: I)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1160,6 +1234,7 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - THE execution logic for the actor.
     /// * `target` - THE `Troupe` to add the actor to.
+    // ss[related actor.regeneration-survives]
     fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1189,6 +1264,7 @@ impl ActorBuilder {
     ///
     /// * `build_actor_exec` - THE execution logic for the actor.
     /// * `desired_scheduling` - THE scheduling type (`SoloAct` or `MemberOf`).
+    // ss[related actor.regeneration-survives]
     pub fn build<F, I>(self, build_actor_exec: I, desired_scheduling: ScheduleAs)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1218,6 +1294,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A boxed dynamic function compatible with `DynCall`.
+    // ss[related actor.regeneration-survives]
     fn to_dyn_call<I, F>(f: I) -> DynCall
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -1240,6 +1317,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// A `SteadyContextArchetype` configured with the actor's execution logic.
+    // ss[related actor.regeneration-survives]
     fn single_actor_exec_archetype<F, I>(
         self,
         build_actor_exec: I,
@@ -1347,6 +1425,7 @@ impl ActorBuilder {
     /// # Returns
     ///
     /// An `Arc` containing the actor metadata.
+    // ss[related actor.regeneration-survives]
     fn build_actor_metadata(&self, ident: ActorIdentity) -> Arc<ActorMetaData> {
         Arc::new(ActorMetaData {
             ident,
@@ -1370,6 +1449,7 @@ impl ActorBuilder {
 /// A wrapper to handle types that are not `Send` by using `Arc<Mutex<T>>`.
 ///
 /// This allows non-`Send` types to be used safely in multi-threaded contexts by synchronizing access.
+// ss[related actor.regeneration-survives]
 pub struct NonSendWrapper<T: ?Sized> {
     /// THE inner value wrapped in an `Arc<Mutex<T>>`.
     inner: Arc<Mutex<T>>,
@@ -1378,6 +1458,7 @@ pub struct NonSendWrapper<T: ?Sized> {
 // SAFETY: THE wrapper is `Send` because access to `T` is synchronized via `Mutex`.
 unsafe impl<T> Send for NonSendWrapper<T> {}
 
+// ss[related actor.regeneration-survives]
 impl<T: ?Sized> NonSendWrapper<T> {
     /// Creates a new `NonSendWrapper` instance with the given inner value.
     ///
@@ -1388,6 +1469,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
     /// # Returns
     ///
     /// a new `NonSendWrapper` instance.
+    // ss[related actor.regeneration-survives]
     pub fn new(inner: T) -> NonSendWrapper<T>
     where
         T: Sized,
@@ -1402,6 +1484,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
     /// # Returns
     ///
     /// A `MutexGuard` for accessing the inner value.
+    // ss[related actor.regeneration-survives]
     pub async fn lock(&self) -> MutexGuard<'_, T> {
         self.inner.lock().await
     }
@@ -1411,6 +1494,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
     /// # Returns
     ///
     /// An `Option` containing a `MutexGuard` if the lock is acquired, or `None` if it is contended.
+    // ss[related actor.regeneration-survives]
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         self.inner.try_lock()
     }
@@ -1420,6 +1504,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
     /// # Returns
     ///
     /// A new `NonSendWrapper` instance sharing the same inner value.
+    // ss[related actor.regeneration-survives]
     pub fn clone(&self) -> Self {
         Self {
             inner: Arc::clone(&self.inner),
@@ -1436,6 +1521,7 @@ impl<T: ?Sized> NonSendWrapper<T> {
 /// # Returns
 ///
 /// THE `NonSendWrapper` containing the actor's execution logic.
+// ss[related actor.regeneration-survives]
 fn build_actor_registration(
     builder_source: &SteadyContextArchetype<DynCall>,
 ) -> NonSendWrapper<DynCall> {
@@ -1451,6 +1537,7 @@ fn build_actor_registration(
 /// # Arguments
 ///
 /// * `builder_source` - THE archetype containing the actor's context and logic.
+// ss[related actor.regeneration-survives]
 fn exit_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) {
     builder_source
         .runtime_state
@@ -1470,12 +1557,15 @@ fn exit_actor_registration(builder_source: &SteadyContextArchetype<DynCall>) {
 /// # Returns
 ///
 /// A `SteadyActorShadow` instance representing the actor's runtime context.
+// ss[related actor.regeneration-survives]
 fn build_actor_context<I: ?Sized>(
     builder_source: &SteadyContextArchetype<I>,
     frame_rate_ms: u64,
     team_id: usize,
     is_test: bool,
 ) -> SteadyActorShadow {
+    // ss[impl testing.never-run-in-unit]
+    // ss[impl testing.graph-for-testing]
     let use_internal_behavior = builder_source.never_simulate
         || !is_test
         || builder_source.force_internal_behavior_in_test;
@@ -1507,11 +1597,13 @@ fn build_actor_context<I: ?Sized>(
 }
 
 #[cfg(test)]
+// ss[related actor.regeneration-survives]
 mod test_actor_builder {
     use super::*;
     use crate::GraphBuilder;
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_core_balancer() {
         let mut cb = CoreBalancer {
             core_usage: vec![0, 0, 0],
@@ -1523,6 +1615,8 @@ mod test_actor_builder {
         assert_eq!(cb.core_usage, vec![2, 1, 1]);
     }
 
+    // ss[verify testing.never-run-in-unit]
+    // ss[verify testing.graph-for-testing]
     #[test]
     fn test_actor_builder_core_configs() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1543,12 +1637,16 @@ mod test_actor_builder {
 
     #[test]
     #[should_panic]
+    // ss[verify graph.panic-restart]
     fn test_explicit_core_zero_panic() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph);
         builder.with_explicit_core(0);
     }
 
+    // ss[verify graph.troupes]
+    // ss[verify actor.regeneration-survives]
+    // ss[verify graph.panic-restart]
     #[test]
     fn test_troupe_ops() {
         let graph = GraphBuilder::for_testing().build(());
@@ -1593,6 +1691,7 @@ mod test_actor_builder {
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_schedule_as() {
         let mut troupe_guard = None;
         assert!(matches!(
@@ -1627,24 +1726,28 @@ mod test_actor_builder {
     // }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_work_new() {
         let work = Work::new(50.0).expect("internal error");
         assert_eq!(work.work, 5000);
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_mcpu_new() {
         let mcpu = MCPU::new(512).expect("internal error");
         assert_eq!(mcpu.mcpu, 512);
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_percentile_new() {
         let percentile = Percentile::new(99.0).expect("internal error");
         assert_eq!(percentile.percentile(), 99.0);
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_builder_gauntlet() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph)
@@ -1682,6 +1785,7 @@ mod test_actor_builder {
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_builder_state_modifications() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = ActorBuilder::new(&mut graph);
@@ -1710,6 +1814,7 @@ mod test_actor_builder {
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_internal_compute_refresh_window_edge_cases() {
         // Test zero frame rate (should return 0,0)
         let (r, w) = ActorBuilder::internal_compute_refresh_window(
@@ -1729,6 +1834,7 @@ mod test_actor_builder {
     }
 
     #[test]
+    // ss[verify actor.regeneration-survives]
     fn test_actor_refresh_window_matches_shared_frame_math() {
         let refresh = Duration::from_secs(1);
         let window = Duration::from_secs(10);

@@ -1,33 +1,42 @@
+// ss[related telemetry.prometheus-metrics]
 use crate::monitor::{
     ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo,
 };
+// ss[related telemetry.prometheus-metrics]
 use crate::steady_rx::Rx;
 use crate::steady_tx::Tx;
 use crate::{MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, monitor, steady_config};
+// ss[related telemetry.prometheus-metrics]
 use futures_util::lock::Mutex;
 use log::error;
 use num_traits::Zero;
+// ss[related telemetry.prometheus-metrics]
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+// ss[related telemetry.prometheus-metrics]
 use std::thread;
 use std::time::Instant;
 
 /// Maximum characters stored for a DOT node subtitle (after newline collapse).
+// ss[related telemetry.prometheus-metrics]
 pub(crate) const DOT_SUBTITLE_MAX_CHARS: usize = 256;
 
 /// Pending subtitle for Graphviz DOT labels; shared between [`SteadyTelemetryActorSend`] and
 /// [`SteadyTelemetryRx`] for the same actor registration.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) struct DotSubtitleMailbox {
     pending: parking_lot::Mutex<Option<DotSubtitlePending>>,
 }
 
 #[derive(Debug)]
+// ss[related telemetry.prometheus-metrics]
 enum DotSubtitlePending {
     Clear,
     Set(String),
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl DotSubtitleMailbox {
     pub(crate) fn new() -> Self {
         Self {
@@ -36,6 +45,7 @@ impl DotSubtitleMailbox {
     }
 
     /// Queue a clear (`None`) or set (`Some`); coalesces to the latest value under one lock.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn record(&self, text: Option<&str>) {
         let mut lock = self.pending.lock();
         *lock = Some(match text {
@@ -49,6 +59,7 @@ impl DotSubtitleMailbox {
     }
 
     /// `None` = nothing to relay. `Some(None)` = clear subtitle. `Some(Some(s))` = set text.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn take_pending(&self) -> Option<Option<String>> {
         let mut lock = self.pending.lock();
         let pending = lock.take()?;
@@ -60,6 +71,7 @@ impl DotSubtitleMailbox {
 }
 
 /// Structure representing the receiver side of steady telemetry.
+// ss[related telemetry.prometheus-metrics]
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
     pub(crate) take: Option<SteadyTelemetryTake<RXL>>,
@@ -69,12 +81,14 @@ pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
 }
 
 /// Structure representing the telemetry take side with a fixed length.
+// ss[related telemetry.prometheus-metrics]
 pub struct SteadyTelemetryTake<const LENGTH: usize> {
     pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
     pub(crate) details: Vec<Arc<ChannelMetaData>>,
 }
 
 /// Structure representing the actor send side of steady telemetry.
+// ss[related telemetry.prometheus-metrics]
 pub struct SteadyTelemetryActorSend {
     pub(crate) tx: SteadyTx<ActorStatus>,
     pub(crate) ident: ActorIdentity,
@@ -92,6 +106,7 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) dot_subtitle_mailbox: Option<Arc<DotSubtitleMailbox>>,
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl SteadyTelemetryActorSend {
     /// Resets the status of the telemetry actor send.
     pub(crate) fn status_reset(&mut self, iteration_index: u64) {
@@ -106,6 +121,7 @@ impl SteadyTelemetryActorSend {
     //TODO: check the  calls for all zero?
 
     /// Generates a status message for the actor.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
         //this is a little expensive, and we should consider doing this every N calls
         //the consumer node already holds the previous and uses it until we see a change.
@@ -143,6 +159,7 @@ impl SteadyTelemetryActorSend {
         }
     }
 
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn set_dot_display_text(&self, text: Option<&str>) {
         if let Some(m) = &self.dot_subtitle_mailbox {
             m.record(text);
@@ -157,6 +174,7 @@ impl SteadyTelemetryActorSend {
 ///
 /// # Type Parameters
 /// - `LENGTH`: The fixed size of the internal arrays used for tracking telemetry data.
+// ss[related telemetry.prometheus-metrics]
 pub struct SteadyTelemetrySend<const LENGTH: usize> {
     /// The transmission channel for sending telemetry data.
     /// This is typically used for sending statistics or monitoring information.
@@ -175,6 +193,7 @@ pub struct SteadyTelemetrySend<const LENGTH: usize> {
     pub(crate) inverse_local_index: [usize; LENGTH],
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     fn is_empty_and_closed(&self) -> bool {
         let s = if let Some(send) = &self.send {
@@ -210,6 +229,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         s & a & t
     }
 
+    // ss[related telemetry.prometheus-metrics]
     fn is_empty(&self) -> bool {
         let s = if let Some(send) = &self.send {
             if let Some(rx) = send.rx.try_lock() {
@@ -244,11 +264,13 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         s & a & t
     }
 
+    // ss[related telemetry.prometheus-metrics]
     fn actor_metadata(&self) -> Arc<ActorMetaData> {
         self.actor_metadata.clone()
     }
 
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
         if let Some(send) = &self.send {
             send.details.to_vec()
@@ -258,6 +280,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
         if let Some(take) = &self.take {
             take.details.to_vec()
@@ -266,6 +289,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
+    // ss[related telemetry.prometheus-metrics]
     fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
         if let Some(act) = &self.actor {
             if let Some(mut act) = act.try_lock() {
@@ -279,6 +303,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
+    // ss[related telemetry.prometheus-metrics]
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(act) = &self.actor {
             let mut buffer =
@@ -370,6 +395,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
+    // ss[related telemetry.prometheus-metrics]
     fn consume_dot_subtitle(&self) -> Option<Option<String>> {
         self.dot_subtitle_mailbox
             .as_ref()
@@ -384,6 +410,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     /// * `channel_state` - Vector of (current_take, current_limit) pairs for each channel.
     /// * `pending_takes` - Vector of postponed take values for each channel.
     /// * `pending_sends` - Vector of postponed send values for each channel.
+    // ss[related telemetry.prometheus-metrics]
     fn consume_take_into(
         &self,
         take_send_source: &mut Vec<(i64, i64)>,
@@ -441,6 +468,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     fn consume_send_into(
         &self,
         take_send_target: &mut Vec<(i64, i64)>,
@@ -475,6 +503,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     /// Creates a new instance of SteadyTelemetrySend.
     pub fn new(
@@ -492,6 +521,7 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     }
 
     /// Processes an event for telemetry.
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn process_event(&mut self, index: usize, id: usize, done: isize) -> usize {
         let telemetry = self;
         if index < MONITOR_NOT {
@@ -520,6 +550,7 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
 }
 
 /// Main structure representing steady telemetry.
+// ss[related telemetry.prometheus-metrics]
 pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
     pub(crate) send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
@@ -527,9 +558,11 @@ pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) dirty: AtomicBool,
 }
 
+// ss[related telemetry.prometheus-metrics]
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
     /// Returns true if non zero channel data is waiting to be sent
     #[inline]
+    // ss[related telemetry.prometheus-metrics]
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
     }
@@ -537,12 +570,15 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 
 //tests
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod monitor_telemetry_old_tests {
     use crate::monitor::{ActorMetaData, RxTel};
     use crate::monitor_telemetry::SteadyTelemetryRx;
+    // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_actor_metadata() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -561,12 +597,15 @@ mod monitor_telemetry_old_tests {
 
 // tests for the monitor telemetry module
 #[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
 mod monitor_telemetry_tests {
     use crate::monitor::{ActorMetaData, RxTel};
     use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetry, SteadyTelemetryRx, SteadyTelemetrySend};
+    // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
     use std::time::Instant;
     use crate::channel_builder::ChannelBuilder;
+    // ss[related telemetry.prometheus-metrics]
     use crate::*;
 
     // // Helper function to create default ChannelMetaData
@@ -601,6 +640,7 @@ mod monitor_telemetry_tests {
     // }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_dot_subtitle_mailbox_take_and_clear() {
         let m = Arc::new(DotSubtitleMailbox::new());
         m.record(Some("x"));
@@ -612,6 +652,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_is_empty_and_closed_all_none() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -626,6 +667,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_actor_metadata_clone() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -642,6 +684,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_tx_channel_id_vec_empty() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -657,6 +700,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_rx_channel_id_vec_empty() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -672,6 +716,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_is_dirty_all_none() {
         let telemetry = SteadyTelemetry::<4, 4> {
             send_tx: None,
@@ -684,6 +729,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_consume_actor_without_actor() {
         let actor_metadata = Arc::new(ActorMetaData::default());
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
@@ -699,6 +745,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_consume_take_into_without_take() {
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
             send: None,
@@ -721,6 +768,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_consume_send_into_without_send() {
         let telemetry_rx = SteadyTelemetryRx::<4, 4> {
             send: None,
@@ -740,6 +788,7 @@ mod monitor_telemetry_tests {
     // --- New tests for SteadyTelemetrySend::process_event ---
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_normal() {
         let builder = ChannelBuilder::default().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
@@ -752,6 +801,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_unknown() {
         let builder = ChannelBuilder::default().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
@@ -766,6 +816,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_not_monitored() {
         let builder = ChannelBuilder::default().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
@@ -777,6 +828,7 @@ mod monitor_telemetry_tests {
     }
 
     #[test]
+    // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_normal_inverse() {
         // Test that process_event with an index (not zero) works
         let builder = ChannelBuilder::default().with_capacity(10);

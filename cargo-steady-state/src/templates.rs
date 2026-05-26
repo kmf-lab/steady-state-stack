@@ -1,3 +1,4 @@
+// ss[related tooling.cargo-driver-strings]
 use std::cell::RefCell;
 use std::time::Duration;
 use askama::Template;
@@ -49,6 +50,7 @@ use askama::Template;
 // by the use of batching so the overhead per message is reduced.
 
 #[derive(Debug, PartialEq)]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) enum ActorDriver {
     AtLeastEvery(Duration),
     AtMostEvery(Duration),
@@ -58,6 +60,7 @@ pub(crate) enum ActorDriver {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) enum ConsumePattern {
     PeekCopy, //do work on peek copy for greater durability
     TakeCopy, //take using copy for faster slice processing
@@ -66,6 +69,7 @@ pub(crate) enum ConsumePattern {
 
 
 #[derive(Eq, PartialEq, Clone, Debug)]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct Channel {
     pub(crate) name: String,
     pub(crate) from_mod: String,
@@ -86,23 +90,29 @@ pub(crate) struct Channel {
     pub(crate) bundle_on_from: RefCell<bool>,
 }
 
+// ss[impl tooling.cargo-driver-strings]
+// ss[impl tooling.cargo-bundle-codegen]
 impl Channel {
 
     pub fn needs_tx_single_clone(&self) -> bool {
                 !self.is_unbundled
     }
+    // ss[related tooling.cargo-driver-strings]
     pub fn needs_rx_single_clone(&self) -> bool {
                 !self.is_unbundled
     }
 
+     // ss[related tooling.cargo-driver-strings]
      pub fn has_bundle_index(&self) -> bool {
          self.bundle_index>=0
      }
+     // ss[related tooling.cargo-driver-strings]
      pub fn bundle_index(&self) -> isize {
           self.bundle_index
      }
 
     // if we fan out we use the mod name so the [index] is clear
+    // ss[related tooling.cargo-driver-strings]
     pub fn tx_prefix_name(&self, channels:&[Channel]) -> String {
         if *self.bundle_on_from.borrow() || channels.len()<=1 {
             self.from_node.to_lowercase()
@@ -111,12 +121,14 @@ impl Channel {
         }
     }
 
+    // ss[related tooling.cargo-driver-strings]
     pub fn tx_prefix_distributed_name(&self) -> String {
             //format!("{}n_to_{}", self.from_mod.to_lowercase(), self.to_node.to_lowercase())
             format!("n_to_{}", self.to_node.to_lowercase())
     }
 
     // if we fan out we use the mod name so the [index] is clear
+    // ss[related tooling.cargo-driver-strings]
     pub fn rx_prefix_name(&self, channels:&[Channel]) -> String {
         if !*self.bundle_on_from.borrow() || channels.len()<=1 {
             self.to_node.to_lowercase()
@@ -124,32 +136,39 @@ impl Channel {
             self.rx_prefix_distributed_name()
         }
     }
+    // ss[related tooling.cargo-driver-strings]
     pub fn rx_prefix_distributed_name(&self) -> String {
         format!("{}_to_{}",self.from_node.to_lowercase(), self.to_mod.to_lowercase())
     }
 
+    // ss[related tooling.cargo-driver-strings]
     pub fn restructured_bundle_rx(&self, _channels:&[Channel]) -> bool {
         //special case where we do not want this def because we already have it
         *self.bundle_on_from.borrow() &&
             self.rebundle_index>=0
     }
 
+    // ss[related tooling.cargo-driver-strings]
     pub fn restructured_bundle(&self) -> bool {
         self.rebundle_index>=0 && !self.is_unbundled
     }
+    // ss[related tooling.cargo-driver-strings]
     pub fn rebundle_index(&self) -> isize { 
         self.rebundle_index
     }
 
+    // ss[related tooling.cargo-driver-strings]
     pub fn should_build_read_buffer(&self) -> bool {
         self.batch_read > 1 && self.copy
     }
+    // ss[related tooling.cargo-driver-strings]
     pub fn should_build_write_buffer(&self) -> bool {
         self.batch_write > 1 && self.copy
     }
 }
 
 #[derive(Default)]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct Actor {
     pub(crate) display_name: String,
     pub(crate) display_suffix: Option<usize>,
@@ -159,11 +178,13 @@ pub(crate) struct Actor {
     pub(crate) driver: Vec<ActorDriver>,
 }
 
+// ss[impl tooling.cargo-driver-strings]
 impl Actor {
    pub(crate) fn is_on_graph_edge(&self) -> bool {
         self.rx_channels.is_empty() || self.tx_channels.is_empty()
    }
     
+   // ss[related tooling.cargo-driver-strings]
    pub(crate) fn formal_name(&self) -> String {
         if let Some(suffix) = self.display_suffix {
             format!("{}{}", self.display_name, suffix)
@@ -180,27 +201,32 @@ impl Actor {
 
 #[derive(Template)]
 #[template(path = "file_cargo.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct CargoTemplate<'a> {
     pub(crate) name: &'a str,
 }
 #[derive(Template)]
 #[template(path = "dockerfile.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct DockerFileTemplate<'a> {
     pub(crate) name: &'a str,
 }
 #[derive(Template)]
 #[template(path = "file_gitignore.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct GitIgnoreTemplate {
 }
 
 #[derive(Template)]
 #[template(path = "file_args.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct ArgsTemplate {
 }
 
 
 #[derive(Template)]
 #[template(path = "file_main.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct MainTemplate<'a> {
     pub(crate) note_for_the_user: String,
     pub(crate) project_name: String,
@@ -211,6 +237,7 @@ pub(crate) struct MainTemplate<'a> {
 
 #[derive(Template)]
 #[template(path = "file_actor.txt")]
+// ss[related tooling.cargo-driver-strings]
 pub(crate) struct ActorTemplate {
     pub(crate) note_for_the_user: String,
     pub(crate) display_name: String,
@@ -227,10 +254,12 @@ pub(crate) struct ActorTemplate {
 }
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod additional_tests {
     use super::*;
     use std::cell::RefCell;
 
+    // ss[related tooling.cargo-driver-strings]
     impl Default for Channel {
         fn default() -> Self {
             Channel {
@@ -254,6 +283,7 @@ mod additional_tests {
         }
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_needs_tx_single_clone() {
         let channel = Channel {
@@ -269,6 +299,7 @@ mod additional_tests {
         assert!(channel.needs_tx_single_clone());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_needs_rx_single_clone() {
         let channel = Channel {
@@ -284,6 +315,7 @@ mod additional_tests {
         assert!(channel.needs_rx_single_clone());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_has_bundle_index() {
         let channel = Channel {
@@ -299,6 +331,7 @@ mod additional_tests {
         assert!(channel.has_bundle_index());
     }
 
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_channel_bundle_index() {
         let channel = Channel {
@@ -308,6 +341,7 @@ mod additional_tests {
         assert_eq!(channel.bundle_index(), 5);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_tx_prefix_name() {
         let channel = Channel {
@@ -327,6 +361,7 @@ mod additional_tests {
         // assert_eq!(channel.tx_prefix_name(&channels), "n_to_tonode");
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_rx_prefix_name() {
         let channel = Channel {
@@ -347,6 +382,7 @@ mod additional_tests {
         // assert_eq!(channel.rx_prefix_name(&channels), "fromnode_to_tomod");
     }
 
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_channel_restructured_bundle_rx() {
         let channel = Channel {
@@ -366,6 +402,7 @@ mod additional_tests {
         assert!(!channel.restructured_bundle_rx(&channels));
     }
 
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_channel_restructured_bundle() {
         let channel = Channel {
@@ -390,6 +427,7 @@ mod additional_tests {
         assert!(!channel.restructured_bundle());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_should_build_read_buffer() {
         let channel = Channel {
@@ -414,6 +452,7 @@ mod additional_tests {
         assert!(!channel.should_build_read_buffer());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_channel_should_build_write_buffer() {
         let channel = Channel {
@@ -438,6 +477,7 @@ mod additional_tests {
         assert!(!channel.should_build_write_buffer());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_actor_is_on_graph_edge() {
         let actor = Actor {
@@ -462,6 +502,7 @@ mod additional_tests {
         assert!(!actor.is_on_graph_edge());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_actor_formal_name() {
         let actor = Actor {

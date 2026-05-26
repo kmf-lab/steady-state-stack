@@ -1,32 +1,42 @@
+// ss[related testing.sim-producer-close]
 use std::error::Error;
 use std::fmt::Debug;
 use std::sync::Arc;
+// ss[related testing.sim-producer-close]
 use std::time::Duration;
 use futures_util::lock::Mutex;
 use log::*;
+// ss[related testing.sim-producer-close]
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem, StreamRx, StreamTx};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_actor::{BlockingCallFuture, SendOutcome};
+// ss[related testing.sim-producer-close]
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::steady_rx::{Rx, RxDone};
+// ss[related testing.sim-producer-close]
 use crate::steady_tx::{Tx, TxDone};
 use crate::yield_now::yield_now;
 use crate::core_exec;
+// ss[related testing.sim-producer-close]
 use crate::{ActorIdentity, GraphLivelinessState, RxCoreBundle, SendSaturation, SteadyActor, SteadyRx, SteadyTx, TxCoreBundle};
 use aeron::aeron::Aeron;
 use futures_util::future::FusedFuture;
+// ss[related testing.sim-producer-close]
 use std::any::Any;
 use std::future::Future;
 
 /// The `SimRunner` trait defines the interface for actors that can be simulated in edge case tests.
+// ss[related testing.sim-producer-close]
 pub trait SimRunner<C: SteadyActor + ?Sized> {
     /// Called each simulation iteration. Return `SimStepResult::DidWork` if work was done,
     /// `SimStepResult::NoWork` if no work was done.
+    // ss[related testing.sim-producer-close]
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>>;
 
     /// Stage-manager integration: handle [`crate::graph_testing::StageDirection`] / [`crate::graph_testing::StageWaitFor`]
     /// on the side channel for this runner's channel slot.
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         actor: &mut C,
@@ -36,10 +46,12 @@ pub trait SimRunner<C: SteadyActor + ?Sized> {
         Ok(SimStepResult::NoWork)
     }
 
+    // ss[impl testing.sim-producer-close]
     /// After [`simulated_behavior`]'s loop exits successfully, mark this runner's simulated **outputs**
     /// closed so downstream actors can satisfy shutdown vetoes (e.g. `rx.is_closed_and_empty()`).
     ///
     /// Default: no-op. Implemented for transmit-side runners (`SimTx`, `SimTxBundle`, `SimStreamTx`).
+    // ss[related testing.sim-producer-close]
     fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
@@ -47,6 +59,7 @@ pub trait SimRunner<C: SteadyActor + ?Sized> {
 
 /// Result of a single simulation step.
 #[derive(Debug, PartialEq, Eq)]
+// ss[related testing.sim-producer-close]
 pub enum SimStepResult {
     /// Work was performed during this step.
     DidWork,
@@ -55,11 +68,13 @@ pub enum SimStepResult {
 }
 
 /// Trait for converting channels (or bundles) into simulation runners.
+// ss[related testing.sim-producer-close]
 pub trait IntoSimRunner<C: SteadyActor + ?Sized> {
     /// Converts this channel/bundle into a `SimRunner` that can be driven by `simulated_behavior`.
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>>;
 }
 
+// ss[related testing.sim-producer-close]
 pub(crate) async fn simulated_behavior<C: SteadyActor>(
     actor: &mut C,
     sims: Vec<&dyn IntoSimRunner<C>>,
@@ -109,22 +124,26 @@ pub(crate) async fn simulated_behavior<C: SteadyActor>(
 }
 
 /// Implementation for `SteadyRx` (single receiver) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> IntoSimRunner<C> for Arc<Mutex<Rx<T>>> {
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimRx::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimRx<T> {
     rx: Arc<Mutex<Rx<T>>>,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: 'static + Send + Debug + Clone> SimRx<T> {
     fn new(rx: Arc<Mutex<Rx<T>>>) -> Self {
         SimRx { rx }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> SimRunner<C> for SimRx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.rx.try_lock() {
@@ -139,6 +158,7 @@ impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> SimRunner<C> for Si
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         actor: &mut C,
@@ -153,23 +173,27 @@ impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq> SimRunner<C> for Si
 }
 
 /// Implementation for `SteadyTx` (single transmitter) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> IntoSimRunner<C> for Arc<Mutex<Tx<T>>> {
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimTx::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimTx<T> {
     tx: Arc<Mutex<Tx<T>>>,
     msg: Option<T>,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: 'static + Send + Sync + Debug + Clone + Default> SimTx<T> {
     fn new(tx: Arc<Mutex<Tx<T>>>) -> Self {
         SimTx { tx, msg: None }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunner<C> for SimTx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.tx.try_lock() {
@@ -186,6 +210,7 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunn
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         actor: &mut C,
@@ -198,6 +223,7 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunn
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
         core_exec::block_on(async {
             let mut g = self.tx.lock().await;
@@ -208,22 +234,26 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default> SimRunn
 }
 
 /// Implementation for `SteadyStreamRx` (receiver side of a stream) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: StreamControlItem> IntoSimRunner<C> for Arc<Mutex<StreamRx<T>>> {
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimStreamRx::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimStreamRx<T: StreamControlItem> {
     rx: Arc<Mutex<StreamRx<T>>>,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: StreamControlItem> SimStreamRx<T> {
     fn new(rx: Arc<Mutex<StreamRx<T>>>) -> Self {
         SimStreamRx { rx }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamRx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.rx.try_lock() {
@@ -240,22 +270,26 @@ impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamRx<T> {
 }
 
 /// Implementation for `SteadyStreamTx` (transmitter side of a stream) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: StreamControlItem> IntoSimRunner<C> for Arc<Mutex<StreamTx<T>>> {
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimStreamTx::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimStreamTx<T: StreamControlItem> {
     tx: Arc<Mutex<StreamTx<T>>>,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: StreamControlItem> SimStreamTx<T> {
     fn new(tx: Arc<Mutex<StreamTx<T>>>) -> Self {
         SimStreamTx { tx }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         if let Some(mut guard) = self.tx.try_lock() {
@@ -274,6 +308,7 @@ impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
         core_exec::block_on(async {
             let mut g = self.tx.lock().await;
@@ -284,28 +319,34 @@ impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
 }
 
 /// Implementation for `SteadyRxBundle` (bundle of receivers) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> IntoSimRunner<C>
     for Arc<[SteadyRx<T>; N]>
 {
+    // ss[related testing.sim-producer-close]
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimRxBundle::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimRxBundle<T, const N: usize> {
     rx_bundle: Arc<[SteadyRx<T>; N]>,
     index: usize,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: 'static + Send + Debug + Clone + Eq, const N: usize> SimRxBundle<T, N> {
     fn new(rx_bundle: Arc<[SteadyRx<T>; N]>) -> Self {
         SimRxBundle { rx_bundle, index: 0 }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> SimRunner<C>
     for SimRxBundle<T, N>
 {
+    // ss[related testing.sim-producer-close]
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         let i = self.index % N;
         let rx = &self.rx_bundle[i];
@@ -322,6 +363,7 @@ impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> Sim
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         actor: &mut C,
@@ -340,28 +382,34 @@ impl<C: SteadyActor, T: 'static + Send + Debug + Clone + Eq, const N: usize> Sim
 }
 
 /// Implementation for `SteadyTxBundle` (bundle of transmitters) as a simulation runner.
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> IntoSimRunner<C>
     for Arc<[SteadyTx<T>; N]>
 {
+    // ss[related testing.sim-producer-close]
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(SimTxBundle::new(self.clone()))
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct SimTxBundle<T, const N: usize> {
     tx_bundle: Arc<[SteadyTx<T>; N]>,
     index: usize,
 }
 
+// ss[related testing.sim-producer-close]
 impl<T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> SimTxBundle<T, N> {
     fn new(tx_bundle: Arc<[SteadyTx<T>; N]>) -> Self {
         SimTxBundle { tx_bundle, index: 0 }
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N: usize> SimRunner<C>
     for SimTxBundle<T, N>
 {
+    // ss[related testing.sim-producer-close]
     fn step(&mut self) -> Result<SimStepResult, Box<dyn Error>> {
         let i = self.index % N;
         let tx = &self.tx_bundle[i];
@@ -379,6 +427,7 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N
         }
     }
 
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         actor: &mut C,
@@ -395,6 +444,7 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N
         Ok(SimStepResult::NoWork)
     }
 
+    // ss[related testing.sim-producer-close]
     fn close_outputs_on_simulated_stop(&mut self) -> Result<(), Box<dyn Error>> {
         for lane in 0..N {
             let tx = &self.tx_bundle[lane];
@@ -408,11 +458,13 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N
 }
 
 // Test actor used for simulation
+// ss[related testing.sim-producer-close]
 pub struct TestActor {
     pub sidechannel: Option<SideChannelResponder>,
     pub is_running: bool,
 }
 
+// ss[related testing.sim-producer-close]
 impl TestActor {
     pub fn new() -> Self {
         TestActor {
@@ -422,18 +474,23 @@ impl TestActor {
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl SteadyActor for TestActor {
     fn frame_rate_ms(&self) -> u64 { 100 }
     fn regeneration(&self) -> u32 { 0 }
+    // ss[related testing.sim-producer-close]
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> { None }
     async fn simulated_behavior(self, _sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>> { Ok(()) }
     fn loglevel(&self, _loglevel: crate::LogLevel) {}
+    // ss[related testing.sim-producer-close]
     fn relay_stats_smartly(&mut self) -> bool { false }
     fn relay_stats(&mut self) {}
     async fn relay_stats_periodic(&mut self, _duration_rate: Duration) -> bool { true }
+    // ss[related testing.sim-producer-close]
     fn is_liveliness_in(&self, _target: &[GraphLivelinessState]) -> bool { false }
     fn is_liveliness_building(&self) -> bool { false }
     fn is_liveliness_running(&self) -> bool { false }
+    // ss[related testing.sim-producer-close]
     fn is_liveliness_stop_requested(&self) -> bool { false }
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> { None }
     fn flush_defrag_messages<S: StreamControlItem>(
@@ -442,15 +499,19 @@ impl SteadyActor for TestActor {
         _data: &mut Tx<u8>,
         _defrag: &mut Defrag<S>,
     ) -> (u32, u32, Option<i32>) { (0, 0, None) }
+    // ss[related testing.sim-producer-close]
     async fn wait_periodic(&self, _duration_rate: Duration) -> bool { true }
     async fn wait_timeout(&self, _timeout: Duration) -> bool { true }
     async fn wait(&self, _duration: Duration) {}
+    // ss[related testing.sim-producer-close]
     async fn wait_avail<T: RxCore>(&self, _this: &mut T, _size: usize) -> bool { true }
     async fn wait_avail_bundle<T: RxCore>(&self, _this: &mut RxCoreBundle<'_, T>, _size: usize, _ready_channels: usize) -> bool { true }
     async fn wait_avail_index<T: RxCore>(&self, _this: &mut RxCoreBundle<'_, T>, _counts: &[usize]) -> Option<usize> { None }
+    // ss[related testing.sim-producer-close]
     async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { true }
     async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }
     async fn wait_vacant_bundle<T: TxCore>(&self, _this: &mut TxCoreBundle<'_, T>, _count: T::MsgSize, _ready_channels: usize) -> bool { true }
+    // ss[related testing.sim-producer-close]
     async fn wait_vacant_index<T: TxCore>(&self, _this: &mut TxCoreBundle<'_, T>, _counts: &[T::MsgSize]) -> Option<usize> { None }
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
@@ -459,48 +520,62 @@ impl SteadyActor for TestActor {
         _avail_counts: &[usize],
         _vacant_counts: &[T::MsgSize],
     ) -> Option<usize> { None }
+    // ss[related testing.sim-producer-close]
     async fn wait_shutdown(&self) -> bool { true }
     fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
     fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }
+    // ss[related testing.sim-producer-close]
     fn take_slice<T: RxCore>(&mut self, _this: &mut T, _target: T::SliceTarget<'_>) -> RxDone where T::MsgItem: Copy { unimplemented!() }
     fn send_slice<T: TxCore>(&mut self, _this: &mut T, _source: T::SliceSource<'_>) -> TxDone where T::MsgOut: Copy { unimplemented!() }
     fn poke_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceTarget<'b> where T: TxCore { unimplemented!() }
+    // ss[related testing.sim-producer-close]
     fn advance_send_index<T: TxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> TxDone { unimplemented!() }
     fn try_peek<'a, T>(&'a self, _this: &'a mut Rx<T>) -> Option<&'a T> { None }
     fn try_peek_iter<'a, T>(&'a self, _this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a { std::iter::empty() }
+    // ss[related testing.sim-producer-close]
     fn is_empty<T: RxCore>(&self, _this: &mut T) -> bool { true }
     fn avail_units<T: RxCore>(&self, _this: &mut T) -> T::MsgSize { unimplemented!() }
     async fn peek_async<'a, T: RxCore>(&'a self, _this: &'a mut T) -> Option<T::MsgPeek<'a>> { None }
+    // ss[related testing.sim-producer-close]
     fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, _this: &mut Tx<T>, _iter: I) -> usize { 0 }
     fn try_send<T: TxCore>(&mut self, _this: &mut T, _msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
     fn try_take<T: RxCore>(&mut self, _this: &mut T) -> Option<T::MsgOut> { None }
+    // ss[related testing.sim-producer-close]
     fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }
     fn vacant_units<T: TxCore>(&self, _this: &mut T) -> T::MsgSize { unimplemented!() }
     async fn wait_empty<T: TxCore>(&self, _this: &mut T) -> bool { true }
+    // ss[related testing.sim-producer-close]
     fn take_into_iter<'a, T: Sync + Send>(&mut self, _this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
     async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
     fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T> where F: FnOnce() -> T + Send + 'static, T: Send + 'static {
         BlockingCallFuture(core_exec::spawn_blocking(f))
     }
+    // ss[related testing.sim-producer-close]
     async fn send_async<T: TxCore>(&mut self, _this: &mut T, _a: T::MsgIn<'_>, _saturation: SendSaturation) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
     async fn take_async<T>(&mut self, _this: &mut Rx<T>) -> Option<T> { None }
     async fn take_async_with_timeout<T>(&mut self, _this: &mut Rx<T>, _timeout: Duration) -> Option<T> { None }
+    // ss[related testing.sim-producer-close]
     async fn yield_now(&self) { yield_now().await; }
     fn sidechannel_responder(&self) -> Option<SideChannelResponder> { self.sidechannel.clone() }
     fn is_running<F: FnMut() -> bool>(&mut self, _accept_fn: F) -> bool { self.is_running }
+    // ss[related testing.sim-producer-close]
     async fn request_shutdown(&mut self) { self.is_running = false; }
     fn args<A: Any>(&self) -> Option<&A> { None }
     fn identity(&self) -> ActorIdentity { ActorIdentity::new(0, "test", None) }
+    // ss[related testing.sim-producer-close]
     fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
     fn set_dot_display_text(&mut self, _text: Option<&str>) {}
 }
 
 #[cfg(test)]
+// ss[related testing.sim-producer-close]
 mod tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    // ss[related testing.sim-producer-close]
     use crate::core_exec;
 
+    // ss[verify testing.stage-manager-integration]
     #[test]
     fn test_simulate_single_rx() {
         let builder = ChannelBuilder::default().with_capacity(4);
@@ -513,6 +588,7 @@ mod tests {
         assert_eq!(runner.step().unwrap(), SimStepResult::NoWork);
     }
 
+    // ss[verify testing.stage-manager-integration]
     #[test]
     fn test_simulate_single_tx() {
         let builder = ChannelBuilder::default().with_capacity(2);
@@ -523,6 +599,7 @@ mod tests {
         assert_eq!(runner.step().unwrap(), SimStepResult::NoWork);
     }
 
+    // ss[verify testing.sim-producer-close]
     #[test]
     fn test_sim_tx_close_outputs_on_simulated_stop() {
         let builder = ChannelBuilder::default().with_capacity(4);

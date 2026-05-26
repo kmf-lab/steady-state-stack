@@ -1,31 +1,41 @@
+// ss[related telemetry.builtin-server]
 use async_io::Async;
 use std::error::Error;
 use std::net::{SocketAddr, TcpListener};
+// ss[related telemetry.builtin-server]
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 use bytes::{Bytes, BytesMut};
 #[allow(unused_imports)]
+// ss[related telemetry.builtin-server]
 use log::*;
 use crate::*;
 use crate::dot::{apply_node_def, build_dot, build_metric, DotGraphFrames, FrameHistory, DotState};
+// ss[related telemetry.builtin-server]
 use crate::telemetry::metrics_collector::*;
 use futures::io;
 use futures::channel::oneshot::Receiver;
+// ss[related telemetry.builtin-server]
 use std::io::Write;
 use std::fmt::Write as FmtWrite;
 use futures_util::{AsyncReadExt, AsyncWriteExt, FutureExt};
+// ss[related telemetry.builtin-server]
 use futures::select_biased;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use parking_lot::RwLock;
+// ss[related telemetry.builtin-server]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // The name of the metrics server actor
+// ss[related telemetry.builtin-server]
 pub const NAME: &str = "metrics_server";
 
 /// Minimum seconds between writing `logs/graph.dot` when serving `/graph.dot` (logging); shutdown always writes once.
+// ss[related telemetry.builtin-server]
 const GRAPH_DOT_DISK_WRITE_INTERVAL_SECS: u64 = 10;
 
 #[derive(Clone)]
+// ss[related telemetry.builtin-server]
 struct MetricState {
     doc: Bytes,
     metric: Bytes,
@@ -51,6 +61,7 @@ struct MetricState {
 ///
 /// # Errors
 /// This function returns an error if the server fails to start or encounters a runtime error.
+// ss[related telemetry.builtin-server]
 pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, telemetry_colors: Option<(String, String)>, bundle_floor_size: usize) -> Result<(), Box<dyn Error>> {
     
     //NOTE: we could use this to turn off the server if desired.
@@ -69,6 +80,7 @@ pub(crate) async fn run(context: SteadyActorShadow, rx: SteadyRx<DiagramData>, t
 /// Wakeup source for [`internal_behavior`]. Timer is listed first in [`select_biased!`] so frame
 /// boundaries are not starved when the telemetry RX stays non-empty.
 #[derive(Clone, Copy, Debug)]
+// ss[related telemetry.builtin-server]
 enum MetricsWake {
     /// Timelord tick completed (`wait_periodic` returned `true`).
     TimelordTick,
@@ -78,6 +90,7 @@ enum MetricsWake {
     PeriodicInterrupted,
 }
 
+// ss[related telemetry.builtin-server]
 async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx: SteadyRx<DiagramData>, addr: Option<String>, telemetry_colors: Option<(String, String)>, bundle_floor_size: usize) -> Result<(), Box<dyn Error>> {
     let effective_frame_rate_ms = frame_rate_ms.max(1);
     let frame_duration = Duration::from_millis(effective_frame_rate_ms);
@@ -225,23 +238,28 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
 
 
 /// A trait combining `AsyncRead` and `AsyncWrite` for types that support both.
+// ss[related telemetry.builtin-server]
 pub trait AsyncReadWrite: AsyncRead + AsyncWrite {}
 
 impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}
 
 /// A trait for asynchronous listeners that can accept connections and provide their local address.
+// ss[related telemetry.builtin-server]
 pub trait AsyncListener {
     /// Accepts a new connection asynchronously.
     ///
     /// Returns a future resolving to a stream implementing `AsyncReadWrite` and an optional socket address.
     #[allow(clippy::type_complexity)]
+    // ss[related telemetry.builtin-server]
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>>;
 
     /// Returns the local address of the listener.
+    // ss[related telemetry.builtin-server]
     fn local_addr(&self) -> std::io::Result<SocketAddr>;
 }
 
 /// Implements `AsyncListener` for `Async<TcpListener>` to ensure true asynchronous acceptance.
+// ss[related telemetry.builtin-server]
 impl AsyncListener for Async<TcpListener> {
     fn accept<'a>(&'a self) -> Pin<Box<dyn Future<Output =std::io::Result<(Box<dyn AsyncReadWrite + Send + Unpin + 'static>, Option<SocketAddr>)>> + Send + 'a>> {
         Box::pin(async move {
@@ -250,6 +268,7 @@ impl AsyncListener for Async<TcpListener> {
         })
     }
 
+    // ss[related telemetry.builtin-server]
     fn local_addr(&self) -> std::io::Result<SocketAddr> {
         self.get_ref().local_addr()
     }
@@ -260,6 +279,7 @@ impl AsyncListener for Async<TcpListener> {
 /// Binds a TCP listener to the specified address using `Async<TcpListener>`.
 ///
 /// Returns an `Arc` containing the listener if successful, or `None` if binding fails.
+// ss[related telemetry.builtin-server]
 pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Sync>>> {
     match TcpListener::bind(addr) {
         Ok(listener) => {
@@ -280,6 +300,7 @@ pub fn bind_to_port(addr: &str) -> Arc<Option<Box<dyn AsyncListener + Send + Syn
 
 
 
+// ss[related telemetry.builtin-server]
 async fn handle_new_requests (
     tcp_receiver_tx_oneshot_shutdown: Arc<Mutex<Receiver<Option<Duration>>>>,
     state: Arc<RwLock<MetricState>>,
@@ -351,6 +372,7 @@ async fn handle_new_requests (
 
 /// Processes a single telemetry message to update the internal `DotState`.
 /// This function is designed to be called rapidly in a loop to consume bursts.
+// ss[related telemetry.builtin-server]
 async fn process_msg(
     msg: DiagramData,
     metrics_state: &mut DotState,
@@ -407,6 +429,7 @@ async fn process_msg(
     }
 }
 
+// ss[related telemetry.builtin-server]
 async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<RwLock<MetricState>>, flush_frame: bool) {
     if steady_config::TELEMETRY_HISTORY {
         history.update(flush_all).await;
@@ -466,9 +489,11 @@ async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHisto
 // `build.rs` outputs and are not placed in `OUT_DIR`.
 #[allow(dead_code)]
 #[cfg(any(docsrs, feature = "telemetry_server_cdn", not(feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_VIZ_LITE_GZ: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(any(docsrs, feature = "telemetry_server_cdn")), feature = "telemetry_server_builtin"))]
+// ss[related telemetry.builtin-server]
 const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/viz-lite.js.gz"))
 } else {
@@ -477,9 +502,11 @@ const CONTENT_VIZ_LITE_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_INDEX_HTML_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"))
 } else {
@@ -488,9 +515,11 @@ const CONTENT_INDEX_HTML_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_DOT_VIEWER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/dot-viewer.js.gz"))
 } else {
@@ -499,9 +528,11 @@ const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_DOT_VIEWER_CSS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/dot-viewer.css.gz"))
 } else {
@@ -510,9 +541,11 @@ const CONTENT_DOT_VIEWER_CSS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_WEBWORKER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/webworker.js.gz"))
 } else {
@@ -521,9 +554,11 @@ const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_SPINNER_GIF_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/spinner.gif"))
 } else {
@@ -532,57 +567,72 @@ const CONTENT_SPINNER_GIF: & [u8] = if steady_config::TELEMETRY_SERVER {
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_PREVIEW_ICON_SVG: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_PREVIEW_ICON_GZ: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/preview-icon.svg") } else { &[] };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_REFRESH_TIME_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/refresh-time-icon.svg") } else { "" };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_USER_ICON_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_USER_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/user-icon.svg") } else { "" };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_IN_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon.svg") } else { "" };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_IN_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-in-icon-disabled.svg") } else { "" };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_OUT_ICON_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon.svg") } else { "" };
 
 #[allow(dead_code)]
 #[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
 //   pub trait AsyncWriteExt: AsyncWrite   for the .read
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
 /// Writes the current graph DOT bytes to `logs/graph.dot` (blocking I/O on the pool).
+// ss[related telemetry.builtin-server]
 async fn write_graph_dot_to_logs(data: &[u8]) -> std::io::Result<()> {
     let _ = std::fs::create_dir_all("logs");
     if let Ok(file) = std::fs::OpenOptions::new()
@@ -597,6 +647,7 @@ async fn write_graph_dot_to_logs(data: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+// ss[related telemetry.builtin-server]
 async fn handle_request<T>(mut stream: T,
                            state: Arc<RwLock<MetricState>>) -> io::Result<()>
 where
@@ -794,18 +845,22 @@ where
 
 #[cfg(not(windows))]
 #[cfg(test)]
+// ss[related telemetry.builtin-server]
 mod meteric_server_tests {
 
 
 
     #[test]
     #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
+    // ss[verify telemetry.builtin-server]
     fn test_simple() -> Result<(), Box<dyn std::error::Error>> {
         use crate::{ActorIdentity, GraphBuilder, SoloAct};
         use std::sync::Arc;
+        // ss[related telemetry.builtin-server]
         use std::thread::{sleep};
         use std::time::Duration;
         use crate::monitor::ActorMetaData;
+        // ss[related telemetry.builtin-server]
         use crate::telemetry::metrics_collector::DiagramData;
         use crate::telemetry::metrics_server::internal_behavior;
 
@@ -841,17 +896,21 @@ mod meteric_server_tests {
 
 #[cfg(not(windows))]
 #[cfg(test)]
+// ss[related telemetry.builtin-server]
 mod http_telemetry_tests {
     use std::io::Read;
     use std::thread::sleep;
+    // ss[related telemetry.builtin-server]
     use super::*;
     use crate::GraphBuilder;
     use std::time::Duration;
     
+    // ss[related telemetry.builtin-server]
     use crate::monitor::ActorStatus;
 
     #[test]
     #[cfg(all(feature="prometheus_metrics",feature="telemetry_server_builtin"))]
+    // ss[verify telemetry.builtin-server]
     fn test_metrics_server() -> Result<(), Box<dyn std::error::Error>> {
         if cfg!(not(windows)) && std::env::var("GITHUB_ACTIONS").is_err() {
             let (mut graph, server_ip, tx_in) = stand_up_test_server("127.0.0.1:0");
@@ -923,6 +982,7 @@ mod http_telemetry_tests {
     }
 
     /// Checks if an address can be bound to and returns the local address if successful.
+    // ss[related telemetry.builtin-server]
     pub(crate) fn check_addr(addr: &str) -> Option<String> {
         if let Ok(h) = TcpListener::bind(addr) {
             let local_addr = h.local_addr().expect("Unable to get local address");
@@ -932,6 +992,7 @@ mod http_telemetry_tests {
         }
     }
 
+    // ss[related telemetry.builtin-server]
     fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
@@ -952,6 +1013,7 @@ mod http_telemetry_tests {
         }        
     }
 
+    // ss[related telemetry.builtin-server]
     fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
                            , rx_in: LazySteadyRx<DiagramData>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
 
@@ -1009,6 +1071,7 @@ mod http_telemetry_tests {
         (graph, server_ip_out, tx_in)
     }
 
+    // ss[related telemetry.builtin-server]
     fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
         match isahc::get(format!("http://{}/{}", &addr, &path)) {
             Ok(response) => {
@@ -1041,10 +1104,12 @@ mod http_telemetry_tests {
     /// A prior bug embedded an empty or wrong gzip while still returning HTTP 200; browsers then
     /// failed `importScripts` for viz-lite. Plain `validate_path(..., None)` did not catch that.
     #[cfg(feature = "telemetry_server_builtin")]
+    // ss[related telemetry.builtin-server]
     fn validate_viz_lite_js_gzip_payload(addr: &str) {
         use flate2::read::GzDecoder;
         use std::io::Read;
 
+        // ss[related telemetry.builtin-server]
         const MIN_DECODED_SCRIPT_BYTES: usize = 5000;
 
         let url = format!("http://{}/viz-lite.js", addr);
@@ -1088,6 +1153,7 @@ mod http_telemetry_tests {
 /// Asynchronously writes data to a file, optionally flushing it.
 ///
 /// Uses `spawn_blocking` to perform blocking file I/O in a separate thread.
+// ss[related telemetry.builtin-server]
 pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::fs::File) -> std::io::Result<()> {
     core_exec::spawn_blocking(move || {
         file.write_all(&data)?;
@@ -1099,19 +1165,23 @@ pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::
 }
 
 #[cfg(test)]
+// ss[related telemetry.builtin-server]
 mod handle_request_logic_tests {
     use super::*;
     use futures::io::{AsyncRead, AsyncWrite};
+    // ss[related telemetry.builtin-server]
     use std::pin::Pin;
     use std::task::{Context, Poll};
     use std::io;
 
+    // ss[related telemetry.builtin-server]
     struct MockStream {
         read_data: Vec<u8>,
         read_pos: usize,
         write_data: Vec<u8>,
     }
 
+    // ss[related telemetry.builtin-server]
     impl MockStream {
         fn new(data: &str) -> Self {
             MockStream {
@@ -1122,6 +1192,7 @@ mod handle_request_logic_tests {
         }
     }
 
+    // ss[related telemetry.builtin-server]
     impl AsyncRead for MockStream {
         fn poll_read(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
             let remaining = self.read_data.len() - self.read_pos;
@@ -1132,16 +1203,19 @@ mod handle_request_logic_tests {
         }
     }
 
+    // ss[related telemetry.builtin-server]
     impl AsyncWrite for MockStream {
         fn poll_write(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
             self.write_data.extend_from_slice(buf);
             Poll::Ready(Ok(buf.len()))
         }
+        // ss[related telemetry.builtin-server]
         fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
         fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> { Poll::Ready(Ok(())) }
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_handle_request_index() {
         let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET / HTTP/1.1\r\n\r\n");
@@ -1149,6 +1223,7 @@ mod handle_request_logic_tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_handle_request_options() {
         let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("OPTIONS / HTTP/1.1\r\n\r\n");
@@ -1156,6 +1231,7 @@ mod handle_request_logic_tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_handle_request_404() {
         let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let stream = MockStream::new("GET /unknown HTTP/1.1\r\n\r\n");
@@ -1163,6 +1239,7 @@ mod handle_request_logic_tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_handle_request_assets() {
         let state = Arc::new(RwLock::new(MetricState { doc: Bytes::new(), metric: Bytes::new(), config: Bytes::new(), last_disk_write: Arc::new(AtomicU64::new(0)), start_time: Instant::now() }));
         let paths = [

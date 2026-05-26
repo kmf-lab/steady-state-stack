@@ -16,30 +16,38 @@
 //! via `run`, which delegates to `internal_behavior` for subscription management and polling, or runs
 //! a simulated mode for testing.
 
+// ss[related distributed.subscribe-publish]
 use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+// ss[related distributed.subscribe-publish]
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 use aeron::concurrent::logbuffer::frame_descriptor;
 use aeron::concurrent::logbuffer::header::Header;
+// ss[related distributed.subscribe-publish]
 use aeron::subscription::Subscription;
 use aeron::aeron::Aeron;
 use futures_util::lock::MutexGuard;
+// ss[related distributed.subscribe-publish]
 use log::*;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, StreamIngress};
+// ss[related distributed.subscribe-publish]
 use crate::{SteadyActor, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::core_tx::TxCore;
+// ss[related distributed.subscribe-publish]
 use crate::distributed::polling;
 use crate::simulate_edge::IntoSimRunner;
 use crate::state_management::SteadyState;
+// ss[related distributed.subscribe-publish]
 use crate::yield_now;
 
 /// State for managing Aeron subscriptions within a SteadyState actor.
 ///
 /// Tracks registration IDs assigned by Aeron for each stream in the subscription bundle.
 #[derive(Default)]
+// ss[related distributed.subscribe-publish]
 pub struct AeronSubscribeSteadyState {
     /// Registration IDs for each Aeron subscription, indexed by stream position in the bundle.
     /// Each entry is `None` until the subscription is registered, then holds the Aeron-assigned ID.
@@ -50,6 +58,7 @@ pub struct AeronSubscribeSteadyState {
 ///
 /// Used as a fallback or fixed interval for scheduling polls. Currently set to 50 microseconds
 /// as a temporary testing value; may require tuning for production use.
+// ss[related distributed.subscribe-publish]
 const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(20)); //TODO: work in progress
 
 /// Entry point for running an Aeron subscriber actor.
@@ -70,6 +79,7 @@ const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(20)); //TODO: w
 ///
 /// # Panics
 /// Panics if internal invariants (e.g., unwrapping subscriptions) fail, indicating a bug.
+// ss[related distributed.subscribe-publish]
 pub async fn run<const GIRTH: usize>(
     context: SteadyActorShadow,
     tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
@@ -117,6 +127,7 @@ pub async fn run<const GIRTH: usize>(
 /// # Notes
 /// - Processes fragments up to the channel’s capacity, respecting defragmentation limits.
 /// - Uses a `PollScheduler` to adapt polling intervals based on data arrival rates.
+// ss[related distributed.subscribe-publish]
 async fn poll_aeron_subscription<C: SteadyActor>(
     tx_item: &mut StreamTx<StreamIngress>,
     sub: &mut Subscription,
@@ -226,6 +237,7 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 /// # Notes
 /// - Uses a round-robin or dynamic scheduling approach, configurable via `ROUND_ROBIN`.
 /// - Periodically rechecks connection status to handle network issues.
+// ss[related distributed.subscribe-publish]
 async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     mut actor: C,
     tx: SteadyStreamTxBundle<StreamIngress, GIRTH>,
@@ -410,16 +422,19 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_subscribe_bundle_tests {
     use super::*;
 
     #[test]
+    // ss[verify distributed.subscribe-publish]
     fn test_subscribe_state_init() {
         let state = AeronSubscribeSteadyState::default();
         assert!(state.sub_reg_id.is_empty());
     }
 
     #[test]
+    // ss[verify distributed.subscribe-publish]
     fn test_subscribe_state_resize() {
         let mut state = AeronSubscribeSteadyState::default();
         let girth = 5;

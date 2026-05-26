@@ -2,33 +2,42 @@
 //! based on the settings for the actor builder in the SteadyState project. It includes functions for
 //! computing and refreshing metrics, building DOT and Prometheus outputs, and managing historical data.
 
+// ss[related telemetry.dot-export]
 use log::*;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
+// ss[related telemetry.dot-export]
 use std::fs::{OpenOptions, create_dir_all};
 use std::path::PathBuf;
 
+// ss[related telemetry.dot-export]
 use bytes::{BufMut, BytesMut};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related telemetry.dot-export]
 use std::time::Instant;
 use time::OffsetDateTime;
 use time::macros::format_description;
 
+// ss[related telemetry.dot-export]
 use crate::ActorName;
 use crate::actor_stats::ActorStatsComputer;
 use crate::channel_stats::{ChannelStatsComputer, FilledVisualMode};
+// ss[related telemetry.dot-export]
 use crate::dot_edge::Edge;
 use crate::dot_node::Node;
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
+// ss[related telemetry.dot-export]
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
 use crate::telemetry::metrics_server;
 use crate::dot_unify::ChannelEdgeRole;
+// ss[related telemetry.dot-export]
 use crate::graph_liveliness::ActorIdentity;
 use crate::*;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
 #[derive(Default)]
+// ss[related telemetry.dot-export]
 pub struct DotState {
     pub(crate) nodes: Vec<Node>, // Position matches the node ID
     pub(crate) edges: Vec<Edge>, // Position matches the channel ID
@@ -39,6 +48,7 @@ pub struct DotState {
 }
 
 #[derive(Default, Clone, Debug)]
+// ss[related telemetry.dot-export]
 pub struct RemoteDetails {
     pub(crate) ips: String,
     pub(crate) match_on: String,
@@ -47,22 +57,27 @@ pub struct RemoteDetails {
 }
 
 /// The default pen width for nodes in the DOT graph.
+// ss[related telemetry.dot-export]
 pub(crate) const NODE_PEN_WIDTH: &str = "3";
 /// The default pen width for edges in the DOT graph.
 pub(crate) const EDGE_PEN_WIDTH: &str = "1";
 /// The pen width for bundles of single kind of channels.
+// ss[related telemetry.dot-export]
 pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
 /// The pen width for bundles of partnered channels.
 pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 
 /// Percent of border RGB mixed into actor node `fillcolor` (remainder is white). Tweak for a stronger or weaker tint.
+// ss[related telemetry.dot-export]
 const ACTOR_FILL_TINT_PERCENT: u32 = 12;
 
 /// Max number of per-channel `Avg fill` values to print comma-separated; above this, labels use
 /// a single `mean, N ch` line (aligns with large-bundle tooltips and Stage 2 bundle headers).
+// ss[related telemetry.dot-export]
 const MAX_INLINE_AVG_FILL_LANES: usize = 20;
 
 /// Maps a color name to its RGB components.
+// ss[related telemetry.dot-export]
 fn color_to_rgb(color: &str) -> (u32, u32, u32) {
     match color {
         "red" => (255, 0, 0),
@@ -77,6 +92,7 @@ fn color_to_rgb(color: &str) -> (u32, u32, u32) {
 }
 
 /// Writes `#RRGGBB` into `out` (reused across DOT builds to avoid per-edge `String` churn).
+// ss[related telemetry.dot-export]
 fn rgb_to_hex_into(out: &mut String, r: u32, g: u32, b: u32) {
     out.clear();
     let _ = write!(
@@ -89,6 +105,7 @@ fn rgb_to_hex_into(out: &mut String, r: u32, g: u32, b: u32) {
 }
 
 /// Actor node interior: white blended with `border_color` so the fill reads solid on black backgrounds.
+// ss[related telemetry.dot-export]
 pub(crate) fn actor_fillcolor_hex_into(out: &mut String, border_color: &str) {
     if border_color.is_empty() {
         rgb_to_hex_into(out, 255, 255, 255);
@@ -101,6 +118,7 @@ pub(crate) fn actor_fillcolor_hex_into(out: &mut String, border_color: &str) {
 }
 
 /// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
+// ss[related telemetry.dot-export]
 fn hex_color_average_into(out: &mut String, lane_rgbs: &[(u32, u32, u32)]) {
     if lane_rgbs.is_empty() {
         rgb_to_hex_into(out, 128, 128, 128);
@@ -115,6 +133,7 @@ fn hex_color_average_into(out: &mut String, lane_rgbs: &[(u32, u32, u32)]) {
 
 /// Per-resolved-edge color name counts for tooltips (e.g. `Lane colors: 3 red, 120 grey`).
 /// Reuses `counts` across calls to avoid allocating a new `BTreeMap` per line.
+// ss[related telemetry.dot-export]
 fn format_lane_color_histogram_into(
     counts: &mut BTreeMap<&'static str, usize>,
     out: &mut String,
@@ -138,6 +157,7 @@ fn format_lane_color_histogram_into(
 
 /// Mean whole-percent avg fill from channel edges; ignores lanes with no `Some` sample
 /// or with a zero percent (idle/cold channels).
+// ss[related telemetry.dot-export]
 fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
@@ -155,6 +175,7 @@ fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
 /// Multi-lane `Avg fill` for DOT: comma list when `edges.len() <=` [`MAX_INLINE_AVG_FILL_LANES`], else
 /// a single `mean, N ch` line (see module constant). Omits the line entirely when no lane has a sample
 /// (`None`) or all samples are zero (idle/cold channels).
+// ss[related telemetry.dot-export]
 fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.clear();
     if edges.is_empty() {
@@ -188,6 +209,7 @@ fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
 }
 
 /// Integer mean of `Some` percent values; skips zero values (idle/cold channels). `None` if there are no samples.
+// ss[related telemetry.dot-export]
 fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
@@ -203,6 +225,7 @@ fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Opt
 }
 
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
+// ss[related telemetry.dot-export]
 fn append_channel_fill_tooltip(
     tooltip: &mut String,
     stats: &ChannelStatsComputer,
@@ -225,6 +248,7 @@ fn append_channel_fill_tooltip(
 }
 
 #[inline]
+// ss[related telemetry.dot-export]
 fn escape_dot_quotes(out: &mut String, src: &str) {
     out.clear();
     out.reserve(src.len());
@@ -238,6 +262,7 @@ fn escape_dot_quotes(out: &mut String, src: &str) {
 }
 
 #[inline]
+// ss[related telemetry.dot-export]
 fn escape_node_tooltip_text(out: &mut String, src: &str) {
     out.clear();
     out.reserve(src.len().saturating_mul(2));
@@ -259,6 +284,7 @@ fn escape_node_tooltip_text(out: &mut String, src: &str) {
 ///
 /// * `state` - THE current metric state.
 /// * `txt_metric` - THE buffer to store the metrics text.
+// ss[related telemetry.dot-export]
 pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 
@@ -280,6 +306,7 @@ pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
+// ss[related telemetry.dot-export]
 struct PrimaryGroupKey {
     from_name: Option<&'static str>,
     from_suffix: Option<usize>,
@@ -292,6 +319,7 @@ struct PrimaryGroupKey {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
+// ss[related telemetry.dot-export]
 struct PartnerKey {
     from: Option<(&'static str, Option<usize>)>,
     to: Option<(&'static str, Option<usize>)>,
@@ -302,6 +330,7 @@ struct PartnerKey {
 }
 
 /// Working buffers for DOT + Prometheus + config JSON (reused each telemetry frame).
+// ss[related telemetry.dot-export]
 pub struct DotGraphFrames {
     pub(crate) active_metric: BytesMut,
     pub(crate) active_graph: BytesMut,
@@ -321,6 +350,7 @@ pub struct DotGraphFrames {
 ///
 /// * `state` - THE current metric state.
 /// * `frames` - Working buffers including the DOT output (`active_graph`).
+// ss[related telemetry.dot-export]
 pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     frames.active_graph.clear(); // Clear the buffer for reuse
     let dot_graph = &mut frames.active_graph;
@@ -416,6 +446,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         partner_groups.entry(key).or_default().push(edge);
     }
 
+    // ss[related telemetry.dot-export]
     struct PartneredEdge {
         from: Option<ActorName>,
         to: Option<ActorName>,
@@ -933,6 +964,7 @@ if show_avg_filled_any {
     dot_graph.put_slice(b"}\n");
 }
 
+// ss[related telemetry.dot-export]
 fn render_edge_internal(
     dot_graph: &mut BytesMut,
     from_name: &'static str,
@@ -1022,6 +1054,7 @@ fn render_edge_internal(
 /// * `channels_in` - THE input channels.
 /// * `channels_out` - THE output channels.
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
+// ss[related telemetry.dot-export]
 pub fn apply_node_def(
     local_state: &mut DotState,
     actor: Arc<ActorMetaData>,
@@ -1091,6 +1124,7 @@ pub fn apply_node_def(
 /// * `mdvec` - THE metadata of the channels.
 /// * `role` - Incoming vs outgoing registration for [`DotState.edges`].
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
+// ss[related telemetry.dot-export]
 fn define_unified_edges(
     local_state: &mut DotState,
     actor_ident: ActorIdentity,
@@ -1106,6 +1140,7 @@ fn define_unified_edges(
 }
 
 /// Represents the frame history for a graph, including packed data and output paths.
+// ss[related telemetry.dot-export]
 pub struct FrameHistory {
     pub(crate) packed_sent_writer: PackedVecWriter<i64>,
     pub(crate) packed_take_writer: PackedVecWriter<i64>,
@@ -1118,16 +1153,19 @@ pub struct FrameHistory {
     local_thread_bytes_cache: usize,
 }
 
+// ss[related telemetry.dot-export]
 const REC_NODE: u64 = 1;
 const REC_EDGE: u64 = 0;
 const HISTORY_WRITE_BLOCK_SIZE: usize = 1 << (12 + 4); // Must be power of 2 and 4096 or larger, 64k is good
 
+// ss[related telemetry.dot-export]
 impl FrameHistory {
     /// Creates a new `FrameHistory` instance.
     ///
     /// # Returns
     ///
     /// A new `FrameHistory` instance.
+    // ss[related telemetry.dot-export]
     pub fn new(ms_rate: u64) -> FrameHistory {
         let mut buf = BytesMut::with_capacity(HISTORY_WRITE_BLOCK_SIZE * 2);
 
@@ -1192,6 +1230,7 @@ impl FrameHistory {
     }
 
     /// Marks the current position in the history buffer.
+    // ss[related telemetry.dot-export]
     pub fn mark_position(&mut self) {
         self.buffer_bytes_count = self.history_buffer.len();
     }
@@ -1204,6 +1243,7 @@ impl FrameHistory {
     /// * `id` - THE ID of the node.
     /// * `chin` - THE input channels.
     /// * `chout` - THE output channels.
+    // ss[related telemetry.dot-export]
     pub fn apply_node(
         &mut self,
         name: &'static str,
@@ -1250,6 +1290,7 @@ impl FrameHistory {
     ///
     /// * `total_take_send` - THE total take and send values.
     /// * `frame_rate_ms` - THE frame rate in milliseconds.
+    // ss[related telemetry.dot-export]
     pub fn apply_edge(&mut self, total_take_send: &[(i64, i64)], frame_rate_ms: u64) {
         write_long_unsigned(REC_EDGE, &mut self.history_buffer); // Message type
 
@@ -1282,6 +1323,7 @@ impl FrameHistory {
     /// # Arguments
     ///
     /// * `flush_all` - A boolean indicating if all data should be flushed to disk.
+    // ss[related telemetry.dot-export]
     pub async fn update(&mut self, flush_all: bool) {
         // We write to disk in blocks just under a fixed power of two size
         // If we are about to enter a new block ensure we write the old one
@@ -1329,6 +1371,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// THE history file path.
+    // ss[related telemetry.dot-export]
     fn build_history_path(&mut self) -> PathBuf {
         let format = format_description!("[year]_[month]_[day]");
         let log_time = OffsetDateTime::now_utc();
@@ -1354,6 +1397,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// `true` if the next block will span into the next file write block, `false` otherwise.
+    // ss[related telemetry.dot-export]
     fn will_span_into_next_block(&self) -> bool {
         let old_blocks = (self.file_bytes_written.load(Ordering::SeqCst) + self.buffer_bytes_count)
             / HISTORY_WRITE_BLOCK_SIZE;
@@ -1373,6 +1417,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
+    // ss[related telemetry.dot-export]
     pub(crate) async fn truncate_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
         let file = OpenOptions::new()
             .write(true)
@@ -1381,6 +1426,7 @@ impl FrameHistory {
             .open(&path)?;
         metrics_server::async_write_all(data, false, file).await
     }
+    // ss[related telemetry.dot-export]
     async fn append_to_file(
         path: PathBuf,
         data: BytesMut,
@@ -1392,17 +1438,22 @@ impl FrameHistory {
 }
 
 #[cfg(test)]
+// ss[related telemetry.dot-export]
 mod dot_tests {
     use super::*;
     use crate::dot_unify::ChannelEdgeRole;
+    // ss[related telemetry.dot-export]
     use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
     use crate::telemetry::metrics_server::async_write_all;
     use bytes::BytesMut;
+    // ss[related telemetry.dot-export]
     use std::fs::remove_file;
     use std::path::PathBuf;
     use std::sync::Arc;
+    // ss[related telemetry.dot-export]
     use std::time::Instant;
 
+    // ss[related telemetry.dot-export]
     fn test_dot_frames() -> DotGraphFrames {
         DotGraphFrames {
             active_metric: BytesMut::new(),
@@ -1417,6 +1468,7 @@ mod dot_tests {
 
     /// `bool::then_some(x)` evaluates `x` eagerly; mean must use `then` so empty iterators never divide.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_mean_avg_fill_percent_all_none_returns_none_without_panic() {
         let all_none = [None::<u8>, None];
         assert_eq!(mean_avg_fill_percent(all_none.iter()), None);
@@ -1425,6 +1477,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_node_compute_and_refresh() {
         let actor_status = ActorStatus {
             ident: Default::default(),
@@ -1460,6 +1513,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_edge_compute_and_refresh() {
         let mut edge = Edge {
             id: 1,
@@ -1483,6 +1537,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_build_metric() {
         let state = DotState {
             nodes: vec![Node {
@@ -1526,6 +1581,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_build_dot() {
         let state = DotState {
             nodes: vec![Node {
@@ -1585,6 +1641,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_actor_fillcolor_hex_into() {
         let mut s = String::new();
         actor_fillcolor_hex_into(&mut s, "");
@@ -1607,6 +1664,7 @@ mod dot_tests {
 
     /// Multi-lane partner group: comma-separated whole-percent avg fill and lane color histogram.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_multi_lane_avg_fill_rollup_and_lane_color_histogram() {
         use crate::actor_stats::ChannelBlock;
 
@@ -1735,6 +1793,7 @@ mod dot_tests {
     /// Merged bundle edge (`n` groups ≥ `bundle_floor_size`, `total_channels` > `MAX_INLINE_AVG_FILL_LANES`) must not list
     /// one percent per channel on the label; use a single mean line instead.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_large_bundle_avg_fill_uses_mean_summary() {
         use crate::actor_stats::ChannelBlock;
 
@@ -1836,6 +1895,7 @@ mod dot_tests {
 
     /// One partner group with 21 parallel lanes: Stage 1 `Avg fill` must use the mean line (not 21 commas).
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_stage1_avg_fill_mean_when_lanes_exceed_inline_cap() {
         use crate::actor_stats::ChannelBlock;
 
@@ -1930,6 +1990,7 @@ mod dot_tests {
     /// Test: Edge tooltip uses total_consumed (cumulative), not last_total (inflight)
     /// This verifies the fix - tooltip should match edge label
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_edge_tooltip_uses_total_consumed() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
@@ -2023,6 +2084,7 @@ mod dot_tests {
     /// When `avg_filled` is enabled, tooltip shows rolling-window **Avg fill**, not snapshot Instant fill
     /// (which is often 0% when inflight is drained between samples).
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_edge_tooltip_prefers_avg_fill_when_enabled() {
         use crate::actor_stats::ChannelBlock;
 
@@ -2118,6 +2180,7 @@ mod dot_tests {
 
     /// No rolling-window sample: omit `Avg fill` entirely (no `-` placeholder).
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_edge_tooltip_omits_avg_fill_when_no_window_sample() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
@@ -2201,6 +2264,7 @@ mod dot_tests {
 
     /// Partner rollup: all lanes lack `current_filled` → no `Avg fill` line on the edge label.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_partner_rollup_no_avg_fill_when_all_samples_missing() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
@@ -2310,6 +2374,7 @@ mod dot_tests {
 
     /// Partner rollup: one lane has a sample, one does not → single percent, no comma placeholder.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_partner_rollup_avg_fill_skips_none_lane() {
         use crate::actor_stats::ChannelBlock;
 
@@ -2431,6 +2496,7 @@ mod dot_tests {
     }
 /// Multi-lane partner group: all lanes idle (0% fill) must produce no `Avg fill:` line.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_multi_lane_avg_fill_omits_when_all_zero_percent() {
         use crate::actor_stats::ChannelBlock;
 
@@ -2553,6 +2619,7 @@ mod dot_tests {
 
     /// Verify `format_avg_fill_rollup_line_into` produces nothing when all edges have runner==0.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_rollup_line_all_zero_runner_omits_avg_fill() {
         use crate::actor_stats::ChannelBlock;
         let from = ActorName::new("a", None);
@@ -2598,6 +2665,7 @@ mod dot_tests {
 
     /// Verify `format_avg_fill_rollup_line_into` shows only non-zero values.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_rollup_line_mixed_values_shows_only_nonzero() {
         use crate::actor_stats::ChannelBlock;
         let from = ActorName::new("a", None);
@@ -2649,6 +2717,7 @@ mod dot_tests {
 
     /// Verify `mean_avg_fill_from_edge_slice` returns None when all edge runners are zero.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_mean_avg_fill_from_edge_slice_all_zero() {
         use crate::actor_stats::ChannelBlock;
         let from = ActorName::new("a", None);
@@ -2687,6 +2756,7 @@ mod dot_tests {
 
     /// Verify `append_channel_fill_tooltip` omits Avg fill when runner is zero.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_append_channel_fill_tooltip_zero_fill_omitted() {
         use crate::actor_stats::ChannelBlock;
         let mut stats = ChannelStatsComputer {
@@ -2709,6 +2779,7 @@ mod dot_tests {
 
     /// Verify `append_channel_fill_tooltip` shows Avg fill when runner is non-zero.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_append_channel_fill_tooltip_shows_nonzero_fill() {
         use crate::actor_stats::ChannelBlock;
         let mut stats = ChannelStatsComputer {
@@ -2731,6 +2802,7 @@ mod dot_tests {
 
     /// Test: Bundle tooltip uses sum of total_consumed, not sum of last_total
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_bundle_tooltip_uses_total_consumed() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
@@ -2846,6 +2918,7 @@ mod dot_tests {
 
     /// Test: Large bundle (more than MAX_INLINE channels) shows summary without total volume or avg saturation
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_large_bundle_tooltip_no_total_volume() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);
@@ -2944,6 +3017,7 @@ mod dot_tests {
 
     /// Test: Partner channels show correct rollup
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_partner_tooltip_uses_total_consumed() {
         let from = ActorName::new("partner", None);
         let to = ActorName::new("to", None);
@@ -3074,6 +3148,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_new() {
         let frame_history = FrameHistory::new(1000);
         assert_eq!(frame_history.packed_sent_writer.delta_write_count(), 0);
@@ -3082,6 +3157,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_apply_node() {
         let mut frame_history = FrameHistory::new(1000);
         let chin = vec![Arc::new(ChannelMetaData::default())];
@@ -3091,6 +3167,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_apply_edge() {
         let mut frame_history = FrameHistory::new(1000);
         let total_take_send = vec![(100, 50)];
@@ -3099,6 +3176,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_build_history_path() {
         let mut frame_history = FrameHistory::new(1000);
         let path = frame_history.build_history_path();
@@ -3110,6 +3188,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_mark_position() {
         let mut frame_history = FrameHistory::new(1000);
         frame_history.mark_position();
@@ -3120,6 +3199,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_define_unified_edges() {
         let mut metric_state = DotState::default();
         let actor = crate::graph_liveliness::ActorIdentity::new(991, "node1", None);
@@ -3137,6 +3217,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_update() {
         let mut frame_history = FrameHistory::new(1000);
         frame_history.mark_position();
@@ -3147,6 +3228,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_frame_history_all_to_file_async() {
         let data = BytesMut::from("test data");
         let path = PathBuf::from("test_all_to_file.dat");
@@ -3166,6 +3248,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_node_compute_refresh_with_load_calculation() {
         // Test THE load calculation branch (lines 66-69)
         let actor_status = ActorStatus {
@@ -3202,6 +3285,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_node_compute_refresh_full_busy_when_await_zero() {
         // No instrumented/profile time in window → treat as fully busy (not 0 mCPU).
         let actor_status = ActorStatus {
@@ -3237,6 +3321,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_apply_node_def() {
         // Test lines 305-342 - apply_node_def function
         let mut local_state = DotState::default();
@@ -3354,6 +3439,7 @@ mod dot_tests {
     }
 
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_build_dot_aggregation() {
         let from = ActorName::new("from", None);
         let to = ActorName::new("to", None);

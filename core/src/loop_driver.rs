@@ -7,17 +7,21 @@
 //! These utilities are designed to simplify concurrent actor and channel orchestration
 //! in async Rust code, especially in graph-based or event-driven systems.
 
+// ss[related philosophy.single-wake-up]
 use futures_util::FutureExt;
 pub use futures::future::Future;
 pub use futures::select;
+// ss[related philosophy.single-wake-up]
 pub use futures::pin_mut;
 use futures_util::future::FusedFuture;
 
+// ss[impl philosophy.single-wake-up]
 /// Waits for all provided futures to complete, returning `true` only if all complete with `true`.
 ///
 /// This macro is useful for synchronizing multiple asynchronous operations where all must succeed.
 /// The result is a boolean indicating whether all futures returned `true`.
 #[macro_export]
+// ss[related philosophy.single-wake-up]
 macro_rules! await_for_all {
 ($($t:expr),*) => {
         async {
@@ -37,6 +41,7 @@ macro_rules! await_for_all {
 /// This macro is similar to `await_for_all!` but returns a future instead of immediately awaiting it.
 /// Useful for composing with other async combinators.
 #[macro_export]
+// ss[related philosophy.single-wake-up]
 macro_rules! wait_for_all {
     ($($t:expr),*) => {
         async {
@@ -53,6 +58,7 @@ macro_rules! wait_for_all {
 /// Converts a future into a fused future, which can be polled after completion without panicking.
 ///
 /// This is useful for use with `select!` and other combinators that require fused futures.
+// ss[related philosophy.single-wake-up]
 pub fn steady_fuse_future<F>(fut: F) -> futures_util::future::Fuse<F>
 where
     F: Future,
@@ -65,6 +71,7 @@ where
 /// Returns the result of the first future if it completes first, otherwise returns the logical AND
 /// of the results of the remaining futures. This is useful for scenarios where an early exit is
 /// possible, but otherwise all other operations must complete.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_await_for_all_or_proceed_upon_two<F1, F2>(
     fut1: F1,
     fut2: F2,
@@ -90,6 +97,7 @@ where
 ///
 /// Returns the result of the first future if it completes first, otherwise returns the logical AND
 /// of the results of the remaining futures.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_await_for_all_or_proceed_upon_three<F1, F2, F3>(
     fut1: F1,
     fut2: F2,
@@ -119,6 +127,7 @@ where
 ///
 /// Returns the result of the first future if it completes first, otherwise returns the logical AND
 /// of the results of the remaining futures.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_await_for_all_or_proceed_upon_four<F1, F2, F3, F4>(
     fut1: F1,
     fut2: F2,
@@ -152,6 +161,7 @@ where
 ///
 /// Returns the result of the first future if it completes first, otherwise returns the logical AND
 /// of the results of the remaining futures.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_await_for_all_or_proceed_upon_five<F1, F2, F3, F4, F5>(
     fut1: F1,
     fut2: F2,
@@ -190,6 +200,7 @@ where
 /// Waits for either the first future to complete, or for all of the rest to complete.
 /// Returns a boolean indicating if all completed with `true`, or the result of the first future if it completes first.
 #[macro_export]
+// ss[related philosophy.single-wake-up]
 macro_rules! await_for_all_or_proceed_upon {
     ($first:expr, $second:expr $(,)?) => {{
         $crate::yield_now().await; //ensure we play nice in troupes
@@ -228,6 +239,7 @@ macro_rules! await_for_all_or_proceed_upon {
 /// This macro is useful for racing multiple asynchronous operations and acting on the first to complete.
 /// The result is the output of the first future that completes.
 #[macro_export]
+// ss[related philosophy.single-wake-up]
 macro_rules! await_for_any {
     ($first:expr $(,)?) => {{
         async {
@@ -279,6 +291,7 @@ macro_rules! await_for_any {
 ///
 /// This macro is useful for composing with other async combinators or for use in select! blocks.
 #[macro_export]
+// ss[related philosophy.single-wake-up]
 macro_rules! wait_for_any {
     ($first:expr $(,)?) => {{
         async {
@@ -343,6 +356,7 @@ macro_rules! wait_for_any {
 ///     process(&mut rx[i]);
 /// }
 /// ```
+// ss[impl bundle.wait-for-index-macro]
 #[macro_export]
 macro_rules! wait_for_index {
     ($call:expr => $target:expr) => {
@@ -362,6 +376,7 @@ macro_rules! wait_for_index {
 ///
 /// This function pins the provided futures and uses `select!` to await the first to finish.
 /// It is useful for racing two asynchronous operations.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_select_two<F1, F2, O>(fut1: F1, fut2: F2) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -379,6 +394,7 @@ where
 /// Waits for the first of three futures to complete, returning its result.
 ///
 /// This function pins the provided futures and uses `select!` to await the first to finish.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_select_three<F1, F2, F3, O>(fut1: F1, fut2: F2, fut3: F3) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -399,6 +415,7 @@ where
 /// Waits for the first of four futures to complete, returning its result.
 ///
 /// This function pins the provided futures and uses `select!` to await the first to finish.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_select_four<F1, F2, F3, F4, O>(fut1: F1, fut2: F2, fut3: F3, fut4: F4) -> O
 where
     F1: Future<Output = O> + FusedFuture,
@@ -422,6 +439,7 @@ where
 /// Waits for the first of five futures to complete, returning its result.
 ///
 /// This function pins the provided futures and uses `select!` to await the first to finish.
+// ss[related philosophy.single-wake-up]
 pub async fn steady_select_five<F1, F2, F3, F4, F5, O>(
     fut1: F1,
     fut2: F2,
@@ -452,21 +470,26 @@ where
 }
 
 #[cfg(test)]
+// ss[related philosophy.single-wake-up]
 mod loop_driver_tests {
     use super::*;
     use async_std::task::sleep;
+    // ss[related philosophy.single-wake-up]
     use futures::future::ready;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    // ss[related philosophy.single-wake-up]
     use std::time::Duration;
 
     // Helper function to create a future that returns a boolean after a delay
+    // ss[related philosophy.single-wake-up]
     async fn delayed_bool(value: bool, ms: u64) -> bool {
         sleep(Duration::from_millis(ms)).await;
         value
     }
 
     // Helper function to create a controlled future that completes when signaled
+    // ss[related philosophy.single-wake-up]
     fn controlled_bool(value: bool, signal: Arc<AtomicBool>) -> impl Future<Output = bool> + FusedFuture {
         let signal_clone = signal.clone();
         async move {
@@ -479,6 +502,8 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_all! macro
+    // ss[verify philosophy.single-wake-up]
+    // ss[verify philosophy.mechanical-sympathy]
     #[async_std::test]
     async fn await_for_all_all_true() {
         let result = await_for_all!(
@@ -489,6 +514,7 @@ mod loop_driver_tests {
         assert!(result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_one_false() {
         let result = await_for_all!(
@@ -499,6 +525,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_empty() {
         let result = await_for_all!();
@@ -506,6 +533,7 @@ mod loop_driver_tests {
     }
 
     // Tests for wait_for_all! macro
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn wait_for_all_all_true() {
         let fut = wait_for_all!(
@@ -516,6 +544,7 @@ mod loop_driver_tests {
         assert!(fut.await);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn wait_for_all_one_false() {
         let fut = wait_for_all!(
@@ -526,6 +555,7 @@ mod loop_driver_tests {
         assert!(!fut.await);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn wait_for_all_empty() {
         let fut = wait_for_all!();
@@ -534,6 +564,7 @@ mod loop_driver_tests {
 
     // Test for steady_fuse_future function
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn steady_fuse_future_works() {
         let fut = ready(true);
         let fused = steady_fuse_future(fut);
@@ -542,6 +573,7 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_all_or_proceed_upon! macro with two futures
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_two_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
@@ -551,6 +583,7 @@ mod loop_driver_tests {
         assert!(result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_two_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
@@ -562,6 +595,7 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_all_or_proceed_upon! macro with three futures
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_three_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
@@ -572,6 +606,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_three_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
@@ -584,6 +619,7 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_all_or_proceed_upon! macro with four futures
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_four_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
@@ -595,6 +631,7 @@ mod loop_driver_tests {
         assert!(result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_four_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
@@ -608,6 +645,7 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_all_or_proceed_upon! macro with five futures
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_five_first_completes() {
         let signal = Arc::new(AtomicBool::new(false));
@@ -620,6 +658,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_all_or_proceed_upon_five_others_complete() {
         let signal = Arc::new(AtomicBool::new(true));
@@ -634,12 +673,14 @@ mod loop_driver_tests {
     }
 
     // Tests for await_for_any! macro
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_one() {
         let result = await_for_any!(ready(42));
         assert_eq!(result, 42);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_two_first_completes() {
         let fut1 = delayed_bool(true, 100);
@@ -648,6 +689,7 @@ mod loop_driver_tests {
         assert!(result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_two_second_completes() {
         let fut1 = delayed_bool(true, 200);
@@ -656,6 +698,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_three_third_completes() {
         let fut1 = delayed_bool(true, 200);
@@ -665,6 +708,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_four_fourth_completes() {
         let fut1 = delayed_bool(true, 200);
@@ -675,6 +719,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn await_for_any_five_fifth_completes() {
         let fut1 = delayed_bool(true, 200);
@@ -688,12 +733,14 @@ mod loop_driver_tests {
 
     // Tests for wait_for_any! macro
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn wait_for_any_one() {
         let fut = wait_for_any!(ready(42));
         assert_eq!(fut.await, 42);
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn wait_for_any_two_first_completes() {
         let fut1 = delayed_bool(true, 100);
         let fut2 = delayed_bool(false, 200);
@@ -702,6 +749,7 @@ mod loop_driver_tests {
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn wait_for_any_three_second_completes() {
         let fut1 = delayed_bool(true, 200);
         let fut2 = delayed_bool(false, 100);
@@ -711,6 +759,7 @@ mod loop_driver_tests {
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn wait_for_any_four_third_completes() {
         let fut1 = delayed_bool(true, 200);
         let fut2 = delayed_bool(true, 200);
@@ -721,6 +770,7 @@ mod loop_driver_tests {
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn wait_for_any_five_fourth_completes() {
         let fut1 = delayed_bool(true, 200);
         let fut2 = delayed_bool(true, 200);
@@ -732,6 +782,7 @@ mod loop_driver_tests {
     }
 
     // Tests for steady_select_* functions
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn steady_select_two_first_completes() {
         let fut1 = steady_fuse_future(delayed_bool(true, 100));
@@ -740,6 +791,7 @@ mod loop_driver_tests {
         assert!(result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn steady_select_two_second_completes() {
         let fut1 = steady_fuse_future(delayed_bool(true, 200));
@@ -748,6 +800,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn steady_select_three_third_completes() {
         let fut1 = steady_fuse_future(delayed_bool(true, 200));
@@ -757,6 +810,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn steady_select_four_fourth_completes() {
         let fut1 = steady_fuse_future(delayed_bool(true, 200));
@@ -767,6 +821,7 @@ mod loop_driver_tests {
         assert!(!result);
     }
 
+    // ss[verify philosophy.single-wake-up]
     #[async_std::test]
     async fn steady_select_five_fifth_completes() {
         let fut1 = steady_fuse_future(delayed_bool(true, 200));

@@ -1,6 +1,8 @@
+// ss[related stream.control-payload]
 use std::ops::{Add, Sub};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+// ss[related stream.control-payload]
 use bytes::{Bytes, BytesMut};
 use num_traits::Zero;
 use crate::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
@@ -11,12 +13,14 @@ use crate::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigne
 /// # Generics
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Into<i128>`, `Copy`, `Zero`, and `PartialEq` traits.
+// ss[related stream.control-payload]
 pub(crate) struct PackedVecWriter<T> {
     pub(crate) previous: Vec<T>,
     pub(crate) delta_write_count: usize,
     pub(crate) sync_required: Arc<AtomicBool>, // Indicates if the next write should be a full sync rather than a delta
 }
 
+// ss[related stream.control-payload]
 impl<T> PackedVecWriter<T> {
     /// Creates a new `PackedVecWriter` instance.
     pub fn new() -> Self {
@@ -28,11 +32,13 @@ impl<T> PackedVecWriter<T> {
     }
 
     /// Marks the data as requiring a full sync on the next write.
+    // ss[related stream.control-payload]
     pub fn sync_data(&mut self) {
         self.sync_required = Arc::new(AtomicBool::from(true));
     }
 
     /// Returns the count of delta writes performed.
+    // ss[related stream.control-payload]
     pub fn delta_write_count(&self) -> usize {
         self.delta_write_count
     }
@@ -43,6 +49,7 @@ impl<T> PackedVecWriter<T> {
 /// # Generics
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Into<i128>`, `Copy`, `Zero`, and `PartialEq` traits.
+// ss[related stream.control-payload]
 impl<T> PackedVecWriter<T>
     where
         T: Sub<Output = T> + Into<i128> + Copy + Zero + PartialEq,
@@ -56,6 +63,7 @@ impl<T> PackedVecWriter<T>
     /// # Returns
     ///
     /// A vector of `u64` values.
+    // ss[related stream.control-payload]
     fn consume_to_u64(bits: &[u8]) -> Vec<u64> {
         let mut u64_values = Vec::with_capacity(1 + (bits.len() >> 6));
         let mut p: usize = 0;
@@ -84,6 +92,7 @@ impl<T> PackedVecWriter<T>
     /// # Panics
     ///
     /// Panics if the length of the source vector is smaller than the length of the previous vector.
+    // ss[related stream.control-payload]
     pub(crate) fn add_vec(&mut self, target: &mut BytesMut, source: &[T]) {
         assert!(
             source.len() >= self.previous.len(),
@@ -146,10 +155,12 @@ impl<T> PackedVecWriter<T>
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Add`, `Copy`, and `From<i64>` traits.
 #[allow(dead_code)]
+// ss[related stream.control-payload]
 pub(crate) struct PackedVecReader<T> {
     pub(crate) previous: Vec<T>,
 }
 
+// ss[related stream.control-payload]
 impl<T> PackedVecReader<T>
     where
         T: From<i64> + Sub<Output = T> + Add<Output = T> + Copy,
@@ -164,6 +175,7 @@ impl<T> PackedVecReader<T>
     ///
     /// An `Option` containing the restored vector or `None` if the read failed.
     #[allow(dead_code)]
+    // ss[related stream.control-payload]
     fn restore_vec(&mut self, buffer: &mut Bytes) -> Option<Vec<T>> {
         // Read the length of chunks
         let chunks_len = read_long_signed(buffer)?;
@@ -206,12 +218,15 @@ impl<T> PackedVecReader<T>
 }
 
 #[cfg(test)]
+// ss[related stream.control-payload]
 mod tests {
     use super::*;
     use bytes::BytesMut;
+    // ss[related stream.control-payload]
     use log::trace;
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_round_trip_single_change() {
         let mut writer: PackedVecWriter<i128> = PackedVecWriter {
             previous: vec![1, 2, 3, 4],
@@ -235,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_round_trip_multiple_changes() {
         let mut writer: PackedVecWriter<i64> = PackedVecWriter {
             previous: vec![10, 20, 30, 40],
@@ -258,6 +274,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_round_trip_no_change() {
         let mut writer: PackedVecWriter<i128> = PackedVecWriter {
             previous: vec![5, 5, 5, 5],
@@ -282,6 +299,7 @@ mod tests {
 
     // Add more tests to cover different scenarios
     #[test]
+    // ss[verify stream.control-payload]
     fn test_consume_to_u64_small() {
         // bits length less than 64
         let bits = [1u8, 0, 1]; // 1<<0 + 1<<2 = 1 + 4 = 5
@@ -290,6 +308,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_consume_to_u64_large() {
         // bits length greater than 64
         let bits = vec![1u8; 70];
@@ -302,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_delta_write_count_and_sync() {
         let mut writer: PackedVecWriter<i32> = PackedVecWriter::new();
         let mut buffer1 = BytesMut::new();

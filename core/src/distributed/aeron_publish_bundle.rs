@@ -1,15 +1,20 @@
+// ss[related distributed.subscribe-publish]
 use std::error::Error;
 use std::sync::Arc;
 use futures_timer::Delay;
+// ss[related distributed.subscribe-publish]
 use aeron::aeron::Aeron;
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
 use aeron::exclusive_publication::ExclusivePublication;
+// ss[related distributed.subscribe-publish]
 use aeron::utils::types::Index;
 use crate::distributed::aeron_channel_structs::Channel;
 use crate::distributed::aqueduct_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamEgress, StreamRxBundleTrait};
+// ss[related distributed.subscribe-publish]
 use crate::SteadyActor;
 use crate::*;
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related distributed.subscribe-publish]
 use crate::simulate_edge::IntoSimRunner;
 use crate::state_management::SteadyState;
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
@@ -31,6 +36,7 @@ use crate::state_management::SteadyState;
 /// This struct tracks publication registration IDs and an internal counter for items processed, enabling the actor
 /// to resume publishing seamlessly after interruptions.
 #[derive(Default)]
+// ss[related distributed.subscribe-publish]
 pub struct AeronPublishSteadyState {
     /// Vector of optional registration IDs for Aeron publications, one per stream.
     ///
@@ -60,6 +66,7 @@ pub struct AeronPublishSteadyState {
 /// # Aeron Insights
 /// - The function retries every 15 seconds if the media driver is not found, ensuring robustness in distributed setups.
 /// - Publications are exclusive (single-writer), aligning with Aeron's recommendation for high-throughput scenarios.
+// ss[related distributed.subscribe-publish]
 pub async fn run<const GIRTH: usize>(
     context: SteadyActorShadow,
     rx: SteadyStreamRxBundle<StreamEgress, GIRTH>,
@@ -95,6 +102,7 @@ pub async fn run<const GIRTH: usize>(
 }
 
 /// Message indicating shutdown during initialization.
+// ss[related distributed.subscribe-publish]
 const SHUTDOWN_ON_INIT_MESSAGE: &str = "Shutdown requested while waiting";
 
 /// Core logic for publishing messages to Aeron streams.
@@ -118,6 +126,7 @@ const SHUTDOWN_ON_INIT_MESSAGE: &str = "Shutdown requested while waiting";
 /// - Uses exclusive publications for single-writer efficiency, minimizing contention.
 /// - Employs `offer_part` for message publishing, with potential for `try_claim` in future optimizations for zero-copy.
 /// - Monitors the available window to respect Aeron's flow control, preventing buffer overruns.
+// ss[related distributed.subscribe-publish]
 async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     mut actor: C,
     rx: SteadyStreamRxBundle<StreamEgress, GIRTH>,
@@ -301,14 +310,17 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 /// It exercises the publishing logic under controlled conditions, ensuring reliability and performance.
 #[cfg(test)]
 pub(crate) mod aeron_publish_bundle_tests {
+    // ss[related distributed.subscribe-publish]
     use super::*;
     use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
     use crate::distributed::aqueduct_stream::StreamEgress;
 
     /// Number of items to send in tests; increase for extended load testing.
+    // ss[related distributed.subscribe-publish]
     pub const TEST_ITEMS: usize = 200_000_000;
 
     /// Base stream ID for test publications.
+    // ss[related distributed.subscribe-publish]
     pub const STREAM_ID: i32 = 11;
     /// Term buffer size in MB; 64MB targets high message rates (e.g., 12M messages/sec).
     pub const _TERM_MB: i32 = 64;
@@ -316,6 +328,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     // tune SO_RCVBUF/SO_SNDBUF and check loopback queue length (e.g., `ip link set lo txqueuelen 10000`).
 
     #[test]
+    // ss[verify distributed.subscribe-publish]
     fn test_publish_state_init() {
         let state = AeronPublishSteadyState::default();
         assert!(state.pub_reg_id.is_empty());
@@ -326,6 +339,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     ///
     /// Sends batches of test data to the stream, simulating a producer.
     #[allow(deprecated)]
+    // ss[related distributed.subscribe-publish]
     pub async fn mock_sender_run<const GIRTH: usize>(
         context: SteadyActorShadow,
         tx: SteadyStreamTxBundle<StreamEgress, GIRTH>,
@@ -336,6 +350,7 @@ pub(crate) mod aeron_publish_bundle_tests {
         let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
         let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
 
+        // ss[related distributed.subscribe-publish]
         const BATCH_SIZE: usize = 5000;
         let items: [StreamEgress; BATCH_SIZE] = [StreamEgress { length: 8 }; BATCH_SIZE];
         let mut data: [[u8; 8]; BATCH_SIZE] = [data1; BATCH_SIZE];
@@ -379,6 +394,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     ///
     /// Consumes messages from the stream, simulating a consumer.
     #[allow(deprecated)]
+    // ss[related distributed.subscribe-publish]
     pub async fn mock_receiver_run<const GIRTH: usize>(
         context: SteadyActorShadow,
         rx: SteadyStreamRxBundle<StreamIngress, GIRTH>,
@@ -389,6 +405,7 @@ pub(crate) mod aeron_publish_bundle_tests {
         let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
         let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
 
+        // ss[related distributed.subscribe-publish]
         const LEN: usize = 100_000;
 
         let mut received_count = 0;

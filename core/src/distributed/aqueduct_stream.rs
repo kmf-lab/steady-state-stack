@@ -3,56 +3,71 @@
 //! going into `aeron_publish` and N streams as a const array coming from
 //! `aeron_subscribe`.
 
+// ss[related distributed.aqueduct-stream]
 use crate::core_tx::TxCore;
 use crate::{channel_builder::ChannelBuilder, Rx, SteadyActor, Tx};
 use ahash::AHashMap;
+// ss[related distributed.aqueduct-stream]
 use async_ringbuf::wrap::AsyncWrap;
 use async_ringbuf::AsyncRb;
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
+// ss[related distributed.aqueduct-stream]
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::storage::Heap;
+// ss[related distributed.aqueduct-stream]
 use ringbuf::traits::{Observer, Split};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
+// ss[related distributed.aqueduct-stream]
 use std::num::NonZero;
 use std::ops::Mul;
 use std::sync::Arc;
+// ss[related distributed.aqueduct-stream]
 use std::time::{Duration, Instant};
 use futures_timer::Delay;
 use futures_util::select;
+// ss[related distributed.aqueduct-stream]
 use crate::core_rx::RxCore;
 use crate::monitor::ChannelMetaData;
 use crate::steady_rx::RxMetaDataProvider;
+// ss[related distributed.aqueduct-stream]
 use crate::steady_tx::TxMetaDataProvider;
 use crate::core_exec;
 use futures::future::FutureExt; // For .fuse()
+// ss[related distributed.aqueduct-stream]
 use futures::pin_mut;
 use log::{error, trace};
 // For pin_mut!
 
 /// Type alias for the identifier used in Aeron, typically a 32-bit integer for stream or session IDs.
+// ss[related distributed.aqueduct-stream]
 pub type IdType = i32;
 
 /// Type alias for an array of fixed size (GIRTH) containing thread-safe transmitters (Tx) for lazy-initialized streams.
+// ss[related distributed.aqueduct-stream]
 pub type LazySteadyStreamTxBundle<T, const GIRTH: usize> = [LazyStreamTx<T>; GIRTH];
 
 /// Type alias for an array of fixed size (GIRTH) containing thread-safe receivers (Rx) for lazy-initialized streams.
+// ss[related distributed.aqueduct-stream]
 pub type LazySteadyStreamRxBundle<T, const GIRTH: usize> = [LazyStreamRx<T>; GIRTH];
 
 /// Trait for cloning a bundle of lazy-initialized transmitter streams, triggering channel initialization if needed.
+// ss[related distributed.aqueduct-stream]
 pub trait LazySteadyStreamTxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Creates a new bundle of thread-safe transmitters by cloning the lazy-initialized channels and initializing them if not already done.
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH>;
 }
 
 /// Trait for cloning a bundle of lazy-initialized receiver streams, triggering channel initialization if needed.
+// ss[related distributed.aqueduct-stream]
 pub trait LazySteadyStreamRxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Creates a new bundle of thread-safe receivers by cloning the lazy-initialized channels and initializing them if not already done.
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH>;
 }
 
 /// Implementation of cloning for a bundle of lazy-initialized transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, GIRTH> for LazySteadyStreamTxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH> {
         let tx_clones: Vec<SteadyStreamTx<T>> = self.iter().map(|l| l.clone()).collect();
@@ -66,6 +81,7 @@ impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, 
 }
 
 /// Implementation of cloning for a bundle of lazy-initialized receiver streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamRxBundleClone<T, GIRTH> for LazySteadyStreamRxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH> {
         let rx_clones: Vec<SteadyStreamRx<T>> = self.iter().map(|l| l.clone()).collect();
@@ -79,29 +95,36 @@ impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamRxBundleClone<T, 
 }
 
 /// Type alias for a thread-safe, fixed-size array of receiver streams wrapped in an Arc.
+// ss[related distributed.aqueduct-stream]
 pub type SteadyStreamRxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamRx<T>; GIRTH]>;
 
 /// Type alias for a thread-safe, fixed-size array of transmitter streams wrapped in an Arc.
+// ss[related distributed.aqueduct-stream]
 pub type SteadyStreamTxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamTx<T>; GIRTH]>;
 
 /// Trait providing methods for interacting with a bundle of receiver streams.
+// ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamRxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Acquires locks for all receivers in the bundle, returning a future that resolves when all locks are obtained.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>>;
 
     /// Retrieves metadata for the control channels of all receivers in the bundle.
+    // ss[related distributed.aqueduct-stream]
     fn control_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
 
     /// Retrieves metadata for the payload channels of all receivers in the bundle.
+    // ss[related distributed.aqueduct-stream]
     fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
 }
 
 /// Implementation of receiver bundle operations for a thread-safe array of receiver streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn control_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|steady_stream| steady_stream as &dyn RxMetaDataProvider)
@@ -110,6 +133,7 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
             .expect("Internal Error")
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn payload_meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|steady_stream| {
@@ -125,23 +149,28 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 }
 
 /// Trait providing methods for interacting with a bundle of transmitter streams.
+// ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamTxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Acquires locks for all transmitters in the bundle, returning a future that resolves when all locks are obtained.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>>;
 
     /// Retrieves metadata for the control channels of all transmitters in the bundle.
+    // ss[related distributed.aqueduct-stream]
     fn control_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
 
     /// Retrieves metadata for the payload channels of all transmitters in the bundle.
+    // ss[related distributed.aqueduct-stream]
     fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH];
 }
 
 /// Implementation of transmitter bundle operations for a thread-safe array of transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn control_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|steady_stream| steady_stream as &dyn TxMetaDataProvider)
@@ -150,6 +179,7 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRT
             .expect("Internal Error")
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn payload_meta_data(&self) -> [&dyn TxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|steady_stream| {
@@ -169,30 +199,37 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRT
 /////////////////////////////////
 
 /// Type alias for a vector of locked transmitter stream guards.
+// ss[related distributed.aqueduct-stream]
 pub type StreamTxBundle<'a, T> = Vec<MutexGuard<'a, StreamTx<T>>>;
 
 /// Type alias for a vector of locked receiver stream guards.
+// ss[related distributed.aqueduct-stream]
 pub type StreamRxBundle<'a, T> = Vec<MutexGuard<'a, StreamRx<T>>>;
 
 /// Trait for managing a bundle of transmitter channels during runtime.
+// ss[related distributed.aqueduct-stream]
 pub trait StreamTxBundleTrait {
     /// Marks all channels in the bundle as closed, signaling that no further data will be sent.
     fn mark_closed(&mut self) -> bool;
 }
 
 /// Trait for inspecting the state of a bundle of receiver channels during runtime.
+// ss[related distributed.aqueduct-stream]
 pub trait StreamRxBundleTrait {
     /// Checks if all channels in the bundle are closed and have no remaining data.
     fn is_closed_and_empty(&mut self) -> bool;
 
     /// Checks if all channels in the bundle are closed.
+    // ss[related distributed.aqueduct-stream]
     fn is_closed(&mut self) -> bool;
 
     /// Checks if all channels in the bundle have no remaining data.
+    // ss[related distributed.aqueduct-stream]
     fn is_empty(&mut self) -> bool;
 }
 
 /// Implementation of transmitter bundle operations for a vector of locked transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
     fn mark_closed(&mut self) -> bool {
         if self.is_empty() {
@@ -208,15 +245,18 @@ impl<T: StreamControlItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
 }
 
 /// Implementation of receiver bundle operations for a vector of locked receiver streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamRxBundleTrait for StreamRxBundle<'_, T> {
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn is_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_empty())
     }
@@ -225,19 +265,23 @@ impl<T: StreamControlItem> StreamRxBundleTrait for StreamRxBundle<'_, T> {
 //////////////////////////////
 
 /// Trait for items that can be transmitted or received over a stream, providing metadata and construction methods.
+// ss[related distributed.aqueduct-stream]
 pub trait StreamControlItem: Copy + Send + Sync + 'static {
     /// Creates a new instance for testing purposes with the specified length.
     fn testing_new(length: i32) -> Self;
 
     /// Returns the length of the item in bytes.
+    // ss[related distributed.aqueduct-stream]
     fn length(&self) -> i32;
 
     /// Constructs a new stream item from a defragmentation entry.
+    // ss[related distributed.aqueduct-stream]
     fn from_defrag(defrag_entry: &Defrag<Self>) -> Self;
 }
 
 /// Represents an incoming stream fragment, typically part of a multi-part message, with metadata for session and timing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// ss[related distributed.aqueduct-stream]
 pub struct StreamIngress {
     /// Length of the fragment in bytes.
     pub length: i32,
@@ -250,6 +294,7 @@ pub struct StreamIngress {
 }
 
 /// Implementation of default values for incoming stream fragments.
+// ss[related distributed.aqueduct-stream]
 impl Default for StreamIngress {
     fn default() -> Self {
         let now = Instant::now();
@@ -263,10 +308,12 @@ impl Default for StreamIngress {
 }
 
 /// Methods for creating and manipulating incoming stream fragments.
+// ss[related distributed.aqueduct-stream]
 impl StreamIngress {
     /// Creates a new incoming stream fragment with the specified parameters.
     ///
     /// Panics if the length is negative.
+    // ss[related distributed.aqueduct-stream]
     pub fn new(length: i32, session_id: i32, arrival: Instant, finished: Instant) -> Self {
         assert!(length >= 0, "Fragment length cannot be negative");
         StreamIngress {
@@ -278,22 +325,26 @@ impl StreamIngress {
     }
 
     /// Creates a new fragment and returns it with an owned byte buffer.
+    // ss[related distributed.aqueduct-stream]
     pub fn by_box(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, Box<[u8]>) {
         (StreamIngress::new(p0.len() as i32, session_id, arrival, finished), p0.into())
     }
 
     /// Creates a new fragment and returns it with a reference to the input byte slice.
+    // ss[related distributed.aqueduct-stream]
     pub fn by_ref(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, &[u8]) {
         (StreamIngress::new(p0.len() as i32, session_id, arrival, finished), p0)
     }
 
     /// Alias for `by_ref`, creating a new fragment with a reference to the input byte slice.
+    // ss[related distributed.aqueduct-stream]
     pub fn build(session_id: i32, arrival: Instant, finished: Instant, p0: &[u8]) -> (StreamIngress, &[u8]) {
         StreamIngress::by_ref(session_id, arrival, finished, p0)
     }
 }
 
 /// Implementation of stream control item functionality for incoming fragments.
+// ss[related distributed.aqueduct-stream]
 impl StreamControlItem for StreamIngress {
     fn testing_new(length: i32) -> Self {
         StreamIngress {
@@ -304,10 +355,12 @@ impl StreamControlItem for StreamIngress {
         }
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn length(&self) -> i32 {
         self.length
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
         StreamIngress {
             length: defrag_entry.running_length as i32,
@@ -320,12 +373,14 @@ impl StreamControlItem for StreamIngress {
 
 /// Represents an outgoing stream message, typically a single-part message with length metadata.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+// ss[related distributed.aqueduct-stream]
 pub struct StreamEgress {
     /// Length of the message in bytes.
     pub(crate) length: i32,
 }
 
 /// Methods for creating and manipulating outgoing stream messages.
+// ss[related distributed.aqueduct-stream]
 impl StreamEgress {
     /// Creates a new outgoing stream message and returns it with an owned byte buffer.
     pub fn build(p0: &[u8]) -> (StreamEgress, Box<[u8]>) {
@@ -333,11 +388,13 @@ impl StreamEgress {
     }
 
     /// Creates a new outgoing stream message and returns it with an owned byte buffer.
+    // ss[related distributed.aqueduct-stream]
     pub fn by_box(p0: &[u8]) -> (StreamEgress, Box<[u8]>) {
         (StreamEgress::new(p0.len() as i32), p0.into())
     }
 
     /// Creates a new outgoing stream message and returns it with a reference to the input byte slice.
+    // ss[related distributed.aqueduct-stream]
     pub fn by_ref(p0: &[u8]) -> (StreamEgress, &[u8]) {
         (StreamEgress::new(p0.len() as i32), p0)
     }
@@ -345,6 +402,7 @@ impl StreamEgress {
     /// Creates a new outgoing stream message with the specified length.
     ///
     /// Panics if the length is negative.
+    // ss[related distributed.aqueduct-stream]
     pub fn new(length: i32) -> Self {
         assert!(length >= 0, "Message length cannot be negative");
         StreamEgress { length }
@@ -352,21 +410,25 @@ impl StreamEgress {
 }
 
 /// Implementation of stream control item functionality for outgoing messages.
+// ss[related distributed.aqueduct-stream]
 impl StreamControlItem for StreamEgress {
     fn testing_new(length: i32) -> Self {
         StreamEgress { length }
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn length(&self) -> i32 {
         self.length
     }
 
+    // ss[related distributed.aqueduct-stream]
     fn from_defrag(defrag_entry: &Defrag<Self>) -> Self {
         StreamEgress::new(defrag_entry.running_length as i32)
     }
 }
 
 /// Metadata for receiver stream channels, providing introspection for control and payload channels.
+// ss[related distributed.aqueduct-stream]
 pub struct StreamRxMetaData {
     /// Metadata for the control channel.
     pub control: RxChannelMetaDataWrapper,
@@ -376,12 +438,14 @@ pub struct StreamRxMetaData {
 
 /// Wrapper for receiver channel metadata, providing access to channel information.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub struct RxChannelMetaDataWrapper {
     /// The underlying channel metadata, wrapped in an Arc for thread-safe sharing.
     pub(crate) meta_data: Arc<ChannelMetaData>,
 }
 
 /// Implementation of metadata provider for receiver channel wrappers.
+// ss[related distributed.aqueduct-stream]
 impl RxMetaDataProvider for RxChannelMetaDataWrapper {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.meta_data)
@@ -390,12 +454,14 @@ impl RxMetaDataProvider for RxChannelMetaDataWrapper {
 
 /// Wrapper for transmitter channel metadata, providing access to channel information.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub struct TxChannelMetaDataWrapper {
     /// The underlying channel metadata, wrapped in an Arc for thread-safe sharing.
     pub(crate) meta_data: Arc<ChannelMetaData>,
 }
 
 /// Implementation of metadata provider for transmitter channel wrappers.
+// ss[related distributed.aqueduct-stream]
 impl TxMetaDataProvider for TxChannelMetaDataWrapper {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.meta_data)
@@ -403,12 +469,15 @@ impl TxMetaDataProvider for TxChannelMetaDataWrapper {
 }
 
 /// Constant defining the bitmask for rate collector indexing.
+// ss[related distributed.aqueduct-stream]
 pub const RATE_COLLECTOR_MASK: usize = 31;
 
 /// Constant defining the length of the rate collector array.
+// ss[related distributed.aqueduct-stream]
 pub const RATE_COLLECTOR_LEN: usize = 32;
 
 /// Represents a transmitter for a steady stream, managing control and payload channels with defragmentation support.
+// ss[related distributed.aqueduct-stream]
 pub struct StreamTx<T: StreamControlItem> {
     /// The control channel for sending stream metadata.
     pub(crate) control_channel: Tx<T>,
@@ -439,6 +508,7 @@ pub struct StreamTx<T: StreamControlItem> {
 }
 
 /// Implementation of debug formatting for transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> Debug for StreamTx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamTx")
@@ -451,6 +521,7 @@ impl<T: StreamControlItem> Debug for StreamTx<T> {
 }
 
 /// Represents a defragmentation entry for reassembling stream messages.
+// ss[related distributed.aqueduct-stream]
 pub struct Defrag<T: StreamControlItem> {
     /// The time when the first fragment was received, if available.
     pub(crate) arrival: Option<Instant>,
@@ -474,6 +545,7 @@ pub struct Defrag<T: StreamControlItem> {
 }
 
 /// Methods for managing defragmentation entries.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> Defrag<T> {
     /// Creates a new defragmentation entry with the specified session ID and buffer capacities.
     pub fn new(session_id: i32, items: usize, bytes: usize) -> Self {
@@ -488,6 +560,7 @@ impl<T: StreamControlItem> Defrag<T> {
     }
 
     /// Ensures the defragmentation buffers have sufficient capacity for additional items and bytes.
+    // ss[related distributed.aqueduct-stream]
     pub fn ensure_additional_capacity(&mut self, items: usize, bytes: usize) {
         // Handle ringbuffer_bytes
         let bytes_vacant = self.ringbuffer_bytes.0.vacant_len();
@@ -544,6 +617,7 @@ impl<T: StreamControlItem> Defrag<T> {
 }
 
 /// Methods for managing transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamTx<T> {
     /// Creates a new transmitter stream with the specified control and payload channels.
     pub fn new(control_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
@@ -565,28 +639,33 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Sets the cached values for available message and byte capacities.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn set_stored_vacant_values(&mut self, messages: i32, total_bytes_for_messages: i32) {
         self.stored_vacant_values = (messages, total_bytes_for_messages);
     }
 
     /// Retrieves the cached values for available message and byte capacities.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn get_stored_vacant_values(&mut self) -> (i32, i32) {
         self.stored_vacant_values
     }
 
     /// Records input data rate statistics, including duration, message count, and byte count.
+    // ss[related distributed.aqueduct-stream]
     pub fn store_input_data_rate(&mut self, duration: Duration, messages: u32, total_bytes_for_messages: u32) {
         self.input_rate_index += 1;
         self.input_rate_collector[RATE_COLLECTOR_MASK & self.input_rate_index] = (duration, messages, total_bytes_for_messages);
     }
 
     /// Records output data rate statistics, including duration, message count, and byte count.
+    // ss[related distributed.aqueduct-stream]
     pub fn store_output_data_rate(&mut self, duration: Duration, messages: u32, total_bytes_for_messages: u32) {
         self.output_rate_index += 1;
         self.output_rate_collector[RATE_COLLECTOR_MASK & self.input_rate_index] = (duration, messages, total_bytes_for_messages);
     }
 
     /// Estimates the minimum and maximum durations for processing pending data based on available capacity and historical rates.
+    // ss[related distributed.aqueduct-stream]
     pub fn next_poll_bounds(&self) -> (Duration, Duration) {
         if let Some(d) = self.fastest_byte_processing_duration() {
             let waiting_bytes = self.payload_channel.capacity() - self.payload_channel.shared_vacant_units();
@@ -604,6 +683,7 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Calculates the fastest byte processing duration based on historical output rate data.
+    // ss[related distributed.aqueduct-stream]
     pub fn fastest_byte_processing_duration(&self) -> Option<Duration> {
         // Iterate over output_rate_collector to find the highest rate (bytes per second)
         let max_rate = self
@@ -630,6 +710,7 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Estimates the mean and standard deviation of the duration between message arrivals based on input rate data.
+    // ss[related distributed.aqueduct-stream]
     pub fn guess_duration_between_arrivals(&self) -> (Duration, Duration) {
         let mut sum: f64 = 0.0; // Sum of average times (in seconds)
         let mut sum_sq: f64 = 0.0; // Sum of squared average times
@@ -662,6 +743,7 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Marks both control and payload channels as closed, signaling no further data will be sent.
+    // ss[related distributed.aqueduct-stream]
     pub fn mark_closed(&mut self) -> bool {
         self.control_channel.mark_closed();
         self.payload_channel.mark_closed();
@@ -669,11 +751,13 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Returns the capacities of the control and payload channels.
+    // ss[related distributed.aqueduct-stream]
     pub fn capacity(&self) -> (usize, usize) {
         (self.control_channel.capacity(), self.payload_channel.capacity())
     }
 
     /// Flushes ready defragmented messages to the control and payload channels, returning the number of messages and bytes processed.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn fragment_flush_ready<C: SteadyActor>(&mut self, actor: &mut C) -> (u32, u32) {
         let mut total_messages = 0;
         let mut total_bytes = 0;
@@ -703,6 +787,7 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Calculates the minimum available capacity for defragmentation across all sessions.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn defrag_has_room_for(&mut self) -> usize {
         let items: u128 = self.control_channel.capacity() as u128;
         let bytes: u128 = self.payload_channel.capacity() as u128;
@@ -720,6 +805,7 @@ impl<T: StreamControlItem> StreamTx<T> {
     }
 
     /// Consumes a fragment of data, storing it in the defragmentation buffer for the specified session.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn fragment_consume(&mut self, session_id: i32, slice: &[u8], is_begin: bool, is_end: bool, now: Instant) {
         debug_assert!(
             slice.len() <= self.payload_channel.capacity(),
@@ -774,6 +860,7 @@ impl<T: StreamControlItem> StreamTx<T> {
 
 /// Represents a receiver for a steady stream, managing control and payload channels.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub struct StreamRx<T: StreamControlItem> {
     /// The control channel for receiving stream metadata.
     pub(crate) control_channel: Rx<T>,
@@ -784,6 +871,7 @@ pub struct StreamRx<T: StreamControlItem> {
 }
 
 /// Methods for managing receiver streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamRx<T> {
     /// Creates a new receiver stream with the specified control and payload channels.
     pub(crate) fn new(control_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
@@ -795,6 +883,7 @@ impl<T: StreamControlItem> StreamRx<T> {
     }
 
     /// Attempts to take a single message and its associated payload from the receiver.
+    // ss[related distributed.aqueduct-stream]
     pub fn try_take(&mut self) -> Option<(T, Box<[u8]>)> {
         if let Some((_done, msg)) = self.shared_try_take() {
             Some(msg)
@@ -804,26 +893,31 @@ impl<T: StreamControlItem> StreamRx<T> {
     }
 
     /// Returns the capacity of the control channel.
+    // ss[related distributed.aqueduct-stream]
     pub fn capacity(&mut self) -> usize {
         self.control_channel.capacity()
     }
 
     /// Returns the number of available units in the control and payload channels.
+    // ss[related distributed.aqueduct-stream]
     pub fn avail_units(&mut self) -> (usize, usize) {
         self.shared_avail_units()
     }
 
     /// Checks if both control and payload channels are closed.
+    // ss[related distributed.aqueduct-stream]
     pub fn is_closed(&mut self) -> bool {
         self.control_channel.is_closed() && self.payload_channel.is_closed()
     }
 
     /// Checks if both control and payload channels are empty.
+    // ss[related distributed.aqueduct-stream]
     pub fn is_empty(&mut self) -> bool {
         self.control_channel.is_empty() && self.payload_channel.is_empty()
     }
 
     /// Consumes messages from the receiver, applying a provided function to process the data up to a byte limit.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) fn consume_messages<C: SteadyActor>(
         &mut self,
         actor: &mut C,
@@ -888,6 +982,7 @@ impl<T: StreamControlItem> StreamRx<T> {
     }
 
     /// Extracts payload slices from the receiver's buffers for processing a message of the specified byte length.
+    // ss[related distributed.aqueduct-stream]
     fn extract_stream_payload_slices<'a>(
         payload1: &'a mut [u8],
         payload2: &'a mut [u8],
@@ -925,13 +1020,16 @@ impl<T: StreamControlItem> StreamRx<T> {
 }
 
 /// Type alias for a thread-safe, mutex-protected receiver stream.
+// ss[related distributed.aqueduct-stream]
 pub type SteadyStreamRx<T> = Arc<Mutex<StreamRx<T>>>;
 
 /// Type alias for a thread-safe, mutex-protected transmitter stream.
+// ss[related distributed.aqueduct-stream]
 pub type SteadyStreamTx<T> = Arc<Mutex<StreamTx<T>>>;
 
 /// A lazy-initialized wrapper for stream channels, deferring construction until first use.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub(crate) struct LazyStream<T: StreamControlItem> {
     /// The builder for the control channel, stored until the channel is constructed.
     control_builder: Mutex<Option<ChannelBuilder>>,
@@ -942,6 +1040,7 @@ pub(crate) struct LazyStream<T: StreamControlItem> {
 }
 
 /// Methods for managing lazy-initialized stream channels.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStream<T> {
     /// Creates a new lazy stream with the specified channel builders for control and payload channels.
     pub(crate) fn new(item_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> Self {
@@ -953,6 +1052,7 @@ impl<T: StreamControlItem> LazyStream<T> {
     }
 
     /// Retrieves or constructs the transmitter channel, returning a thread-safe clone.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) async fn get_tx_clone(&self) -> SteadyStreamTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
@@ -980,6 +1080,7 @@ impl<T: StreamControlItem> LazyStream<T> {
     }
 
     /// Retrieves or constructs the receiver channel, returning a thread-safe clone.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) async fn get_rx_clone(&self) -> SteadyStreamRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
@@ -1009,12 +1110,14 @@ impl<T: StreamControlItem> LazyStream<T> {
 
 /// A lazy-initialized wrapper for transmitter streams.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub struct LazyStreamTx<T: StreamControlItem> {
     /// The underlying lazy stream channel.
     lazy_channel: Arc<LazyStream<T>>,
 }
 
 /// Methods for managing lazy-initialized transmitter streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStreamTx<T> {
     /// Creates a new lazy transmitter stream from a shared lazy stream channel.
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
@@ -1022,6 +1125,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
     }
 
     /// Retrieves or constructs the underlying transmitter stream, returning a thread-safe clone.
+    // ss[related distributed.aqueduct-stream]
     pub fn clone(&self) -> SteadyStreamTx<T> {
         core_exec::block_on(self.lazy_channel.get_tx_clone())
     }
@@ -1029,6 +1133,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
     /// Sends a test frame by transmitting a payload and its metadata.
     ///
     /// Panics if the entire payload cannot be sent or if metadata sending fails.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_send_frame(&self, data: &[u8]) {
         let s = self.clone();
 
@@ -1050,6 +1155,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
     /// Sends multiple test frames with their metadata and optionally closes the channels.
     ///
     /// Panics if any payload or metadata cannot be sent.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_send_all(&self, data: Vec<(T, &[u8])>, close: bool) {
         let s = self.clone();
         let mut l = s.try_lock().expect("internal error: try_lock");
@@ -1070,6 +1176,7 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
     }
 
     /// Closes the underlying control and payload channels, signaling no further data will be sent.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_close(&self) {
         let s = self.clone();
         let mut l = s.try_lock().expect("internal error: try_lock");
@@ -1081,12 +1188,14 @@ impl<T: StreamControlItem> LazyStreamTx<T> {
 
 /// A lazy-initialized wrapper for receiver streams.
 #[derive(Debug)]
+// ss[related distributed.aqueduct-stream]
 pub struct LazyStreamRx<T: StreamControlItem> {
     /// The underlying lazy stream channel.
     lazy_channel: Arc<LazyStream<T>>,
 }
 
 /// Methods for managing lazy-initialized receiver streams.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStreamRx<T> {
     /// Creates a new lazy receiver stream from a shared lazy stream channel.
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
@@ -1094,11 +1203,13 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
     }
 
     /// Retrieves or constructs the underlying receiver stream, returning a thread-safe clone.
+    // ss[related distributed.aqueduct-stream]
     pub fn clone(&self) -> SteadyStreamRx<T> {
         core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
 
     /// Returns the number of available units in the receiver for testing purposes.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_avail_units(&self) -> usize {
         let s = self.clone();
         let mut rx = s.try_lock().expect("internal error: try_lock");
@@ -1106,6 +1217,7 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
     }
 
     /// Takes all available messages from the receiver for testing purposes.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_take_all(&self) -> Vec<(T, Box<[u8]>)> {
         let s = self.clone();
         let mut rx = s.try_lock().expect("internal error: try_lock");
@@ -1119,6 +1231,7 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
     }
 
     /// Waits for a specified number of units to become available or for a timeout, returning whether the condition was met.
+    // ss[related distributed.aqueduct-stream]
     pub fn testing_avail_wait(&self, count: usize,  timeout_duration: Duration) -> bool {
         core_exec::block_on(async {
             let s = self.clone();
@@ -1141,6 +1254,7 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
 }
 
 /// Implementation of metadata provider for receiver streams, selecting between control and payload metadata.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
@@ -1164,6 +1278,7 @@ impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
 }
 
 /// Implementation of metadata provider for transmitter streams, selecting between control and payload metadata.
+// ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
@@ -1187,13 +1302,16 @@ impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
 }
 
 #[cfg(test)]
+// ss[related distributed.aqueduct-stream]
 mod extra_stream_tests {
     use super::*;
     use std::sync::Arc;
+    // ss[related distributed.aqueduct-stream]
     use std::time::{Duration, Instant};
 
     /// Tests the behavior of extracting payload slices from receiver buffers, covering both first and second slice cases.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_extract_stream_payload_slices_behavior() {
         let mut p1 = [1u8, 2, 3];
         let mut p2 = [4u8, 5, 6, 7];
@@ -1219,6 +1337,7 @@ mod extra_stream_tests {
 
     /// Tests the initialization of defragmentation entries, verifying field values and buffer capacities.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_defrag_new_properties() {
         let items = 3;
         let bytes = 5;
@@ -1235,6 +1354,7 @@ mod extra_stream_tests {
 
     /// Tests the creation of incoming stream fragments from defragmentation entries.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_stream_session_message_new_and_from_defrag() {
         let arrival = Instant::now();
         let finish = arrival + Duration::from_secs(1);
@@ -1251,6 +1371,7 @@ mod extra_stream_tests {
 
     /// Tests the creation of incoming stream fragments for testing purposes.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_testing_new_methods() {
         let tn = StreamIngress::testing_new(9);
         assert_eq!(tn.length(), 9);
@@ -1258,6 +1379,7 @@ mod extra_stream_tests {
 
     /// Tests the relationship between rate collector constants.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_rate_collector_constants() {
         assert_eq!(RATE_COLLECTOR_LEN, 32);
         assert_eq!(RATE_COLLECTOR_MASK, 31);
@@ -1267,6 +1389,7 @@ mod extra_stream_tests {
 
     /// Tests the behavior of marking an empty transmitter bundle as closed.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_stream_tx_bundle_trait_empty() {
         type Bundle = StreamTxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
@@ -1275,6 +1398,7 @@ mod extra_stream_tests {
 
     /// Tests the state inspection methods for an empty receiver bundle.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_stream_rx_bundle_trait_empty() {
         type Bundle = StreamRxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
@@ -1285,6 +1409,7 @@ mod extra_stream_tests {
 
     /// Tests cloning an empty transmitter bundle.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_lazy_tx_bundle_clone_empty() {
         let empty: [LazyStreamTx<StreamEgress>; 0] = [];
         let cloned: SteadyStreamTxBundle<StreamEgress, 0> = empty.clone();
@@ -1294,6 +1419,7 @@ mod extra_stream_tests {
 
     /// Tests cloning an empty receiver bundle.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_lazy_rx_bundle_clone_empty() {
         let empty: [LazyStreamRx<StreamEgress>; 0] = [];
         let cloned: SteadyStreamRxBundle<StreamEgress, 0> = empty.clone();
@@ -1302,6 +1428,7 @@ mod extra_stream_tests {
 
     /// Tests the behavior of receiver bundle operations for an empty bundle.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_steady_rx_bundle_trait_empty() {
         let bundle: SteadyStreamRxBundle<StreamEgress, 0> = Arc::new([]);
         // lock() is a JoinAll over zero futures: completes immediately
@@ -1316,6 +1443,7 @@ mod extra_stream_tests {
 
     /// Tests the behavior of transmitter bundle operations for an empty bundle.
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_steady_tx_bundle_trait_empty() {
         let bundle: SteadyStreamTxBundle<StreamEgress, 0> = Arc::new([]);
         let guards: Vec<_> = core_exec::block_on(bundle.lock());
@@ -1328,6 +1456,7 @@ mod extra_stream_tests {
     }
 
     #[test]
+    // ss[verify distributed.aqueduct-stream]
     fn test_defrag_ensure_additional_capacity() {
         let mut defrag = Defrag::<StreamEgress>::new(1, 2, 2);
         defrag.ensure_additional_capacity(5, 10);

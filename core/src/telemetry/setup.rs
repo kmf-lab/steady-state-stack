@@ -1,28 +1,36 @@
+// ss[related telemetry.builtin-server]
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, Sub};
 use std::sync::Arc;
+// ss[related telemetry.builtin-server]
 use std::sync::{atomic::{AtomicU16, AtomicU64}, Mutex};
 use std::time::{Duration, Instant};
 use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
+// ss[related telemetry.builtin-server]
 use log::*;
 use num_traits::Zero;
 use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
+// ss[related telemetry.builtin-server]
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_config::*;
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
+// ss[related telemetry.builtin-server]
 use crate::monitor_telemetry::{
     DotSubtitleMailbox, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend,
     SteadyTelemetryTake,
 };
+// ss[related telemetry.builtin-server]
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::core_exec;
+// ss[related telemetry.builtin-server]
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
 use crate::core_tx::TxCore;
 
 /// Serializes env mutation for ephemeral test telemetry HTTP binds (`127.0.0.1:0`).
+// ss[related telemetry.builtin-server]
 static TEST_TELEMETRY_SERVER_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Constructs telemetry channels for the given context and metadata.
@@ -36,6 +44,7 @@ static TEST_TELEMETRY_SERVER_ENV_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// # Returns
 /// A tuple containing optional TX send, RX send, and actor send telemetry.
+// ss[related telemetry.builtin-server]
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(
     that: &SteadyActorShadow,
     rx_meta_data: Vec<Arc<ChannelMetaData>>,
@@ -139,6 +148,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 ///
 /// # Parameters
 /// - `graph`: The graph to build the telemetry for.
+// ss[related telemetry.builtin-server]
 pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     #[cfg(any(
         feature = "telemetry_server_builtin",
@@ -234,6 +244,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 // }
 
 #[cfg(feature = "core_display")]
+// ss[related telemetry.builtin-server]
 pub(crate) fn get_current_cpu() -> i32 {
     #[cfg(unix)]
     unsafe {
@@ -252,6 +263,7 @@ pub(crate) fn get_current_cpu() -> i32 {
 /// # Parameters
 /// - `this`: The local monitor to send telemetry for.
 #[inline]
+// ss[related telemetry.builtin-server]
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
     this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
@@ -470,6 +482,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
 ///
 /// # Returns
 /// THE calculated backoff value.
+// ss[related telemetry.builtin-server]
 pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_units: usize) -> u32 {
     let bits_count = (capacity as f64).log2().ceil() as u32;
     let bit_to_represent_vacant_count = 32 - (vacant_units as u32).leading_zeros();
@@ -484,6 +497,7 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 /// - `telemetry_state`: The telemetry state.
 /// - `telemetry_send_tx`: The TX send telemetry.
 /// - `telemetry_send_rx`: The RX send telemetry.
+// ss[related telemetry.builtin-server]
 pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(
     ident: ActorIdentity,
     iteration_count: u64,
@@ -548,10 +562,12 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
 }
 
 #[cfg(test)]
+// ss[related telemetry.builtin-server]
 mod tests {
     use super::*;
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_compute_scale_up_delay() {
         let capacity = 128;
 
@@ -571,13 +587,16 @@ mod tests {
         }
     }
 
+    // ss[related telemetry.builtin-server]
     use std::time::Duration;
+    // ss[related telemetry.builtin-server]
     pub struct TelemetrySetup {
         channel_meta_data: Arc<ChannelMetaData>,
         refresh_rate: Duration,
         window_size: Duration,
     }
 
+    // ss[related telemetry.builtin-server]
     impl TelemetrySetup {
         pub fn new(refresh_rate: Duration, window_size: Duration) -> Self {
             TelemetrySetup {
@@ -587,10 +606,12 @@ mod tests {
             }
         }
 
+        // ss[related telemetry.builtin-server]
         pub fn configure(&self) {
             // Configuration logic here
         }
 
+        // ss[related telemetry.builtin-server]
         pub fn validate(&self) -> Result<(), String> {
             if self.refresh_rate.as_secs() == 0 {
                 return Err("Refresh rate must be greater than zero.".to_string());
@@ -603,6 +624,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_new_telemetry_setup() {
         let refresh_rate = Duration::from_secs(1);
         let window_size = Duration::from_secs(10);
@@ -614,6 +636,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_validate_success() {
         let refresh_rate = Duration::from_secs(1);
         let window_size = Duration::from_secs(10);
@@ -623,6 +646,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_validate_failure_refresh_rate() {
         let refresh_rate = Duration::from_secs(0);
         let window_size = Duration::from_secs(10);
@@ -634,6 +658,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_validate_failure_window_size() {
         let refresh_rate = Duration::from_secs(1);
         let window_size = Duration::from_secs(0);
@@ -645,6 +670,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify telemetry.builtin-server]
     fn test_configure() {
         let refresh_rate = Duration::from_secs(1);
         let window_size = Duration::from_secs(10);

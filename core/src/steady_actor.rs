@@ -1,34 +1,45 @@
+// ss[related actor.run-dispatcher]
 use futures::FutureExt;
 use std::future::Future;
 use std::time::{Duration, Instant};
+// ss[related actor.run-dispatcher]
 use futures_util::future::{FusedFuture};
 use std::any::Any;
 use std::error::Error;
+// ss[related actor.run-dispatcher]
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+// ss[related actor.run-dispatcher]
 use aeron::aeron::Aeron;
 use futures_util::select;
 use log::*;
+// ss[related actor.run-dispatcher]
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{RxMetaData, TxMetaData};
+// ss[related actor.run-dispatcher]
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::steady_rx::{RxDone, RxMetaDataProvider};
 use crate::steady_tx::{TxDone, TxMetaDataProvider};
+// ss[related actor.run-dispatcher]
 use crate::telemetry::setup;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
+// ss[related actor.run-dispatcher]
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
+// ss[related actor.run-dispatcher]
 use crate::loop_driver::pin_mut;
 use crate::simulate_edge::IntoSimRunner;
 use futures_util::lock::Mutex;
+// ss[related actor.run-dispatcher]
 use std::sync::atomic::AtomicBool;
 
 /// Next scan start for round-robin index waits. `last_stored` is the last returned lane index,
 /// or `usize::MAX` before any successful return.
+// ss[impl actor.index-wait-round-robin]
 pub(crate) fn next_index_wait_start(last_stored: usize, len: usize) -> usize {
     if len == 0 || last_stored >= len {
         0
@@ -39,6 +50,8 @@ pub(crate) fn next_index_wait_start(last_stored: usize, len: usize) -> usize {
 
 /// If `candidate` equals the last returned lane index, prefer another lane `j != candidate` that
 /// is already ready (`is_ready(j)`), scanned in RR order from `start`.
+// ss[impl actor.index-wait-repeat-bypass]
+// ss[impl bundle.index-wait-repeat-bypass]
 pub(crate) fn index_wait_avoid_repeat_lane<F>(len: usize, start: usize, last_stored: usize, candidate: usize, mut is_ready: F) -> usize
 where
     F: FnMut(usize) -> bool,
@@ -64,6 +77,8 @@ where
 }
 
 /// Awaits until `shared_avail_items_count() >= required` or the channel closes without enough data.
+// ss[impl philosophy.pull-reactor]
+// ss[impl actor.wait-avail-vacant]
 pub(crate) async fn wait_rx_until_avail_items_ready<R: RxCore>(rx: &mut R, required: usize) -> bool {
     if required == 0 {
         return true;
@@ -77,6 +92,7 @@ pub(crate) async fn wait_rx_until_avail_items_ready<R: RxCore>(rx: &mut R, requi
 }
 
 /// Awaits until `shared_vacant_units_for(required)` holds or the tx wait reports failure.
+// ss[impl actor.wait-avail-vacant]
 pub(crate) async fn wait_tx_until_vacant_satisfied<T: TxCore>(tx: &mut T, required: T::MsgSize) -> bool {
     while !tx.shared_vacant_units_for(required) {
         if !tx.shared_wait_shutdown_or_vacant_units(required).await {
@@ -87,6 +103,7 @@ pub(crate) async fn wait_tx_until_vacant_satisfied<T: TxCore>(tx: &mut T, requir
 }
 
 /// Waits until both RX availability and TX vacancy hold for this lane (same index on both sides).
+// ss[impl actor.index-wait-paired]
 pub(crate) async fn wait_paired_lane_ready<R: RxCore, T: TxCore>(
     rx: &mut R,
     tx: &mut T,
@@ -131,10 +148,12 @@ pub(crate) async fn wait_paired_lane_ready<R: RxCore, T: TxCore>(
 /// Builds a `Vec<usize>` of length `len` filled with `per_lane` for [`SteadyActor::wait_avail_index`](crate::steady_actor::SteadyActor::wait_avail_index)
 /// and [`SteadyActor::wait_vacant_index`](crate::steady_actor::SteadyActor::wait_vacant_index) when `MsgSize` is `usize`.
 /// If `len == 0`, returns an empty vector (matches an empty bundle).
+// ss[impl bundle.uniform-counts-helper]
 pub fn index_wait_counts_uniform_usize(per_lane: usize, len: usize) -> Vec<usize> {
     vec![per_lane; len]
 }
 
+// ss[related actor.run-dispatcher]
 impl SteadyActorShadow {
     /// Converts this actor shadow into a local monitor (spotlight) instance.
     ///
@@ -144,6 +163,8 @@ impl SteadyActorShadow {
     ///
     /// # Returns
     /// A new `SteadyActorSpotlight` instance with the provided metadata.
+    // ss[impl actor.run-dispatcher]
+    // ss[impl actor.shadow-spotlight]
     pub fn into_spotlight<const RX_LEN: usize, const TX_LEN: usize>(
         self,
         rx_mons: [&dyn RxMetaDataProvider; RX_LEN],
@@ -174,6 +195,7 @@ impl SteadyActorShadow {
     ///
     /// # Returns
     /// A new `SteadyActorSpotlight` instance.
+    // ss[related actor.run-dispatcher]
     pub fn into_spotlight_internal<const RX_LEN: usize, const TX_LEN: usize>(
         self,
         rx_mons: [RxMetaData; RX_LEN],
@@ -244,6 +266,7 @@ impl SteadyActorShadow {
 
 /// Represents the outcome of a send operation on a channel.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// ss[related actor.run-dispatcher]
 pub enum SendOutcome<X> {
     /// The send operation was successful.
     #[default]
@@ -256,6 +279,7 @@ pub enum SendOutcome<X> {
     Closed(X),
 }
 
+// ss[related actor.run-dispatcher]
 impl<X> SendOutcome<X> {
     /// Returns `true` if the send operation succeeded.
     pub fn is_sent(&self) -> bool {
@@ -267,6 +291,7 @@ impl<X> SendOutcome<X> {
 
     /// Panics with the provided message if the outcome is not `Success`.
     /// Returns `true` if the outcome is `Success`.
+    // ss[related actor.run-dispatcher]
     pub fn expect(self, msg: &'static str) -> bool {
         match self {
             SendOutcome::Success => true,
@@ -276,9 +301,11 @@ impl<X> SendOutcome<X> {
 }
 
 /// Struct returned for the monitoring and result fetching of the long running blocking call.
+// ss[related actor.run-dispatcher]
 pub struct BlockingCallFuture<T>(pub Pin<Box<dyn FusedFuture<Output = T> + Send>>);
 
 impl<T> std::future::Future for BlockingCallFuture<T> {
+    // ss[related actor.run-dispatcher]
     type Output = T;
 
     fn poll(
@@ -290,6 +317,7 @@ impl<T> std::future::Future for BlockingCallFuture<T> {
     }
 }
 
+// ss[related actor.run-dispatcher]
 impl<T> FusedFuture for BlockingCallFuture<T> {
     fn is_terminated(&self) -> bool {
         self.0.is_terminated()
@@ -297,9 +325,11 @@ impl<T> FusedFuture for BlockingCallFuture<T> {
 }
 
 
+// ss[related actor.run-dispatcher]
 impl<T> BlockingCallFuture<T> {
       
     /// Check if this long running blocking thread is done
+    // ss[related actor.run-dispatcher]
     pub fn is_terminated(&self) -> bool {
         self.0.as_ref().is_terminated()
     }
@@ -309,6 +339,7 @@ impl<T> BlockingCallFuture<T> {
     /// or `None` if the timeout elapses.
     /// Keep calling this as needed to "wait" for the blocking call to complete.
     /// Does NOT stop early on shutdown so use caution in large durations
+    // ss[related actor.run-dispatcher]
     pub async fn fetch(&mut self, timeout: Duration) -> Option<T> {
         let fut = &mut self.0;
         pin_mut!(fut); // Pin the mutable reference for polling in select!.
@@ -334,16 +365,21 @@ impl<T> BlockingCallFuture<T> {
 /// This trait is designed for single-threaded actor execution, and assumes
 /// that all types passed between actors are `Send + Sync`.
 #[allow(async_fn_in_trait)]
+// ss[related actor.run-dispatcher]
 pub trait SteadyActor {
     /// Returns the frame rate in milliseconds for this actor.
     fn frame_rate_ms(&self) -> u64;
 
     /// which regeneration is this actor. starts at zero and goes up each time the actor is restarted.
+    // ss[related actor.run-dispatcher]
     fn regeneration(&self) -> u32;
 
     /// Returns an optional reference to the Aeron media driver.
+    // ss[related actor.run-dispatcher]
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>>;
 
+    // ss[impl philosophy.structural-hierarchy]
+    // ss[impl testing.stage-manager-integration]
     /// Runs the actor in a simulated environment with the provided simulation runners.
     async fn simulated_behavior(
         self,
@@ -351,43 +387,53 @@ pub trait SteadyActor {
     ) -> Result<(), Box<dyn Error>>;
 
     /// Sets the log level for the entire application.
+    // ss[related actor.run-dispatcher]
     fn loglevel(&self, loglevel: crate::LogLevel);
 
     /// Relays telemetry data to endpoints, throttling if called too frequently.
     ///
     /// Returns `true` if data was sent, `false` if throttled.
+    // ss[related actor.run-dispatcher]
     fn relay_stats_smartly(&mut self) -> bool;
 
     /// Relays all collected telemetry data to endpoints, ignoring throttling.
     ///
     /// May overload telemetry if called too frequently.
+    // ss[related actor.run-dispatcher]
     fn relay_stats(&mut self);
 
     /// Periodically relays telemetry data at the specified interval.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
+    // ss[related actor.run-dispatcher]
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool;
 
     /// Checks if the actor's liveliness state matches any of the provided states.
     ///
     /// Returns `true` if a match is found.
+    // ss[related actor.run-dispatcher]
     fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool;
 
     /// Returns `true` if the actor is in the "building" liveliness state.
+    // ss[related actor.run-dispatcher]
     fn is_liveliness_building(&self) -> bool;
 
     /// Returns `true` if the actor is in the "running" liveliness state.
+    // ss[related actor.run-dispatcher]
     fn is_liveliness_running(&self) -> bool;
 
     /// Returns `true` if the actor is in the "stop requested" liveliness state.
+    // ss[related actor.run-dispatcher]
     fn is_liveliness_stop_requested(&self) -> bool;
 
     /// Returns an optional shutdown timeout duration if the actor is shutting down.
+    // ss[related actor.run-dispatcher]
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration>;
 
     /// Flushes defragmented messages from the given transmitters and defrag state.
     ///
     /// Returns a tuple of (messages flushed, fragments flushed, optional error code).
+    // ss[related actor.run-dispatcher]
     fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
         item: &mut Tx<S>,
@@ -398,19 +444,23 @@ pub trait SteadyActor {
     /// Waits for a consistent periodic interval between calls, accounting for work time.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
+    // ss[related actor.run-dispatcher]
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
     /// Waits for a fixed interval between calls, regardless of work time.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
+    // ss[related actor.run-dispatcher]
     async fn wait_timeout(&self, timeout: Duration) -> bool;
 
 
     /// Asynchronously waits for the specified duration.
+    // ss[related actor.run-dispatcher]
     async fn wait(&self, duration: Duration);
 
     /// Waits until at least `count` units are available in the receiver.
     ///
     /// Returns `true` if available, `false` if interrupted.
+    // ss[related actor.run-dispatcher]
     async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool;
 
     /// Waits until at least `count` units are available in a bundle of receivers.
@@ -419,6 +469,7 @@ pub trait SteadyActor {
     ///
     /// ⚠️ **Deprecated**: Prefer [`wait_avail_index`](SteadyActor::wait_avail_index) which
     /// returns the index of the first ready channel.
+    // ss[impl bundle.deprecated-bundle-waits]
     #[deprecated(since = "0.3.0", note = "Use wait_avail_index instead, which returns the index of the first ready channel")]
     async fn wait_avail_bundle<T: RxCore>(
         &self,
@@ -450,6 +501,7 @@ pub trait SteadyActor {
     /// `None` (same as an empty bundle), not to be confused with shutdown alone.
     ///
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
+    // ss[related actor.run-dispatcher]
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -459,6 +511,7 @@ pub trait SteadyActor {
     /// Waits for a future to complete or until shutdown is signaled.
     ///
     /// Returns `true` if the future completed, `false` if shutdown occurred.
+    // ss[related actor.run-dispatcher]
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync;
@@ -466,6 +519,7 @@ pub trait SteadyActor {
     /// Waits until at least `count` vacant units are available in the transmitter.
     ///
     /// Returns `true` if available, `false` if interrupted.
+    // ss[related actor.run-dispatcher]
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
 
     /// Waits until at least `count` vacant units are available in a bundle of transmitters.
@@ -475,6 +529,7 @@ pub trait SteadyActor {
     /// ⚠️ **Deprecated**: Prefer [`wait_vacant_index`](SteadyActor::wait_vacant_index) which
     /// returns the index of the first ready channel.
     #[deprecated(since = "0.3.0", note = "Use wait_vacant_index instead, which returns the index of the first ready channel")]
+    // ss[related actor.run-dispatcher]
     async fn wait_vacant_bundle<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -502,6 +557,7 @@ pub trait SteadyActor {
     /// use the telemetry-dirty yield path; it blocks until vacancy or shutdown.
     ///
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
+    // ss[related actor.run-dispatcher]
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -525,6 +581,7 @@ pub trait SteadyActor {
     ///
     /// **Telemetry:** Like other index waits, this does not use the [`wait_avail`](SteadyActor::wait_avail) /
     /// [`wait_vacant`](SteadyActor::wait_vacant) telemetry-dirty yield path.
+    // ss[related actor.run-dispatcher]
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -536,9 +593,11 @@ pub trait SteadyActor {
     /// Waits until a shutdown signal is received.
     ///
     /// Always returns `true`.
+    // ss[related actor.run-dispatcher]
     async fn wait_shutdown(&self) -> bool;
 
     /// Peeks at the next available slice in the receiver without advancing the index.
+    // ss[related actor.run-dispatcher]
     fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where
         T: RxCore;
@@ -546,11 +605,13 @@ pub trait SteadyActor {
     /// Advances the take index in the receiver by the specified count.
     ///
     /// Returns the result of the operation.
+    // ss[related actor.run-dispatcher]
     fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone;
 
     /// Takes a slice from the receiver into the provided target buffer.
     ///
     /// Returns the result of the operation.
+    // ss[related actor.run-dispatcher]
     fn take_slice<T: RxCore>(
         &mut self,
         this: &mut T,
@@ -562,6 +623,7 @@ pub trait SteadyActor {
     /// Sends a slice from the provided source buffer into the transmitter.
     ///
     /// Returns the result of the operation.
+    // ss[related actor.run-dispatcher]
     fn send_slice<T: TxCore>(
         &mut self,
         this: &mut T,
@@ -571,6 +633,7 @@ pub trait SteadyActor {
         T::MsgOut: Copy;
 
     /// Peeks at the next available slice in the transmitter for writing.
+    // ss[related actor.run-dispatcher]
     fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore;
@@ -578,14 +641,17 @@ pub trait SteadyActor {
     /// Advances the send index in the transmitter by the specified count.
     ///
     /// Returns the result of the operation.
+    // ss[related actor.run-dispatcher]
     fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone;
 
     /// Attempts to peek at the next message in the receiver without removing it.
     ///
     /// Returns `Some(&T)` if a message is available, or `None` if empty.
+    // ss[related actor.run-dispatcher]
     fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T>;
 
     /// Returns an iterator over the messages currently in the receiver without removing them.
+    // ss[related actor.run-dispatcher]
     fn try_peek_iter<'a, T>(
         &'a self,
         this: &'a mut Rx<T>,
@@ -594,14 +660,17 @@ pub trait SteadyActor {
     /// Checks if the receiver is currently empty.
     ///
     /// Returns `true` if empty, `false` otherwise.
+    // ss[related actor.run-dispatcher]
     fn is_empty<T: RxCore>(&self, this: &mut T) -> bool;
 
     /// Returns the number of available units in the receiver.
+    // ss[related actor.run-dispatcher]
     fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize;
 
     /// Asynchronously peeks at the next available message in the receiver without removing it.
     ///
     /// Returns `Some` if a message is available, or `None` if the channel is closed.
+    // ss[related actor.run-dispatcher]
     async fn peek_async<'a, T: RxCore>(
         &'a self,
         this: &'a mut T,
@@ -610,6 +679,7 @@ pub trait SteadyActor {
     /// Sends messages from an iterator to the transmitter until it is full.
     ///
     /// Returns the number of messages successfully sent.
+    // ss[related actor.run-dispatcher]
     fn send_iter_until_full<T, I: Iterator<Item = T>>(
         &mut self,
         this: &mut Tx<T>,
@@ -619,6 +689,7 @@ pub trait SteadyActor {
     /// Attempts to send a single message to the transmitter without blocking.
     ///
     /// Returns a `SendOutcome` indicating success or blockage.
+    // ss[related actor.run-dispatcher]
     fn try_send<T: TxCore>(
         &mut self,
         this: &mut T,
@@ -628,20 +699,25 @@ pub trait SteadyActor {
     /// Attempts to take a message from the receiver if available.
     ///
     /// Returns `Some(T)` if a message is available, or `None` if empty.
+    // ss[related actor.run-dispatcher]
     fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut>;
 
     /// Checks if the transmitter is currently full.
     ///
     /// Returns `true` if full, `false` otherwise.
+    // ss[related actor.run-dispatcher]
     fn is_full<T: TxCore>(&self, this: &mut T) -> bool;
 
     /// Returns the number of vacant units in the transmitter.
+    // ss[related actor.run-dispatcher]
     fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize;
 
     /// Asynchronously waits until the transmitter is empty.
+    // ss[related actor.run-dispatcher]
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool;
 
     /// Takes all available messages from the receiver into an iterator.
+    // ss[related actor.run-dispatcher]
     fn take_into_iter<'a, T: Sync + Send>(
         &mut self,
         this: &'a mut Rx<T>,
@@ -650,11 +726,13 @@ pub trait SteadyActor {
     /// Calls an asynchronous function and monitors its execution for telemetry.
     ///
     /// Returns the output of the function, or `None` if interrupted.
+    // ss[related actor.run-dispatcher]
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where
         F: Future;
 
    ///
+   // ss[related actor.run-dispatcher]
    fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -663,6 +741,7 @@ pub trait SteadyActor {
     /// Sends a message to the transmitter asynchronously, waiting if necessary for space.
     ///
     /// Returns a `SendOutcome` indicating success or blockage.
+    // ss[related actor.run-dispatcher]
     async fn send_async<T: TxCore>(
         &mut self,
         this: &mut T,
@@ -673,11 +752,13 @@ pub trait SteadyActor {
     /// Asynchronously takes a message from the receiver when available.
     ///
     /// Returns `Some(T)` if a message is available, or `None` if empty or shutdown.
+    // ss[related actor.run-dispatcher]
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T>;
 
     /// Asynchronously takes a message from the receiver, with a timeout.
     ///
     /// Returns `Some(T)` if a message is available, or `None` if empty, timed out, or shutdown.
+    // ss[related actor.run-dispatcher]
     async fn take_async_with_timeout<T>(
         &mut self,
         this: &mut Rx<T>,
@@ -687,30 +768,37 @@ pub trait SteadyActor {
     /// Yields execution to allow other actors to run.
     ///
     /// Returns immediately if there is nothing scheduled.
+    // ss[related actor.run-dispatcher]
     async fn yield_now(&self);
 
     /// Returns a side channel responder if one is available.
+    // ss[related actor.run-dispatcher]
     fn sidechannel_responder(&self) -> Option<SideChannelResponder>;
 
     /// Checks if the actor is running, using a custom accept function.
     ///
     /// Returns `true` if running, `false` otherwise.
+    // ss[related actor.run-dispatcher]
     fn is_running<F: FnMut() -> bool>(&mut self, accept_fn: F) -> bool;
 
     /// Requests a shutdown for the actor, awaiting any required barriers.
+    // ss[related actor.run-dispatcher]
     async fn request_shutdown(&mut self);
 
     /// Retrieves the actor's arguments, cast to the specified type.
     ///
     /// Returns `Some(&A)` if available and of the correct type, or `None`.
+    // ss[related actor.run-dispatcher]
     fn args<A: Any>(&self) -> Option<&A>;
 
     /// Retrieves the actor's identity.
+    // ss[related actor.run-dispatcher]
     fn identity(&self) -> ActorIdentity;
 
     /// Checks if the current message in the receiver is a showstopper (peeked too many times).
     ///
     /// Returns `true` if the message has been peeked at least `threshold` times.
+    // ss[related actor.run-dispatcher]
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool;
     /// Sets or clears an optional single-line subtitle in the **Graphviz DOT** node label only,
     /// rendered directly under the actor name (before rolling stats). Pass `None` to remove the
@@ -719,15 +807,18 @@ pub trait SteadyActor {
     ///
     /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
     /// features or `frame_rate_ms` is zero).
+    // ss[related actor.run-dispatcher]
     fn set_dot_display_text(&mut self, text: Option<&str>);
 }
 
 #[cfg(test)]
+// ss[related actor.run-dispatcher]
 mod steady_actor_tests {
     use super::*;
     use crate::core_exec;
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_send_outcome_methods() {
         let success: SendOutcome<i32> = SendOutcome::Success;
         assert!(success.is_sent());
@@ -745,12 +836,14 @@ mod steady_actor_tests {
 
     #[test]
     #[should_panic(expected = "test panic")]
+    // ss[verify actor.run-dispatcher]
     fn test_send_outcome_expect_panic() {
         let blocked = SendOutcome::Blocked(42);
         blocked.expect("test panic");
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_blocking_call_future_terminated() {
         let (tx, rx) = crate::oneshot::channel::<i32>();
         let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
@@ -762,6 +855,7 @@ mod steady_actor_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_blocking_call_future_fetch_timeout() {
         let (_tx, rx) = crate::oneshot::channel::<i32>();
         let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
@@ -770,6 +864,7 @@ mod steady_actor_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_blocking_call_future_fetch_ready() {
         let (tx, rx) = crate::oneshot::channel::<i32>();
         let mut fut = BlockingCallFuture(Box::pin(async move { rx.await.expect("") }.fuse()));
@@ -778,17 +873,20 @@ mod steady_actor_tests {
         assert_eq!(res, Some(42));
     }
 
+    // ss[related actor.run-dispatcher]
     mod index_wait_pure {
         use super::super::{
             index_wait_avoid_repeat_lane, index_wait_counts_uniform_usize, next_index_wait_start,
         };
 
+        // ss[verify actor.index-wait-round-robin]
         #[test]
         fn next_index_wait_start_empty_len() {
             assert_eq!(next_index_wait_start(0, 0), 0);
             assert_eq!(next_index_wait_start(5, 0), 0);
         }
 
+        // ss[verify actor.index-wait-round-robin]
         #[test]
         fn next_index_wait_start_wrap_and_invalid_last() {
             assert_eq!(next_index_wait_start(usize::MAX, 3), 0);
@@ -797,6 +895,8 @@ mod steady_actor_tests {
             assert_eq!(next_index_wait_start(3, 4), 0);
         }
 
+        // ss[verify actor.index-wait-repeat-bypass]
+        // ss[verify bundle.index-wait-repeat-bypass]
         #[test]
         fn index_wait_avoid_repeat_lane_cases() {
             assert_eq!(index_wait_avoid_repeat_lane(1, 0, 0, 0, |_| false), 0);
@@ -806,6 +906,7 @@ mod steady_actor_tests {
             assert_eq!(index_wait_avoid_repeat_lane(4, 0, 1, 1, |_| false), 1);
         }
 
+        // ss[verify bundle.uniform-counts-helper]
         #[test]
         fn index_wait_counts_uniform_usize_cases() {
             assert!(index_wait_counts_uniform_usize(7, 0).is_empty());

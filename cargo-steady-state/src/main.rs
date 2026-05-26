@@ -1,24 +1,30 @@
 //! # cargo-steady-state - A tool to generate Rust code from a DOT file
 //! Dot files can be written by hand or with the help of LLMs. This generates a new empty project.
 
+// ss[related tooling.cargo-driver-strings]
 mod extract_details;
 mod args;
 mod templates;
 
+// ss[related tooling.cargo-driver-strings]
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+// ss[related tooling.cargo-driver-strings]
 use std::str::FromStr;
 use askama::Template;
 use dot_parser::{ast, canonical};
+// ss[related tooling.cargo-driver-strings]
 use flexi_logger::{Logger, LogSpecBuilder};
 #[allow(unused_imports)]
 use log::*;
+// ss[related tooling.cargo-driver-strings]
 use clap::*;
 use crate::args::Args;
 use crate::templates::*;
 
 #[derive(Default)]
+// ss[related tooling.cargo-driver-strings]
 struct ProjectModel {
     pub(crate) name: String,
     pub(crate) actors: Vec<Actor>,
@@ -27,6 +33,7 @@ struct ProjectModel {
 
 //TODO: code gen organize by flow. take actors and create them from inputs down to outputs???
 
+// ss[related tooling.cargo-driver-strings]
 fn main() {
     let opt = Args::parse();
 
@@ -44,6 +51,7 @@ fn main() {
     process_dot_file(&opt.dotfile, &opt.name);
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn process_dot_file(dotfile: &str, name: &str) {
     match ast::Graph::from_file(dotfile) {
         Ok(ast) => {
@@ -106,6 +114,7 @@ fn process_dot_file(dotfile: &str, name: &str) {
 
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn write_project_files(pm: ProjectModel
                        , folder_base: &Path
                        , folder_src: &Path
@@ -203,6 +212,10 @@ fn write_project_files(pm: ProjectModel
 }
 
 
+// ss[impl tooling.cargo-driver-strings]
+// ss[impl tooling.cargo-bundle-codegen]
+// ss[impl tooling.cargo-capacity-driven]
+// ss[impl tooling.cargo-index-wait-deferred]
 fn build_driver_block(actor: &Actor) -> String {
 
     let mut at_least_every: Option<String> = None;
@@ -331,6 +344,7 @@ fn build_driver_block(actor: &Actor) -> String {
     full_driver_block
 }
 
+// ss[impl tooling.cargo-percent-parse]
 fn extract_percent(text: String) -> Option<f32> {
     //if text ends with % we then pars the leading int and divide by 100
     if text.ends_with('%') {
@@ -359,6 +373,7 @@ fn extract_percent(text: String) -> Option<f32> {
 
 }
 
+// ss[related tooling.cargo-driver-strings]
 const DISABLE:bool = false;
 
 fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
@@ -389,6 +404,7 @@ fn monitor_defs(direction: &str, channels: &[Vec<Channel>]) -> Vec<String> {
   result
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn derive_block(copy: bool) -> &'static str {
     match copy {
         true =>  "#[derive(Default,Clone,Debug,Eq,PartialEq,Copy)]\n",
@@ -398,15 +414,19 @@ fn derive_block(copy: bool) -> &'static str {
 
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod code_generation_tests {
     use std::{env, fs};
     use std::path::PathBuf;
+    // ss[related tooling.cargo-driver-strings]
     use std::process::{Command, Stdio};
     use std::str::FromStr;
     use flexi_logger::{Logger, LogSpecBuilder};
+    // ss[related tooling.cargo-driver-strings]
     use log::{error, info, trace, LevelFilter};
     use crate::process_dot_file;
 
+    // ss[related tooling.cargo-driver-strings]
     fn build_and_parse(test_name: &str, graph_dot: &str, clean: bool, show_logs: bool, live_test: bool) {
         if live_test { //this will require open ports and drive access so we do not always run it
 
@@ -488,6 +508,7 @@ mod code_generation_tests {
         }
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn do_cargo_cache_install(test_name: &str) {
     let build_me = PathBuf::from(test_name);
     let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
@@ -522,6 +543,7 @@ fn do_cargo_cache_install(test_name: &str) {
     }
 }
     #[cfg(not(windows))]
+    // ss[related tooling.cargo-driver-strings]
     fn do_cargo_build_of_generated_code(test_name: &str) {
         use colored::*;
 
@@ -563,6 +585,7 @@ fn do_cargo_cache_install(test_name: &str) {
     }
 
     #[cfg(not(windows))]
+    // ss[related tooling.cargo-driver-strings]
     fn do_cargo_test_of_generated_code(test_name: &str) {
         let build_me = PathBuf::from(test_name);
         let build_me_absolute = env::current_dir().unwrap().join(build_me).canonicalize().unwrap();
@@ -583,6 +606,7 @@ fn do_cargo_cache_install(test_name: &str) {
     }
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_fizz_buzz_project() {
 
@@ -628,6 +652,7 @@ digraph PRODUCT {
     }
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_unnamed1_project() {
 
@@ -659,6 +684,7 @@ digraph PRODUCT {
 
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_pbft_project() {
         let g = r#"
@@ -700,6 +726,7 @@ digraph PBFTDemo {
     }
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_circle_project() {
         let g = r#"
@@ -726,13 +753,16 @@ digraph PBFTDemo {
 }
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod more_tests {
     use super::*;
     use crate::templates::{Actor, ActorDriver, Channel};
+    // ss[related tooling.cargo-driver-strings]
     use std::time::Duration;
     use std::cell::RefCell;
     use crate::extract_percent;
 
+    // ss[verify tooling.cargo-percent-parse]
     #[test]
     fn test_extract_percent() {
         assert_eq!(extract_percent("50%".to_string()), Some(0.5));
@@ -747,6 +777,8 @@ mod more_tests {
         assert_eq!(extract_percent("110%".to_string()), Some(1.1));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-capacity-driven]
     #[test]
     fn test_build_driver_block_with_at_least_every() {
         let actor = Actor {
@@ -763,6 +795,7 @@ mod more_tests {
         assert!(result.contains(expected));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_build_driver_block_with_event_driven() {
         let actor = Actor {
@@ -796,8 +829,9 @@ mod more_tests {
         assert!(result.contains(expected));
     }
 
-    #[test]
-    fn test_build_driver_block_event_driven_rx_bundle_emits_wait_avail_bundle() {
+    // ss[verify tooling.cargo-driver-strings]
+#[test]
+        fn test_build_driver_block_event_driven_rx_bundle_emits_wait_avail_bundle() {
         let ch = |bundle_index: isize| Channel {
             name: "mux_in".to_string(),
             from_mod: "src".to_string(),
@@ -831,6 +865,8 @@ mod more_tests {
         assert!(result.contains("wait_avail_bundle(&mut mux_in_rx,4,1)"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_build_driver_block_capacity_driven_tx_bundle_emits_wait_vacant_bundle() {
         let ch = |bundle_index: isize| Channel {
@@ -866,6 +902,8 @@ mod more_tests {
         assert!(result.contains("wait_vacant_bundle(&mut mux_out_tx,2,2)"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-capacity-driven]
     #[test]
     fn test_build_driver_block_at_most_every_only_wraps_await_for_all() {
         let actor = Actor {
@@ -882,6 +920,8 @@ mod more_tests {
         assert!(!result.contains("await_for_all_or_proceed_upon!("));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-capacity-driven]
     #[test]
     fn test_build_driver_block_other_driver_emits_call_async() {
         let actor = Actor {
@@ -900,6 +940,8 @@ mod more_tests {
         assert!(result.contains("actor.call_async(drain_io())"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-capacity-driven]
     #[test]
     fn test_build_driver_block_at_least_every_plus_event_uses_or_proceed_upon() {
         let actor = Actor {
@@ -939,6 +981,8 @@ mod more_tests {
         assert!(result.contains("wait_avail(&mut in_a_rx,2)"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-percent-parse]
     #[test]
     fn test_build_driver_block_event_driven_percent_of_bundle_girth() {
         let ch = |bundle_index: isize| Channel {
@@ -975,6 +1019,8 @@ mod more_tests {
         assert!(result.contains("wait_avail_bundle(&mut mux_in_rx,1,2)"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-percent-parse]
     #[test]
     fn test_build_driver_block_capacity_driven_percent_of_bundle_girth() {
         let ch = |bundle_index: isize| Channel {
@@ -1011,6 +1057,7 @@ mod more_tests {
         assert!(result.contains("wait_vacant_bundle(&mut mux_out_tx,3,1)"));
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_monitor_defs_single_channel() {
         let channels = vec![vec![Channel {
@@ -1036,6 +1083,7 @@ mod more_tests {
         assert_eq!(result, vec!["test_channel_rx".to_string()]);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_monitor_defs_bundled_channels() {
         let channels = vec![
@@ -1084,6 +1132,45 @@ mod more_tests {
         assert_eq!(result, vec!["test_channel_tx[0]".to_string(), "test_channel_tx[1]".to_string()]);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
+    // ss[verify tooling.cargo-index-wait-deferred]
+    #[test]
+    fn test_build_driver_block_does_not_emit_index_waits() {
+        let actor = Actor {
+            display_name: "Idx".to_string(),
+            display_suffix: None,
+            mod_name: "idx".to_string(),
+            rx_channels: vec![vec![Channel {
+                name: "in_a".to_string(),
+                from_mod: "src".to_string(),
+                to_mod: "idx".to_string(),
+                batch_read: 1,
+                batch_write: 1,
+                message_type: "Msg".to_string(),
+                peek: false,
+                copy: false,
+                capacity: 8,
+                bundle_index: -1,
+                rebundle_index: -1,
+                bundle_struct_mod: "".to_string(),
+                to_node: "Idx".to_string(),
+                from_node: "Src".to_string(),
+                bundle_on_from: RefCell::new(true),
+                is_unbundled: true,
+            }]],
+            tx_channels: vec![],
+            driver: vec![ActorDriver::EventDriven(vec![vec![
+                "in_a".to_string(),
+                "1".to_string(),
+            ]])],
+        };
+        let result = build_driver_block(&actor);
+        assert!(!result.contains("wait_avail_index"));
+        assert!(!result.contains("wait_vacant_index"));
+        assert!(result.contains("wait_avail("));
+    }
+
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_derive_block() {
         let copy_true = derive_block(true);

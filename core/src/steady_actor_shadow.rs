@@ -1,42 +1,55 @@
+// ss[related actor.shadow-spotlight]
 use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
+// ss[related actor.shadow-spotlight]
 use async_lock::Barrier;
 use parking_lot::RwLock;
 use std::any::Any;
+// ss[related actor.shadow-spotlight]
 use std::error::Error;
 use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
+// ss[related actor.shadow-spotlight]
 use futures_util::stream::FuturesUnordered;
 use std::future::Future;
 use futures_util::{select, FutureExt, StreamExt};
+// ss[related actor.shadow-spotlight]
 use futures_timer::Delay;
 use futures_util::future::{FusedFuture, Shared};
 use aeron::aeron::Aeron;
+// ss[related actor.shadow-spotlight]
 use log::warn;
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
+// ss[related actor.shadow-spotlight]
 use ringbuf::producer::Producer;
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
 use crate::actor_builder::NodeTxRx;
+// ss[related actor.shadow-spotlight]
 use crate::steady_actor::{
     index_wait_avoid_repeat_lane, next_index_wait_start, wait_paired_lane_ready, wait_rx_until_avail_items_ready,
     wait_tx_until_vacant_satisfied, BlockingCallFuture, SendOutcome,
 };
+// ss[related actor.shadow-spotlight]
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::steady_actor_core::SteadyActorCore;
+// ss[related actor.shadow-spotlight]
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor::{ActorMetaData};
+// ss[related actor.shadow-spotlight]
 use crate::simulate_edge::{IntoSimRunner};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
+// ss[related actor.shadow-spotlight]
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::logging_util::steady_logger;
 use crate::core_exec;
 
 /// Context for managing actor state and interactions within the Steady framework.
+// ss[related actor.shadow-spotlight]
 pub struct SteadyActorShadow {
     pub(crate) ident: ActorIdentity,
     pub(crate) regeneration: u32,
@@ -57,6 +70,7 @@ pub struct SteadyActorShadow {
     pub(crate) show_thread_info: bool,
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     pub(crate) aeron_init_for_tests: bool,
+    // ss[impl actor.internal-behavior-logic]
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
     pub(crate) index_wait_last_avail: AtomicUsize,
@@ -64,6 +78,7 @@ pub struct SteadyActorShadow {
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
 }
 
+// ss[related actor.shadow-spotlight]
 impl Clone for SteadyActorShadow {
     fn clone(&self) -> Self {
         SteadyActorShadow {
@@ -94,52 +109,64 @@ impl Clone for SteadyActorShadow {
     }
 }
 
+// ss[related actor.shadow-spotlight]
 impl SteadyActor for SteadyActorShadow {
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
+    // ss[related actor.shadow-spotlight]
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
         rx.is_showstopper(threshold)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<SteadyActorShadow>>) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<SteadyActorShadow>(&mut self, sims).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
     }
 
+    // ss[related actor.shadow-spotlight]
     fn relay_stats_smartly(&mut self) -> bool {
         false
     }
 
+    // ss[related actor.shadow-spotlight]
     fn relay_stats(&mut self) {}
 
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
         self.wait_periodic(duration_rate).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_in_state(target)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_building(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::Building])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_running(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::Running])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_stop_requested(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::StopRequested])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> {
         let liveliness = self.runtime_state.read();
         liveliness.shutdown_timeout
@@ -147,6 +174,7 @@ impl SteadyActor for SteadyActorShadow {
 
     // ── RxCore wrappers (delegate to SteadyActorCore) ─────────────────────
 
+    // ss[related actor.shadow-spotlight]
     fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where
         T: RxCore,
@@ -154,89 +182,109 @@ impl SteadyActor for SteadyActorShadow {
         SteadyActorCore::peek_slice(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
     where T::MsgItem: Copy {
         SteadyActorCore::take_slice(this, slice)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone {
         SteadyActorCore::advance_take_index(this, count)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T> {
         SteadyActorCore::try_peek(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
         SteadyActorCore::try_peek_iter(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
         SteadyActorCore::is_empty(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize {
         SteadyActorCore::avail_units(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>> {
         this.shared_peek_async_timeout(None).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
         SteadyActorCore::try_take(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         this.shared_take_async().await
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, timeout: Duration) -> Option<T> {
         this.shared_take_async_timeout(Some(timeout)).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn take_into_iter<'a, T: Sync + Send>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a {
         SteadyActorCore::take_into_iter(this)
     }
 
     // ── TxCore wrappers (delegate to SteadyActorCore) ─────────────────────
 
+    // ss[related actor.shadow-spotlight]
     fn send_slice<T: TxCore>(&mut self, this: &mut T, slice: T::SliceSource<'_>) -> TxDone
     where T::MsgOut: Copy {
         SteadyActorCore::send_slice(this, slice)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where T: TxCore {
         SteadyActorCore::poke_slice(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone {
         SteadyActorCore::advance_send_index(this, count)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
         SteadyActorCore::send_iter_until_full(this, iter)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
         SteadyActorCore::try_send(this, msg)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
         SteadyActorCore::is_full(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
         SteadyActorCore::vacant_units(this)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
         this.shared_send_async(a, self.ident, saturation).await
     }
 
     // ── Stream defrag (kept inline, not delegated to core) ────────────────
 
+    // ss[related actor.shadow-spotlight]
     fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
         out_item: &mut Tx<S>,
@@ -307,6 +355,7 @@ impl SteadyActor for SteadyActorShadow {
 
     // ── Wait helpers (delegate to SteadyActorCore) ────────────────────────
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
@@ -332,6 +381,7 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_timeout(&self, timeout: Duration) -> bool {
         let delay = Delay::new(timeout);
         select! {
@@ -340,14 +390,17 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait(&self, duration: Duration) {
         SteadyActorCore::wait(&self.oneshot_shutdown, duration).await
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn yield_now(&self) {
         SteadyActorCore::yield_now().await
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync,
@@ -355,6 +408,7 @@ impl SteadyActor for SteadyActorShadow {
         SteadyActorCore::wait_future_void(&self.oneshot_shutdown, fut).await
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where
         F: Future,
@@ -367,6 +421,7 @@ impl SteadyActor for SteadyActorShadow {
         .await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -375,6 +430,7 @@ impl SteadyActor for SteadyActorShadow {
         BlockingCallFuture(core_exec::spawn_blocking(f))
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
         select! {
             _ = self.oneshot_shutdown.clone().fuse() => false,
@@ -382,6 +438,7 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool {
         select! {
             _ = self.oneshot_shutdown.clone().fuse() => false,
@@ -389,10 +446,12 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_shutdown(&self) -> bool {
         SteadyActorCore::wait_shutdown(&self.oneshot_shutdown).await
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
         select! {
             _ = self.oneshot_shutdown.clone().fuse() => false,
@@ -403,6 +462,7 @@ impl SteadyActor for SteadyActorShadow {
     // ── Bundle waits ──────────────────────────────────────────────────────
 
     #[allow(deprecated)]
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant_bundle<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -444,6 +504,7 @@ impl SteadyActor for SteadyActorShadow {
     }
 
     #[allow(deprecated)]
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail_bundle<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -484,6 +545,9 @@ impl SteadyActor for SteadyActorShadow {
         result.load(Ordering::Relaxed)
     }
 
+    // ss[impl actor.index-wait-truthful]
+    // ss[impl actor.index-wait-round-robin]
+    // ss[impl actor.index-wait-repeat-bypass]
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -560,6 +624,7 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -631,6 +696,8 @@ impl SteadyActor for SteadyActorShadow {
         }
     }
 
+    // ss[impl actor.index-wait-paired]
+    // ss[impl bundle.index-wait-shutdown-none]
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -737,15 +804,18 @@ impl SteadyActor for SteadyActorShadow {
 
     // ── Misc ──────────────────────────────────────────────────────────────
 
+    // ss[related actor.shadow-spotlight]
     fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
         self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_running(self.ident, &mut accept_fn).unwrap_or(true)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn request_shutdown(&mut self) {
         if let Some(barrier) = &self.shutdown_barrier {
             barrier.clone().wait().await;
@@ -753,33 +823,40 @@ impl SteadyActor for SteadyActorShadow {
         SteadyActorCore::request_shutdown(&self.runtime_state).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn identity(&self) -> ActorIdentity {
         self.ident
     }
 
+    // ss[related actor.shadow-spotlight]
     fn set_dot_display_text(&mut self, _text: Option<&str>) {}
 
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }
 
+    // ss[related actor.shadow-spotlight]
     fn regeneration(&self) -> u32 {
         self.regeneration
     }
 }
 
 #[cfg(test)]
+// ss[related actor.shadow-spotlight]
 mod tests {
     use super::*;
     use crate::*;
+    // ss[related actor.shadow-spotlight]
     use std::time::Duration;
     use futures_util::future::ready;
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_wait_periodic() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -788,6 +865,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_wait_timeout() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -798,6 +876,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_yield_now() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -805,6 +884,8 @@ mod tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.index-wait-truthful]
+    // ss[verify bundle.index-wait-readiness]
     async fn test_shadow_wait_avail_index_direct() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<i32>();
@@ -821,7 +902,31 @@ mod tests {
         assert_eq!(idx, Some(0));
     }
 
+    // ss[verify actor.index-wait-paired]
+    #[async_std::test]
+    async fn test_shadow_wait_avail_vacant_index_direct() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(4).build_channel::<i32>();
+        if let Some(mut t) = tx.clone().try_lock() {
+            let _ = t.shared_try_send(7);
+        }
+        let shadow = graph.new_testing_test_monitor("paired");
+        let tx_arc = tx.clone();
+        let rx_arc = rx.clone();
+        let idx = {
+            let mut rx_bundle = RxBundle::new();
+            let mut tx_bundle = TxBundle::new();
+            rx_bundle.push(rx_arc.try_lock().expect("rx"));
+            tx_bundle.push(tx_arc.try_lock().expect("tx"));
+            shadow
+                .wait_avail_vacant_index(&mut rx_bundle, &mut tx_bundle, &[1], &[1])
+                .await
+        };
+        assert_eq!(idx, Some(0));
+    }
+
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_relay_stats_smartly() {
         let graph = GraphBuilder::for_testing().build(());
         let mut shadow = graph.new_testing_test_monitor("test");
@@ -830,6 +935,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_relay_stats_periodic() {
         let graph = GraphBuilder::for_testing().build(());
         let mut shadow = graph.new_testing_test_monitor("test");
@@ -838,6 +944,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_loglevel() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -847,6 +954,7 @@ mod tests {
 
     #[test]
     #[ignore] //not everywhere, still need more research.
+    // ss[verify actor.shadow-spotlight]
     fn test_aeron_media_driver_none() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -854,6 +962,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_is_showstopper() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -878,6 +987,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_wait() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -889,6 +999,7 @@ mod tests {
     // ── Additional tests for increased coverage ──────────────────────────
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_call_async() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -898,6 +1009,7 @@ mod tests {
 
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_wait_empty() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -909,6 +1021,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_wait_future_void() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -918,12 +1031,14 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_sidechannel_responder_none() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
         assert!(shadow.sidechannel_responder().is_none());
     }
 
+    // ss[verify bundle.index-wait-shutdown-none]
     #[test]
     fn test_request_shutdown() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -934,6 +1049,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_args() {
         let graph = GraphBuilder::for_testing().build(42i32);
         let shadow = graph.new_testing_test_monitor("test");
@@ -943,6 +1059,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_identity() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test_monitor");
@@ -952,6 +1069,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_frame_rate_ms() {
         let mut graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -960,6 +1078,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_regeneration() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -967,6 +1086,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_liveliness_states() {
         let mut graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -981,6 +1101,7 @@ mod tests {
         assert!(shadow.is_liveliness_stop_requested());
     }
 
+    // ss[verify bundle.index-wait-shutdown-none]
     #[test]
     fn test_liveliness_shutdown_timeout() {
         let graph = GraphBuilder::for_testing().build(());
@@ -990,6 +1111,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_flush_defrag_empty() {
         // Create a shadow and call flush_defrag_messages with an empty defrag
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1014,6 +1136,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_try_send_and_try_take() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -1031,6 +1154,7 @@ mod tests {
         assert_eq!(take_result, Some(42));
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_is_full_and_vacant_units() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1054,6 +1178,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_send_iter_until_full() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
@@ -1066,6 +1191,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_is_empty_and_avail_units() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -1089,6 +1215,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_call_blocking() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -1098,6 +1225,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_take_async_with_timeout() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -1110,6 +1238,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_take_into_iter() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();
@@ -1122,6 +1251,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_peek_async() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<u8>();

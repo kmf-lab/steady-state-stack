@@ -14,22 +14,27 @@
 //!   the **receiver** side in rx metadata and on the **sender** side in tx metadata only—never both on the same side
 //!   for two different actors sharing one id.
 
+// ss[related telemetry.dot-export]
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+// ss[related telemetry.dot-export]
 use log::{debug, trace, warn};
 
 use crate::ActorName;
+// ss[related telemetry.dot-export]
 use crate::channel_stats::ChannelStatsComputer;
 use crate::dot::DotState;
 use crate::dot::EDGE_PEN_WIDTH;
+// ss[related telemetry.dot-export]
 use crate::dot_edge::Edge;
 use crate::monitor::ChannelMetaData;
 use crate::graph_liveliness::ActorIdentity;
 
 /// Declares which endpoint of a unified edge this actor is registering (see module docs).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+// ss[related telemetry.dot-export]
 pub(crate) enum ChannelEdgeRole {
     /// `channels_in`: this actor receives on the channel; sets `DotState.edges[id].to`.
     SetsEdgeTo,
@@ -37,6 +42,7 @@ pub(crate) enum ChannelEdgeRole {
     SetsEdgeFrom,
 }
 
+// ss[related telemetry.dot-export]
 impl ChannelEdgeRole {
     #[inline]
     fn as_endpoint_str(self) -> &'static str {
@@ -49,6 +55,7 @@ impl ChannelEdgeRole {
 
 /// Describes a second actor claiming the same directional endpoint for one channel id.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+// ss[related telemetry.dot-export]
 pub(crate) struct EdgeEndpointConflict {
     /// [`ChannelMetaData::id`](crate::monitor::ChannelMetaData) telemetry key.
     pub channel_id: usize,
@@ -65,6 +72,7 @@ pub(crate) struct EdgeEndpointConflict {
 }
 
 #[inline]
+// ss[related telemetry.dot-export]
 fn placeholder_edge_slot() -> Edge {
     Edge {
         id: usize::MAX,
@@ -87,12 +95,15 @@ fn placeholder_edge_slot() -> Edge {
 /// Test-only: incremented whenever [`log_endpoint_conflict`] runs—so cargo-mutants cannot replace
 /// that helper with `()` without breaking tests (guarded by [`EDGE_DIAG_MUTEX`] in assertions).
 #[cfg(test)]
+// ss[related telemetry.dot-export]
 pub(crate) static EDGE_CONFLICT_DIAG_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(test)]
+// ss[related telemetry.dot-export]
 static EDGE_DIAG_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[inline]
+// ss[related telemetry.dot-export]
 fn log_endpoint_conflict(details: &EdgeEndpointConflict, meta: &Arc<ChannelMetaData>) {
     #[cfg(test)]
     EDGE_CONFLICT_DIAG_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -158,6 +169,7 @@ fn log_endpoint_conflict(details: &EdgeEndpointConflict, meta: &Arc<ChannelMetaD
 /// Behaviour matches the legacy `define_unified_edges` per-item loop—including continuing with label merge and stats refresh
 /// after a conflict warning.
 #[must_use]
+// ss[impl telemetry.dot-export]
 pub(crate) fn apply_channel_to_unified_edges(
     local_state: &mut DotState,
     actor_ident: ActorIdentity,
@@ -248,10 +260,12 @@ pub(crate) fn apply_channel_to_unified_edges(
 }
 
 #[cfg(test)]
+// ss[related telemetry.dot-export]
 mod unify_edge_tests {
     use super::*;
     use crate::graph_liveliness::ActorIdentity;
 
+    // ss[related telemetry.dot-export]
     fn meta_with_id_labels(id: usize, labels: Vec<&'static str>) -> Arc<ChannelMetaData> {
         Arc::new(ChannelMetaData {
             id,
@@ -290,6 +304,7 @@ mod unify_edge_tests {
         })
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn duplicate_to_second_actor_returns_conflict() {
         let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
@@ -319,6 +334,7 @@ mod unify_edge_tests {
         );
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn duplicate_from_second_actor_returns_conflict() {
         let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
@@ -341,6 +357,7 @@ mod unify_edge_tests {
         assert_eq!(d.new_claimant_actor_numeric_id, b.id);
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn same_claimant_twice_no_conflict_for_to() {
         let mut st = DotState::default();
@@ -356,6 +373,7 @@ mod unify_edge_tests {
         assert!(st.edges[12].from.is_none());
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn two_node_wire_initializes_stats_once() {
         let mut st = DotState::default();
@@ -382,6 +400,7 @@ mod unify_edge_tests {
         assert_eq!(st.edges[20].stats_computer.capacity, cap_before);
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn sparse_channel_ids_leave_placeholders_between() {
         let mut st = DotState::default();
@@ -407,6 +426,7 @@ mod unify_edge_tests {
         assert_eq!(st.edges[1000].id, 1000);
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn label_union_from_two_metas_same_id() {
         let mut st = DotState::default();
@@ -421,6 +441,7 @@ mod unify_edge_tests {
         assert_eq!(st.edges[30].ctl_labels, vec!["a", "b", "c"]);
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn self_loop_same_actor_in_and_out_same_id() {
         let mut st = DotState::default();
@@ -434,6 +455,7 @@ mod unify_edge_tests {
         assert_eq!(e.stats_computer.capacity, 8);
     }
 
+    // ss[verify telemetry.dot-export]
     #[test]
     fn default_channel_meta_id_zero_collides_by_design() {
         let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");

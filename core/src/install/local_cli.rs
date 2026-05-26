@@ -1,20 +1,24 @@
 //! This module provides functionality to build and install local CLI tools for the SteadyState project.
 //! It supports both system-wide and user-local installations and allows for custom installation directories.
 
+// ss[related platform.executor-features]
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+// ss[related platform.executor-features]
 use log::*;
 use dirs; // Ensure `dirs` crate is added to your `Cargo.toml`
 
 /// A builder for creating and installing local CLI tools.
 #[derive(Clone)]
+// ss[related platform.executor-features]
 pub struct LocalCLIBuilder {
     pub(crate) path: String,
     pub(crate) system_wide: bool,
     pub(crate) install_dir: PathBuf,
 }
 
+// ss[related platform.executor-features]
 impl LocalCLIBuilder {
     /// Creates a new `LocalCLIBuilder` instance with platform-specific installation directories.
     ///
@@ -40,6 +44,7 @@ impl LocalCLIBuilder {
     ///
     /// - On Windows, system-wide installation requires administrative privileges.
     /// - The user may need to add the installation directory to their PATH manually.
+    // ss[related platform.executor-features]
     pub fn new(path: String, system_wide: bool) -> Self {
         let install_dir = if system_wide {
             if cfg!(unix) {
@@ -87,6 +92,7 @@ impl LocalCLIBuilder {
     ///
     /// Use this only if you need a custom distribution setup. The user must ensure the directory
     /// is in the PATH if they want the CLI tool to be accessible without full path specification.
+    // ss[related platform.executor-features]
     pub fn with_custom_location(mut self, custom_install_dir: PathBuf) -> Self {
         self.system_wide = false;
         if let Ok(path_var) = env::var("PATH") {
@@ -130,6 +136,7 @@ impl LocalCLIBuilder {
     /// - The installation directory cannot be created.
     /// - The file copy operation fails.
     /// - (Unix only) Permissions cannot be set.
+    // ss[related platform.executor-features]
     pub fn build(&self) -> std::io::Result<()> {
         let current_exe = env::current_exe()?;
         trace!("Current executable path: {:?}", current_exe);
@@ -149,6 +156,7 @@ impl LocalCLIBuilder {
 
         #[cfg(unix)]
         {
+            // ss[related platform.executor-features]
             use std::os::unix::fs::PermissionsExt;
             let mut perms = fs::metadata(&dest_path)?.permissions();
             perms.set_mode(0o755);
@@ -161,13 +169,16 @@ impl LocalCLIBuilder {
 }
 
 #[cfg(test)]
+// ss[related platform.executor-features]
 mod tests {
     use super::*;
     use std::fs;
+    // ss[related platform.executor-features]
     use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_new_local_cli_builder_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
         assert_eq!(cli_builder.path, "/some/path");
@@ -180,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_new_local_cli_builder_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         assert_eq!(cli_builder.path, "/some/path");
@@ -193,6 +205,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_build_creates_executable_in_install_dir() {
         let temp_dir = tempdir().expect("internal error");
         let custom_install_dir = temp_dir.path().join("bin");
@@ -212,6 +225,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_default_installation_directory_system_wide() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true);
         if cfg!(unix) {
@@ -222,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_default_installation_directory_user_local() {
         let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), false);
         let expected_dir = if cfg!(unix) {

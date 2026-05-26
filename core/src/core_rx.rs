@@ -1,18 +1,24 @@
+// ss[related philosophy.zero-copy-discipline]
 use std::fmt::Debug;
 use log::*;
 use futures_util::{select, task};
+// ss[related philosophy.zero-copy-discipline]
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use ringbuf::traits::Observer;
+// ss[related philosophy.zero-copy-discipline]
 use futures_util::future::FusedFuture;
 use async_ringbuf::consumer::AsyncConsumer;
 use futures_timer::Delay;
+// ss[related philosophy.zero-copy-discipline]
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{steady_config, Rx, MONITOR_NOT, MONITOR_UNKNOWN};
+// ss[related philosophy.zero-copy-discipline]
 use crate::distributed::aqueduct_stream::{StreamControlItem};
 use crate::steady_rx::RxDone;
 use futures_util::FutureExt;
+// ss[related philosophy.zero-copy-discipline]
 use crate::yield_now;
 
 /// Trait providing an interface for working with a pair of slices as a unified data source.
@@ -20,21 +26,25 @@ use crate::yield_now;
 /// This trait enables iteration, conversion to a vector, and length calculation over two slices
 /// of the same type, typically used to represent the readable portions of a ring buffer in a
 /// steady-state system. It supports zero-copy operations by allowing direct access to the data.
+// ss[related philosophy.zero-copy-discipline]
 pub trait DoubleSlice<'a, T: 'a> {
     /// Returns an iterator over the combined elements of both slices.
     ///
     /// This method provides a way to iterate over all items in the two slices as a single sequence.
+    // ss[related philosophy.zero-copy-discipline]
     fn as_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>;
 
     /// Converts the combined contents of both slices into a single vector.
     ///
     /// This method creates a new vector containing all elements from both slices in order,
     /// requiring the type `T` to be cloneable.
+    // ss[related philosophy.zero-copy-discipline]
     fn to_vec(&self) -> Vec<T> where T: Clone;
 
     /// Returns the total number of elements across both slices.
     ///
     /// This method calculates the combined length of the two slices.
+    // ss[related philosophy.zero-copy-discipline]
     fn total_len(&self) -> usize;
 }
 
@@ -42,16 +52,19 @@ pub trait DoubleSlice<'a, T: 'a> {
 ///
 /// This implementation treats two slices as a single contiguous data source, supporting iteration,
 /// vector conversion, and length calculation.
+// ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a> DoubleSlice<'a, T> for (&'a [T], &'a [T]) {
     fn as_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         Box::new(self.0.iter().chain(self.1.iter()))
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn to_vec(&self) -> Vec<T> where T: Clone {
         let mut v = Vec::with_capacity(self.0.len() + self.1.len());
         v.extend_from_slice(self.0);
         v.extend_from_slice(self.1);
         v
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn total_len(&self) -> usize {
         self.0.len() + self.1.len()
     }
@@ -61,12 +74,14 @@ impl<'a, T: 'a> DoubleSlice<'a, T> for (&'a [T], &'a [T]) {
 ///
 /// This trait defines a method to efficiently copy data from two source slices into a mutable
 /// target slice, typically used in batch operations within a steady-state system.
+// ss[related philosophy.zero-copy-discipline]
 pub trait DoubleSliceCopy<'a, T: 'a> {
     /// Copies data from the pair of slices into the provided target slice.
     ///
     /// This method fills the target slice with as many elements as possible from the two source
     /// slices, returning the number of items copied. It is designed for efficient data transfer
     /// and requires the type `T` to be copyable.
+    // ss[related philosophy.zero-copy-discipline]
     fn copy_into_slice(&self, target: &mut [T]) -> RxDone where T: Copy;
 }
 
@@ -74,6 +89,7 @@ pub trait DoubleSliceCopy<'a, T: 'a> {
 ///
 /// This implementation handles copying from two source slices into a single target slice,
 /// ensuring the target is filled to its capacity or until the source data is exhausted.
+// ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a> DoubleSliceCopy<'a, T> for (&'a [T], &'a [T]) {
     fn copy_into_slice(&self, target: &mut [T]) -> RxDone where T: Copy {
         let (a, b) = *self;
@@ -102,35 +118,42 @@ impl<'a, T: 'a> DoubleSliceCopy<'a, T> for (&'a [T], &'a [T]) {
 /// This trait provides methods to iterate over, convert to vectors, and calculate lengths for
 /// two pairs of slices: one pair for items and another for payloads. It is designed for use in
 /// stream-based systems where control items and their associated payload bytes are handled together.
+// ss[related philosophy.zero-copy-discipline]
 pub trait QuadSlice<'a, T: 'a, U: 'a> {
     /// Returns an iterator over the combined items from the first pair of slices.
     ///
     /// This method allows iteration over all items as a single sequence.
+    // ss[related philosophy.zero-copy-discipline]
     fn items_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a>;
 
     /// Returns an iterator over the combined payload elements from the second pair of slices.
     ///
     /// This method provides a unified view of the payload data across both slices.
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_iter(&'a self) -> Box<dyn Iterator<Item = &'a U> + 'a>;
 
     /// Converts the combined items from the first pair of slices into a single vector.
     ///
     /// This method creates a new vector of items, requiring the type `T` to be cloneable.
+    // ss[related philosophy.zero-copy-discipline]
     fn items_vec(&self) -> Vec<T> where T: Clone;
 
     /// Converts the combined payloads from the second pair of slices into a single vector.
     ///
     /// This method creates a new vector of payload elements, requiring the type `U` to be cloneable.
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_vec(&self) -> Vec<U> where U: Clone;
 
     /// Returns the total number of items across the first pair of slices.
     ///
     /// This method calculates the combined length of the item slices.
+    // ss[related philosophy.zero-copy-discipline]
     fn items_len(&self) -> usize;
 
     /// Returns the total number of payload elements across the second pair of slices.
     ///
     /// This method calculates the combined length of the payload slices.
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_len(&self) -> usize;
 }
 
@@ -138,28 +161,34 @@ pub trait QuadSlice<'a, T: 'a, U: 'a> {
 ///
 /// This implementation treats two pairs of slices (items and payloads) as unified data sources,
 /// supporting iteration, vector conversion, and length calculation for both item and payload data.
+// ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a, U: 'a> QuadSlice<'a, T, U> for (&'a [T], &'a [T], &'a [U], &'a [U]) {
     fn items_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         Box::new(self.0.iter().chain(self.1.iter()))
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_iter(&'a self) -> Box<dyn Iterator<Item = &'a U> + 'a> {
         Box::new(self.2.iter().chain(self.3.iter()))
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn items_vec(&self) -> Vec<T> where T: Clone {
         let mut v = Vec::with_capacity(self.0.len() + self.1.len());
         v.extend_from_slice(self.0);
         v.extend_from_slice(self.1);
         v
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_vec(&self) -> Vec<U> where U: Clone {
         let mut v = Vec::with_capacity(self.2.len() + self.3.len());
         v.extend_from_slice(self.2);
         v.extend_from_slice(self.3);
         v
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn items_len(&self) -> usize {
         self.0.len() + self.1.len()
     }
+    // ss[related philosophy.zero-copy-discipline]
     fn payload_len(&self) -> usize {
         self.2.len() + self.3.len()
     }
@@ -169,12 +198,14 @@ impl<'a, T: 'a, U: 'a> QuadSlice<'a, T, U> for (&'a [T], &'a [T], &'a [U], &'a [
 ///
 /// This trait defines a method to copy control items and their associated payload bytes from
 /// a quadruple of slices into two target slices, ensuring synchronized data transfer in stream-based systems.
+// ss[related philosophy.zero-copy-discipline]
 pub trait StreamQuadSliceCopy<'a, T: StreamControlItem> {
     /// Copies items and their payloads into the provided target slices.
     ///
     /// This method fills the item and payload target slices with as much data as possible,
     /// respecting the length constraints of the payloads associated with each item. It returns
     /// a tuple indicating the number of items and bytes copied.
+    // ss[related philosophy.zero-copy-discipline]
     fn copy_items_and_payloads(&self, item_target: &mut [T], payload_target: &mut [u8]) -> (usize, usize) where T: Copy;
 }
 
@@ -183,6 +214,7 @@ pub trait StreamQuadSliceCopy<'a, T: StreamControlItem> {
 /// This implementation handles the synchronized copying of control items and their payload bytes
 /// from two pairs of slices into respective target slices, ensuring that payload lengths match
 /// the requirements of each item.
+// ss[related philosophy.zero-copy-discipline]
 impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T], &'a [u8], &'a [u8]) {
     fn copy_items_and_payloads(&self, item_target: &mut [T], payload_target: &mut [u8]) -> (usize, usize) where T: Copy {
         let (a, b, c, d) = self;
@@ -231,24 +263,30 @@ impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T],
 /// by types that handle data reception, such as standard channels (`Rx<T>`) and stream-based
 /// channels (`StreamRx<StreamControlItem>`). The trait supports both synchronous and asynchronous
 /// operations, as well as zero-copy mechanisms through slice-based methods.
+// ss[related philosophy.zero-copy-discipline]
 pub trait RxCore {
     /// The type of message item stored in the channel.
     type MsgItem;
 
     /// The type of message that is taken out of the channel.
+    // ss[related philosophy.zero-copy-discipline]
     type MsgOut;
 
     /// The type used to peek at a message without removing it.
+    // ss[related philosophy.zero-copy-discipline]
     type MsgPeek<'a> where Self: 'a;
 
     /// The type used to represent the size or count of messages, typically `usize` for standard
     /// channels or a tuple for streams.
+    // ss[related philosophy.zero-copy-discipline]
     type MsgSize: Copy + Debug;
 
     /// The type for a slice of messages to be peeked at, used in zero-copy operations.
+    // ss[related philosophy.zero-copy-discipline]
     type SliceSource<'a> where Self: 'a;
 
     /// The type for the target slice where messages are copied during take operations.
+    // ss[related philosophy.zero-copy-discipline]
     type SliceTarget<'b> where Self::MsgOut: 'b;
 
     /// Copies available messages from the channel into the provided target slice.
@@ -256,18 +294,21 @@ pub trait RxCore {
     /// This method attempts to fill the target slice with messages from the channel, returning
     /// the number of messages copied. It is used for efficient batch processing and requires
     /// the message item type to be copyable.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_take_slice(&mut self, target: Self::SliceTarget<'_>) -> RxDone where Self::MsgItem: Copy;
 
     /// Provides direct access to the available slices of the channel for zero-copy peeking.
     ///
     /// This method returns the readable portions of the channel’s buffer, allowing direct access
     /// to the underlying memory without copying.
+    // ss[impl philosophy.zero-copy-discipline]
     fn shared_peek_slice(&mut self) -> Self::SliceSource<'_>;
 
     /// Returns a value representing a single unit for message counting.
     ///
     /// For standard channels, this typically returns `1`. For stream channels, it may return a tuple
     /// representing one control item and an estimated payload size.
+    // ss[related philosophy.zero-copy-discipline]
     fn one(&self) -> Self::MsgSize;
 
     /// Asynchronously peeks at the next message with an optional timeout.
@@ -275,44 +316,53 @@ pub trait RxCore {
     /// This method waits for a message to become available or for a shutdown signal, returning
     /// a reference to the message if available within the timeout period.
     #[allow(async_fn_in_trait)]
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>>;
 
     /// Increments telemetry data based on the number of messages received.
     ///
     /// This method updates the telemetry system with the count of messages or bytes received,
     /// depending on the channel type and the provided `RxDone` value.
+    // ss[related philosophy.zero-copy-discipline]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>);
 
     /// Notifies or resets the monitor, typically by setting a monitor index to a predefined value.
     ///
     /// This method is used to disable or reset monitoring activity for the channel.
+    // ss[related philosophy.zero-copy-discipline]
     fn monitor_not(&mut self);
 
     /// Returns the capacity of the channel.
     ///
     /// This method provides the total number of messages the channel can hold.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_capacity(&self) -> Self::MsgSize;
 
     /// returns true if size is less than or equal to the capacity
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
 
     /// Determines whether it is time to perform periodic logging.
     ///
     /// This method checks if a sufficient amount of time has elapsed since the last log, based on
     /// a predefined interval, to decide if logging should occur.
+    // ss[related philosophy.zero-copy-discipline]
     fn log_periodic(&mut self) -> bool;
 
     /// Checks if the channel is empty.
     ///
     /// Returns `true` if there are no messages currently in the channel.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_is_empty(&self) -> bool;
 
     /// Returns the number of available units in the channel.
     ///
     /// This method indicates how many messages are ready to be taken from the channel.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_units(&mut self) -> Self::MsgSize;
 
     /// returns true if the message size is less than or equal to the available count
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_units_for(&mut self, size: Self::MsgSize) -> bool;
 
     /// Waits for either shutdown or for a specified number of units to become available.
@@ -320,6 +370,7 @@ pub trait RxCore {
     /// This asynchronous method returns `true` if the specified number of units became available,
     /// or `false` if a shutdown signal was received instead.
     #[allow(async_fn_in_trait)]
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: Self::MsgSize) -> bool;
 
     /// Waits for either the channel to close or for a specified number of units to become available.
@@ -327,12 +378,15 @@ pub trait RxCore {
     /// This method returns `true` if the units became available, or `false` if the channel was closed
     /// before the units were available.
     #[allow(async_fn_in_trait)]
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_closed_or_avail_units(&mut self, size: usize) -> bool;
 
     /// using the count of messages which we have capacity for, the items_count is adjusted to fit.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize;
 
     /// avail items count only; this is just the count of messages, nothing else.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_items_count(&mut self) -> usize;
 
     /// Waits until a specified number of units become available.
@@ -340,11 +394,13 @@ pub trait RxCore {
     /// This asynchronous method blocks until the channel has at least the requested number of units,
     /// returning `true` when the condition is met.
     #[allow(async_fn_in_trait)]
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_avail_units(&mut self, size: Self::MsgSize) -> bool;
 
     /// Attempts to take a single message from the channel without blocking.
     ///
     /// Returns `Some((RxDone, Self::MsgOut))` if a message was taken, or `None` if the channel is empty.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_try_take(&mut self) -> Option<(RxDone, Self::MsgOut)>;
 
     /// Advances the read index by a specified number of units.
@@ -352,12 +408,14 @@ pub trait RxCore {
     /// This method is used in zero-copy operations to manually update the read position after
     /// directly accessing the channel’s buffer. It returns an `RxDone` value indicating the
     /// number of units advanced.
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> RxDone;
 
     /// Checks if the channel is both closed and empty.
     ///
     /// This method returns `true` if the channel has been closed and contains no more messages,
     /// indicating that no further data will be received.
+    // ss[related philosophy.zero-copy-discipline]
     fn is_closed_and_empty(&mut self) -> bool;
 }
 
@@ -365,12 +423,15 @@ pub trait RxCore {
 ///
 /// This implementation provides the reception functionality for a standard channel, supporting
 /// synchronous and asynchronous message receiving, zero-copy operations, and telemetry integration.
+// ss[related philosophy.zero-copy-discipline]
 impl<T> RxCore for Rx<T> {
     type MsgItem = T;
     type MsgOut = T;
+    // ss[related philosophy.zero-copy-discipline]
     type MsgPeek<'a> = &'a T where T: 'a;
     type MsgSize = usize;
     type SliceSource<'a> = (&'a [T], &'a [T]) where Self: 'a;
+    // ss[related philosophy.zero-copy-discipline]
     type SliceTarget<'b> = &'b mut [T] where T: 'b;
 
     fn is_closed_and_empty(&mut self) -> bool {
@@ -385,6 +446,7 @@ impl<T> RxCore for Rx<T> {
         }
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> RxDone {
         let avail = self.rx.occupied_len();
         let idx = if request > avail { avail } else { request };
@@ -395,6 +457,7 @@ impl<T> RxCore for Rx<T> {
         RxDone::Normal(idx)
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>> {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -422,6 +485,7 @@ impl<T> RxCore for Rx<T> {
         result
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn log_periodic(&mut self) -> bool {
         if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -432,6 +496,7 @@ impl<T> RxCore for Rx<T> {
     }
 
     #[inline]
+    // ss[related philosophy.zero-copy-discipline]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         self.local_monitor_index = match done_count {
             RxDone::Normal(d) => tel.process_event(self.local_monitor_index, self.channel_meta_data.meta_data.id, d as isize),
@@ -443,23 +508,28 @@ impl<T> RxCore for Rx<T> {
     }
 
     #[inline]
+    // ss[related philosophy.zero-copy-discipline]
     fn monitor_not(&mut self) {
         self.local_monitor_index = MONITOR_NOT;
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_capacity(&self) -> usize {
         self.rx.capacity().get()
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
         let cap = self.shared_capacity();
         size<=cap
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_is_empty(&self) -> bool {
         self.rx.is_empty()
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_units(&mut self) -> Self::MsgSize {
         let capacity = self.rx.capacity().get();
         let modulus = 2 * capacity;
@@ -470,11 +540,13 @@ impl<T> RxCore for Rx<T> {
         result
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_units_for(&mut self, size: Self::MsgSize) -> bool {
         let avail = self.shared_avail_units();
         avail >= size
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: usize) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -485,6 +557,7 @@ impl<T> RxCore for Rx<T> {
         }
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_closed_or_avail_units(&mut self, count: usize) -> bool {
         if self.rx.occupied_len() >= count {
             true
@@ -500,6 +573,7 @@ impl<T> RxCore for Rx<T> {
         }
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     async fn shared_wait_avail_units(&mut self, count: usize) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
         if self.rx.occupied_len() >= count {
@@ -513,6 +587,7 @@ impl<T> RxCore for Rx<T> {
     }
 
     #[inline]
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_try_take(&mut self) -> Option<(RxDone, Self::MsgOut)> {
         match self.rx.try_pop() {
             Some(r) => {                
@@ -523,6 +598,7 @@ impl<T> RxCore for Rx<T> {
         }
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_take_slice(&mut self, target: Self::SliceTarget<'_>) -> RxDone where Self::MsgItem: Copy {
         let (a, b) = self.rx.as_slices();
         let mut copied = 0;
@@ -547,18 +623,22 @@ impl<T> RxCore for Rx<T> {
         RxDone::Normal(copied)
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_peek_slice(&mut self) -> Self::SliceSource<'_> {
         self.rx.as_slices()
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
         self.shared_capacity().min(items_count)
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn shared_avail_items_count(&mut self) -> usize {
         self.shared_avail_units()
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn one(&self) -> Self::MsgSize {
         1
     }
@@ -569,17 +649,22 @@ impl<T> RxCore for Rx<T> {
 /// This module contains tests to verify the correctness of asynchronous methods in the `RxCore`
 /// trait, focusing on peeking, waiting for available units, and handling shutdown or closure scenarios.
 #[cfg(test)]
+// ss[related philosophy.zero-copy-discipline]
 mod core_rx_async_tests {
     use super::*;
     use crate::steady_rx::Rx;
+    // ss[related philosophy.zero-copy-discipline]
     use crate::steady_tx::Tx;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
+    // ss[related philosophy.zero-copy-discipline]
     use futures::lock::Mutex;
     use crate::core_tx::TxCore;
     use crate::{ActorIdentity, SendSaturation};
+    // ss[related philosophy.zero-copy-discipline]
     use crate::*;
 
+    // ss[related philosophy.zero-copy-discipline]
     fn setup_channel<T: Clone + Send + 'static>(
         capacity: usize,
         data: Option<Vec<T>>,
@@ -602,6 +687,7 @@ mod core_rx_async_tests {
         (tx, rx, graph)
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_peek_async_timeout_empty() {
         let (_tx, rx, graph) = setup_channel::<i32>(1, None);
@@ -617,6 +703,7 @@ mod core_rx_async_tests {
         assert!(start.elapsed() >= Duration::from_millis(100), "Timeout duration should be at least 100ms");
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_peek_async_timeout_with_data() {
         let (_tx, rx, _) = setup_channel(1, Some(vec![42]));
@@ -625,6 +712,7 @@ mod core_rx_async_tests {
         assert_eq!(peeked, Some(&42), "Peek should return the available data");
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_peek_async_timeout_shutdown() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -635,6 +723,7 @@ mod core_rx_async_tests {
         assert!(peeked.is_none(), "Peek should return None after shutdown");
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -647,6 +736,7 @@ mod core_rx_async_tests {
         assert!(core_exec::block_on(wait_future), "Wait should return true when units become available");
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_closed_or_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -659,6 +749,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_rx_core_state_boundaries() {
         let (tx, rx, _graph) = setup_channel::<i32>(4, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -693,6 +784,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_rx_telemetry_warning() {
         let (_tx, rx, graph) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -705,6 +797,7 @@ mod core_rx_async_tests {
         }
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_rx_peek_repeats_logic() {
         let (_tx, rx, _) = setup_channel::<i32>(1, Some(vec![42]));
@@ -722,6 +815,7 @@ mod core_rx_async_tests {
         assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 0);
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_avail_units_shutdown() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -735,6 +829,7 @@ mod core_rx_async_tests {
         assert!(!result, "Wait should return false when shutdown fires");
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_shutdown_or_avail_units_shutdown() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
@@ -748,6 +843,7 @@ mod core_rx_async_tests {
         assert!(!result, "Wait should return false when shutdown fires");
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_try_take_empty() {
         let (_tx, rx, _) = setup_channel::<i32>(1, None);
@@ -756,6 +852,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_advance_index_valid() {
         let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![10, 20, 30]));
         let mut rx_guard = rx.try_lock().expect("");
@@ -764,6 +861,7 @@ mod core_rx_async_tests {
         assert_eq!(rx_guard.shared_avail_units(), 1);
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_take_slice_empty() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
@@ -773,6 +871,7 @@ mod core_rx_async_tests {
         assert_eq!(done, RxDone::Normal(0));
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_peek_slice_empty() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
@@ -783,6 +882,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_validate_capacity_items() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let rx_guard = rx.try_lock().expect("");
@@ -790,6 +890,7 @@ mod core_rx_async_tests {
         assert_eq!(rx_guard.shared_validate_capacity_items(2), 2);
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_avail_items_count() {
         let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
@@ -798,6 +899,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_capacity_for() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let rx_guard = rx.try_lock().expect("");
@@ -805,6 +907,7 @@ mod core_rx_async_tests {
         assert!(!rx_guard.shared_capacity_for(5));
     }
 
+    // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_avail_units_for() {
         let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
@@ -814,6 +917,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_log_periodic() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -823,6 +927,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_monitor_not() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -831,6 +936,7 @@ mod core_rx_async_tests {
     }
 
     #[test]
+    // ss[verify philosophy.zero-copy-discipline]
     fn test_one() {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let rx_guard = rx.try_lock().expect("");

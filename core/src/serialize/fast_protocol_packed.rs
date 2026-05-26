@@ -5,6 +5,7 @@
 //  NOTE: do not modify this but do duplicate this to build an i128 version.
 //////////////////////////////////////////////////////////////////////////
 
+// ss[related stream.control-payload]
 use bytes::{Buf, BufMut, Bytes};
 use bytes::BytesMut;
 
@@ -18,6 +19,7 @@ use bytes::BytesMut;
 ///
 /// * `Option<i64>` - Returns `Some(i64)` if the read operation is successful, or `None` if the buffer is empty or data is invalid.
 #[allow(dead_code)]
+// ss[related stream.control-payload]
 pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
     let initial_remaining: usize = byte_buffer.remaining();
     if initial_remaining > 0 {
@@ -45,6 +47,7 @@ pub fn read_long_signed(byte_buffer: &mut Bytes) -> Option<i64> {
 ///
 /// * `Option<i64>` - Returns `Some(i64)` if the read operation is successful, or `None` if data is invalid.
 #[allow(dead_code)]
+// ss[related stream.control-payload]
 fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes, initial_remaining: usize) -> Option<i64> {
     let remaining: usize = byte_buffer.remaining();
     if remaining > 0 {
@@ -71,6 +74,7 @@ fn read_long_signed_tail(a: i64, byte_buffer: &mut Bytes, initial_remaining: usi
 ///
 /// * `Option<u64>` - Returns `Some(u64)` if the read operation is successful, or `None` if the buffer is empty or data is invalid.
 #[allow(dead_code)]
+// ss[related stream.control-payload]
 pub fn read_long_unsigned(byte_buffer: &mut Bytes) -> Option<u64> {
     let mut value: u64 = 0;
     let mut byte_count = 0;
@@ -102,6 +106,7 @@ pub fn read_long_unsigned(byte_buffer: &mut Bytes) -> Option<u64> {
 ///
 /// * `value` - The value to be written.
 /// * `byte_buffer` - A mutable reference to a `BytesMut` buffer to which the value will be written.
+// ss[related stream.control-payload]
 fn write_long_signed_pos(value: u64, byte_buffer: &mut BytesMut) {
     if value >= 0x0000000000000040 {
         if value >= 0x0000000000002000 {
@@ -140,6 +145,7 @@ fn write_long_signed_pos(value: u64, byte_buffer: &mut BytesMut) {
 ///
 /// * `value` - The value to be written.
 /// * `byte_buffer` - A mutable reference to a `BytesMut` buffer to which the value will be written.
+// ss[related stream.control-payload]
 fn write_long_signed_neg(value: i64, byte_buffer: &mut BytesMut) {
     let absv = (-value) as u64;
     if absv > 0x0000000000000040 {
@@ -178,6 +184,7 @@ fn write_long_signed_neg(value: i64, byte_buffer: &mut BytesMut) {
 ///
 /// * `value` - The value to be written.
 /// * `byte_buffer` - A mutable reference to a `BytesMut` buffer to which the value will be written.
+// ss[related stream.control-payload]
 pub fn write_long_unsigned(value: u64, byte_buffer: &mut BytesMut) {
     write_long_signed_pos(value, byte_buffer);
 }
@@ -188,6 +195,7 @@ pub fn write_long_unsigned(value: u64, byte_buffer: &mut BytesMut) {
 ///
 /// * `value` - The value to be written.
 /// * `byte_buffer` - A mutable reference to a `BytesMut` buffer to which the value will be written.
+// ss[related stream.control-payload]
 pub fn write_long_signed(value: i64, byte_buffer: &mut BytesMut) {
     if value >= 0 {
         write_long_signed_pos(value as u64, byte_buffer);
@@ -203,10 +211,12 @@ pub fn write_long_signed(value: i64, byte_buffer: &mut BytesMut) {
 //////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
+// ss[related stream.control-payload]
 mod tests {
     use super::*;
     use bytes::{Bytes, BytesMut};
 
+    // ss[related stream.control-payload]
     fn encode_decode_unsigned_test(value: u64) {
         let mut buffer = BytesMut::with_capacity(16);
         write_long_unsigned(value, &mut buffer);
@@ -218,6 +228,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_unsigned_boundaries() {
         encode_decode_unsigned_test(0);
         encode_decode_unsigned_test(1);
@@ -231,6 +242,7 @@ mod tests {
         encode_decode_unsigned_test(u64::MAX);
     }
 
+    // ss[related stream.control-payload]
     fn encode_decode_signed_test(value: i64) {
         let mut buffer = BytesMut::with_capacity(16);
         write_long_signed(value, &mut buffer);
@@ -242,6 +254,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify stream.control-payload]
     fn test_signed_boundaries() {
         // Test common boundary values
         encode_decode_signed_test(0);
@@ -268,6 +281,7 @@ mod tests {
     }
     
     #[test]
+    // ss[verify stream.control-payload]
     fn test_read_empty_buffers() {
         // Empty buffer should return None
         let mut empty_signed = Bytes::from_static(&[]);

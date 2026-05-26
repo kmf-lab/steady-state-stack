@@ -1,4 +1,6 @@
+// ss[impl platform.ringbuf-pin]
 //! Build script for the `steady_state` crate: prepares telemetry web assets for **compile-time**
+//! Ringbuf stays on 0.4.x with async-ringbuf 0.3.5 (see `core/Cargo.toml` comments).
 //! embedding via `include_bytes!` / `include_str!`.
 //!
 //! ## Critical: `OUT_DIR` vs `CARGO_TARGET_DIR` (do not regress)
@@ -29,56 +31,69 @@
 //! - `telemetry_server_cdn`: Uses a CDN for viz.js (smaller binary; needs internet in the browser).
 //! - `telemetry_history`, `proactor_*`, etc.: See `Cargo.toml`.
 
+// ss[impl platform.ringbuf-pin]
 use std::env;
 use std::fs::{self, File};
 use std::io::{self};
+// ss[impl platform.ringbuf-pin]
 use std::path::{Path, PathBuf};
 use askama::Template;
 use flate2::write::GzEncoder;
+// ss[impl platform.ringbuf-pin]
 use flate2::Compression;
 
 #[derive(Template)]
 #[template(path = "index.html.txt")]
+// ss[impl platform.ringbuf-pin]
 pub(crate) struct IndexTemplate<'a> {
     pub(crate) script_source: &'a str,
 }
 
 #[derive(Template)]
 #[template(path = "webworker.js.txt")]
+// ss[impl platform.ringbuf-pin]
 pub(crate) struct WebWorkerTemplate<'a> {
     pub(crate) script_source: &'a str,
 }
 
 /// Version of viz.js to use for telemetry visualization.
+// ss[impl platform.ringbuf-pin]
 const VIZ_VERSION: &str = "1.8.2";
 
 /// Minimum size (bytes) for an acceptable `viz-lite.js.gz` under `OUT_DIR`. Smaller or missing
 /// forces a re-download and re-compress so we never embed an empty or truncated artifact.
+// ss[impl platform.ringbuf-pin]
 const VIZ_LITE_GZ_MIN_BYTES: u64 = 4096;
 
 /// Output basename under `OUT_DIR` for the gzipped viz bundle (`metrics_server.rs` must match).
+// ss[impl platform.ringbuf-pin]
 const OUT_VIZ_LITE_JS_GZ: &str = "viz-lite.js.gz";
 /// Temporary download path under `OUT_DIR` (deleted after gzip).
 const OUT_VIZ_LITE_DOWNLOAD_JS: &str = "viz-lite.download.js";
 
+// ss[impl platform.ringbuf-pin]
 const OUT_INDEX_HTML_GZ: &str = "index.html.gz";
 const OUT_WEBWORKER_JS_GZ: &str = "webworker.js.gz";
 const OUT_DOT_VIEWER_JS_GZ: &str = "dot-viewer.js.gz";
+// ss[impl platform.ringbuf-pin]
 const OUT_DOT_VIEWER_CSS_GZ: &str = "dot-viewer.css.gz";
 const OUT_SPINNER_GIF: &str = "spinner.gif";
 
 /// Determines if viz-lite.js should be included locally (true if telemetry_server_builtin is enabled).
 #[cfg(not(feature = "telemetry_server_builtin"))]
+// ss[impl platform.ringbuf-pin]
 const USE_INTERNAL_VIZ: bool = false;
 #[cfg(feature = "telemetry_server_builtin")]
 const USE_INTERNAL_VIZ: bool = true;
 
 /// Indicates if telemetry services are active (true if either telemetry_server_cdn or telemetry_server_builtin is enabled).
 #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
+// ss[impl platform.ringbuf-pin]
 const TELEMETRY_SERVICE: bool = true;
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 const TELEMETRY_SERVICE: bool = false;
 
+// ss[impl platform.ringbuf-pin]
 fn main() {
     // Print sponsorship messages to encourage community support
     println!("cargo:warning=########### Community support needed ###########################");
@@ -189,6 +204,7 @@ fn main() {
 
 /// Downloads viz-lite if missing or too small under `OUT_DIR`, then gzip-encodes into `OUT_DIR`.
 /// All final bytes for `include_bytes!` live under `out_dir`; never rely on `CARGO_TARGET_DIR` alone.
+// ss[impl platform.ringbuf-pin]
 fn ensure_viz_lite_gz_in_out_dir(out_dir: &Path, get_url: &str) {
     let dest_gz = out_dir.join(OUT_VIZ_LITE_JS_GZ);
     let needs_refresh = !dest_gz.exists()
@@ -220,6 +236,7 @@ fn ensure_viz_lite_gz_in_out_dir(out_dir: &Path, get_url: &str) {
 /// When `force` is false and the destination `.gz` already exists, does nothing (incremental builds).
 /// When `force` is true, always (re)compresses so template edits cannot leave a stale gzip next to `OUT_DIR`.
 /// Embeds must land under `out_dir` so `env!("OUT_DIR")` in the crate matches this path.
+// ss[impl platform.ringbuf-pin]
 fn gzip_source_to_out_dir(out_dir: &Path, source_file: &Path, out_gz_name: &str, force: bool) {
     let dest_gz = out_dir.join(out_gz_name);
     if !force && dest_gz.exists() {
@@ -243,6 +260,7 @@ fn gzip_source_to_out_dir(out_dir: &Path, source_file: &Path, out_gz_name: &str,
 }
 
 /// Copies the repo’s spinner GIF into `OUT_DIR` for `include_bytes!`.
+// ss[impl platform.ringbuf-pin]
 fn copy_spinner_into_out_dir(source_file: &Path, dest_file: &Path) {
     if dest_file.exists() {
         println!("cargo:trace={:?} already exists, skipping spinner copy", dest_file);

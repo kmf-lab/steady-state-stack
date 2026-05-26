@@ -1,9 +1,12 @@
+// ss[related telemetry.dot-export]
 use crate::ActorName;
 use crate::actor_stats::ActorStatsComputer;
 use crate::dot::RemoteDetails;
+// ss[related telemetry.dot-export]
 use crate::monitor::{ActorStatus, ThreadInfo};
 
 /// Represents a node in the graph, including metrics and display information.
+// ss[related telemetry.dot-export]
 pub(crate) struct Node {
     pub(crate) id: Option<ActorName>,
     pub(crate) remote_details: Option<RemoteDetails>,
@@ -21,6 +24,7 @@ pub(crate) struct Node {
     pub(crate) work_info: Option<(u16, u16)>,
 }
 
+// ss[related telemetry.dot-export]
 impl Node {
     /// Computes and refreshes the metrics for the node based on the actor status.
     ///
@@ -32,6 +36,7 @@ impl Node {
     /// # Arguments
     ///
     /// * `actor_status` - The status of the actor.
+    // ss[related telemetry.dot-export]
     pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
         let num = actor_status.await_total_ns;
         let den = actor_status.unit_total_ns;

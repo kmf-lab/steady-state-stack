@@ -3,15 +3,18 @@
 //! The module provides functionalities to create, install, and uninstall systemd service files, enabling seamless
 //! service management for SteadyState applications.
 
+// ss[related platform.executor-features]
 use std::{env, fs};
 use std::process::Command;
 use log::*;
+// ss[related platform.executor-features]
 use std::path::Path;
 use crate::dot::FrameHistory;
 use crate::core_exec;
 
 /// An enum representing the possible systemd commands.
 #[derive(Clone,Debug,PartialEq)]
+// ss[related platform.executor-features]
 pub enum SystemdCommand {
     /// install systemd service
     Install,
@@ -24,6 +27,7 @@ pub enum SystemdCommand {
 
 /// A builder for configuring and creating a systemd service manager.
 #[derive(Clone)]
+// ss[related platform.executor-features]
 pub struct SystemdBuilder {
     service_name: String,
     service_user: String,
@@ -37,11 +41,13 @@ pub struct SystemdBuilder {
     description: String,
 }
 
+// ss[related platform.executor-features]
 impl SystemdBuilder {
 
 
     /// for main systemd processing to install and uninstall process
     ///
+    // ss[related platform.executor-features]
     pub fn process_systemd_commands(command: SystemdCommand , service_executable_name: &str, service_user: &str) -> bool {
 
         if command == SystemdCommand::None {
@@ -75,6 +81,7 @@ impl SystemdBuilder {
     /// * `service_executable_name` - The name of the service executable.
     /// * `service_user` - The user under which the service will run.
     ///
+    // ss[related platform.executor-features]
     pub fn new(service_executable_name: String, service_user: String) -> Self {
         SystemdBuilder {
             service_executable_folder: "/usr/local/bin".to_string(),
@@ -97,6 +104,7 @@ impl SystemdBuilder {
     /// * `name` - The name of the secret.
     /// * `absolute_file` - The absolute path to the secret file.
     ///
+    // ss[related platform.executor-features]
     pub fn with_secret(&self, name: String, absolute_file: String) -> Self {
         let mut result = self.clone();
         result.secrets.push(format!("{}:/{}", name, absolute_file));
@@ -109,6 +117,7 @@ impl SystemdBuilder {
     ///
     /// * `on_boot` - A boolean indicating whether the service should start on boot.
     ///
+    // ss[related platform.executor-features]
     pub fn with_on_boot(&self, on_boot: bool) -> Self {
         let mut result = self.clone();
         result.on_boot = on_boot;
@@ -121,6 +130,7 @@ impl SystemdBuilder {
     ///
     /// * `description` - The description of the service.
     ///
+    // ss[related platform.executor-features]
     pub fn with_description(&self, description: String) -> Self {
         let mut result = self.clone();
         result.description = description;
@@ -133,6 +143,7 @@ impl SystemdBuilder {
     ///
     /// * `after` - The service or target that this service should start after.
     ///
+    // ss[related platform.executor-features]
     pub fn with_after(&self, after: String) -> Self {
         let mut result = self.clone();
         result.after = after;
@@ -145,6 +156,7 @@ impl SystemdBuilder {
     ///
     /// * `wanted_by` - The target that wants this service.
     ///
+    // ss[related platform.executor-features]
     pub fn with_wanted_by(&self, wanted_by: String) -> Self {
         let mut result = self.clone();
         result.wanted_by = wanted_by;
@@ -157,6 +169,7 @@ impl SystemdBuilder {
     ///
     /// * `restart` - The restart policy for the service.
     ///
+    // ss[related platform.executor-features]
     pub fn with_restart(&self, restart: String) -> Self {
         let mut result = self.clone();
         result.restart = restart;
@@ -169,6 +182,7 @@ impl SystemdBuilder {
     ///
     /// * `service_user` - The user for the service.
     ///
+    // ss[related platform.executor-features]
     pub fn with_service_user(&self, service_user: String) -> Self {
         let mut result = self.clone();
         result.service_user = service_user;
@@ -181,6 +195,7 @@ impl SystemdBuilder {
     ///
     /// * `service_name` - The name of the service.
     ///
+    // ss[related platform.executor-features]
     pub fn with_service_name(&self, service_name: String) -> Self {
         let mut result = self.clone();
         result.service_name = service_name;
@@ -193,6 +208,7 @@ impl SystemdBuilder {
     ///
     /// * `service_file_default_folder` - The default folder for the service file.
     ///
+    // ss[related platform.executor-features]
     pub fn with_service_file_default_folder(&self, service_file_default_folder: String) -> Self {
         let mut result = self.clone();
         result.service_file_default_folder = service_file_default_folder;
@@ -205,6 +221,7 @@ impl SystemdBuilder {
     ///
     /// * `service_executable_folder` - The folder for the service executable.
     ///
+    // ss[related platform.executor-features]
     pub fn with_service_executable_folder(&self, service_executable_folder: String) -> Self {
         let mut result = self.clone();
         result.service_executable_folder = service_executable_folder;
@@ -213,6 +230,7 @@ impl SystemdBuilder {
 
     /// Builds and returns a `SystemdServiceManager`.
     ///
+    // ss[related platform.executor-features]
     pub fn build(self) -> SystemdServiceManager {
         SystemdServiceManager {
             service_file_name: format!("{}/{}.service", &self.service_file_default_folder, &self.service_name),
@@ -234,6 +252,7 @@ impl SystemdBuilder {
 /// The `SystemdServiceManager` struct is used to manage the creation, configuration, and control
 /// of a systemd service associated with a SteadyState project. It contains various fields to specify
 /// the service details and configuration options.
+// ss[related platform.executor-features]
 pub struct SystemdServiceManager {
     /// The name of the systemd service.
     ///
@@ -287,12 +306,14 @@ pub struct SystemdServiceManager {
 }
 
 
+// ss[related platform.executor-features]
 impl SystemdServiceManager {
     /// Checks if the platform setup is appropriate for managing a systemd service.
     ///
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
+    // ss[related platform.executor-features]
     fn check_platform_setup(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Check for systemd via systemctl
         if !Command::new("systemctl")
@@ -319,6 +340,7 @@ impl SystemdServiceManager {
     ///
     /// A `Result` indicating success or failure.
     ///
+    // ss[related platform.executor-features]
     pub fn install(&self, start_now: bool, start_string: String) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 
@@ -382,6 +404,7 @@ impl SystemdServiceManager {
     ///
     /// A `Result` indicating success or failure.
     ///
+    // ss[related platform.executor-features]
     pub fn uninstall(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.check_platform_setup()?;
 
@@ -428,6 +451,7 @@ impl SystemdServiceManager {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
+    // ss[related platform.executor-features]
     fn create_service_file(&self, start_string: String) -> Result<(), String> {
         let mut load_creds = String::new();
         if !self.secrets.is_empty() {
@@ -467,10 +491,12 @@ WantedBy={}
 }
 
 #[cfg(test)]
+// ss[related platform.executor-features]
 mod tests {
     use super::*;
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_new() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string());
         assert_eq!(builder.service_name, "test_service");
@@ -480,6 +506,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_secret() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_secret("secret_name".to_string(), "path/to/secret".to_string());
@@ -488,6 +515,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_on_boot() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_on_boot(false);
@@ -495,6 +523,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_description() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_description("A test service".to_string());
@@ -502,6 +531,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_after() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_after("network-online.target".to_string());
@@ -509,6 +539,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_wanted_by() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_wanted_by("default.target".to_string());
@@ -516,6 +547,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_restart() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_restart("on-failure".to_string());
@@ -523,6 +555,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_service_user() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_service_user("new_user".to_string());
@@ -530,6 +563,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_service_name() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_service_name("new_service".to_string());
@@ -537,6 +571,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_service_file_default_folder() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_service_file_default_folder("/custom/systemd".to_string());
@@ -544,6 +579,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_builder_with_service_executable_folder() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string())
             .with_service_executable_folder("/custom/bin".to_string());
@@ -551,6 +587,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify platform.executor-features]
     fn test_systemd_service_manager_creation() {
         let builder = SystemdBuilder::new("test_service".to_string(), "test_user".to_string());
         let manager = builder.build();

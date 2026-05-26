@@ -6,30 +6,38 @@
 //! any telemetry instrumentation. Both the shadow and spotlight can delegate to
 //! these methods, eliminating code duplication.
 
+// ss[impl actor.run-dispatcher]
 use std::time::Duration;
 use futures::channel::oneshot;
 use futures_util::future::{FusedFuture, Shared};
+// ss[impl actor.run-dispatcher]
 use futures_util::{select, FutureExt};
 use futures_timer::Delay;
 use parking_lot::RwLock;
+// ss[impl actor.run-dispatcher]
 use std::sync::Arc;
 use crate::{
     ActorIdentity, GraphLiveliness, Rx, RxCore, RxDone, SendOutcome,
     SendSaturation, Tx, TxCore, TxDone,
 };
+// ss[impl actor.run-dispatcher]
 use crate::yield_now;
 
+// ss[impl actor.is-running-loop]
+// ss[impl actor.shutdown-veto]
 /// Core methods that are common to both actor lifecycle implementations.
 ///
 /// This struct holds no state; it is a collection of freestanding functions
 /// that operate on `TxCore`/`RxCore` references and the lifecycle primitives
 /// (`oneshot_shutdown`, `runtime_state`, etc.) passed explicitly.
+// ss[impl actor.run-dispatcher]
 pub struct SteadyActorCore;
 
 impl SteadyActorCore {
     /// Returns `true` if the actor should keep running, `false` if it should stop.
     /// `accept_fn` is called only when `StopRequested` to determine the actor’s vote.
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn is_running<F: FnMut() -> bool>(
         runtime_state: &parking_lot::RwLock<GraphLiveliness>,
         ident: ActorIdentity,
@@ -41,6 +49,7 @@ impl SteadyActorCore {
 
     /// Request shutdown via the graph liveliness state.
     /// Accepts a reference to the `Arc<RwLock<>>` and clones it.
+    // ss[impl actor.run-dispatcher]
     pub async fn request_shutdown(runtime_state: &Arc<RwLock<GraphLiveliness>>) {
         GraphLiveliness::internal_request_shutdown(runtime_state.clone()).await;
     }
@@ -48,6 +57,7 @@ impl SteadyActorCore {
     // ── RxCore delegation ─────────────────────────────────────────────────
 
     #[inline]
+    // ss[impl philosophy.zero-copy-discipline]
     pub fn peek_slice<'b, T: RxCore>(
         this: &'b mut T,
     ) -> T::SliceSource<'b> {
@@ -55,6 +65,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn take_slice<T: RxCore>(
         this: &mut T,
         target: T::SliceTarget<'_>,
@@ -66,6 +77,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn advance_take_index<T: RxCore>(
         this: &mut T,
         count: T::MsgSize,
@@ -74,26 +86,31 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn try_peek<'a, T>(this: &'a mut Rx<T>) -> Option<&'a T> {
         this.shared_try_peek()
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn try_peek_iter<'a, T>(this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
         this.shared_try_peek_iter()
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn is_empty<T: RxCore>(this: &mut T) -> bool {
         this.shared_is_empty()
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn avail_units<T: RxCore>(this: &mut T) -> T::MsgSize {
         this.shared_avail_units()
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn try_take<T: RxCore>(this: &mut T) -> Option<T::MsgOut> {
         match this.shared_try_take() {
             Some((_done, msg)) => Some(msg),
@@ -102,6 +119,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn take_into_iter<'a, T: Sync + Send>(
         this: &'a mut Rx<T>,
     ) -> impl Iterator<Item = T> + 'a {
@@ -111,6 +129,7 @@ impl SteadyActorCore {
     // ── TxCore delegation ─────────────────────────────────────────────────
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn send_slice<T: TxCore>(
         this: &mut T,
         slice: T::SliceSource<'_>,
@@ -122,6 +141,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn poke_slice<'b, T: TxCore>(
         this: &'b mut T,
     ) -> T::SliceTarget<'b> {
@@ -129,6 +149,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn advance_send_index<T: TxCore>(
         this: &mut T,
         count: T::MsgSize,
@@ -137,6 +158,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn send_iter_until_full<T, I: Iterator<Item = T>>(
         this: &mut Tx<T>,
         iter: I,
@@ -145,6 +167,7 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn try_send<T: TxCore>(
         this: &mut T,
         msg: T::MsgIn<'_>,
@@ -156,16 +179,19 @@ impl SteadyActorCore {
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn is_full<T: TxCore>(this: &mut T) -> bool {
         this.shared_is_full()
     }
 
     #[inline]
+    // ss[impl actor.run-dispatcher]
     pub fn vacant_units<T: TxCore>(this: &mut T) -> T::MsgSize {
         this.shared_vacant_units()
     }
 
     /// Low-level async send (no telemetry wrappers).
+    // ss[impl actor.run-dispatcher]
     pub async fn send_async<T: TxCore>(
         this: &mut T,
         msg: T::MsgIn<'_>,
@@ -178,12 +204,14 @@ impl SteadyActorCore {
     // ── Asynchronous wait helpers (shared by both spotlight and shadow) ───
 
     /// Wait for the shutdown signal to be received.
+    // ss[impl actor.run-dispatcher]
     pub async fn wait_shutdown(oneshot_shutdown: &Shared<oneshot::Receiver<()>>) -> bool {
         let _ = oneshot_shutdown.clone().await;
         true
     }
 
     /// Wait for a specified duration, aborting early if shutdown fires.
+    // ss[impl actor.run-dispatcher]
     pub async fn wait(
         oneshot_shutdown: &Shared<oneshot::Receiver<()>>,
         duration: Duration,
@@ -199,11 +227,13 @@ impl SteadyActorCore {
     }
 
     /// Yield execution to the runtime.
+    // ss[impl actor.run-dispatcher]
     pub async fn yield_now() {
         yield_now().await;
     }
 
     /// Wait for a future to complete, aborting if shutdown fires.
+    // ss[impl actor.run-dispatcher]
     pub async fn wait_future_void<F>(
         oneshot_shutdown: &Shared<oneshot::Receiver<()>>,
         fut: F,
@@ -221,6 +251,7 @@ impl SteadyActorCore {
     }
 
     /// Call an async function, with a timeout based on shutdown.
+    // ss[impl actor.run-dispatcher]
     pub async fn call_async<F, T>(
         oneshot_shutdown: &Shared<oneshot::Receiver<()>>,
         is_liveliness_shutdown_timeout: Option<Duration>,
@@ -262,27 +293,34 @@ impl SteadyActorCore {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+// ss[impl actor.run-dispatcher]
 mod steady_actor_core_tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    // ss[impl actor.run-dispatcher]
     use crate::core_exec;
     use crate::core_rx::{DoubleSlice, RxCore};
     use crate::core_tx::TxCore;
+    // ss[impl actor.run-dispatcher]
     use crate::steady_rx::Rx;
     use crate::steady_tx::Tx;
     use crate::{ActorIdentity, GraphBuilder, SendSaturation, SendOutcome, RxDone, TxDone};
+    // ss[impl actor.run-dispatcher]
     use std::time::Duration;
     use futures::channel::oneshot;
     use futures_util::future::Shared;
+    // ss[impl actor.run-dispatcher]
     use parking_lot::RwLock;
 
     /// Helper to create a simple channel with capacity 10.
+    // ss[impl actor.run-dispatcher]
     fn make_channel() -> (Tx<i32>, Rx<i32>) {
         let builder = ChannelBuilder::default().with_capacity(10);
         builder.eager_build_internal()
     }
 
     /// Helper to create a terminated oneshot (shutdown already fired).
+    // ss[impl actor.run-dispatcher]
     fn terminated_shutdown() -> Shared<oneshot::Receiver<()>> {
         let (tx, rx) = oneshot::channel();
         drop(tx);
@@ -291,6 +329,7 @@ mod steady_actor_core_tests {
 
     /// Helper to create a pending oneshot (shutdown not fired).
     /// Returns the sender so the caller can keep it alive.
+    // ss[impl actor.run-dispatcher]
     fn pending_shutdown() -> (oneshot::Sender<()>, Shared<oneshot::Receiver<()>>) {
         let (tx, rx) = oneshot::channel::<()>();
         let shared = rx.shared();
@@ -300,6 +339,7 @@ mod steady_actor_core_tests {
     // ── RxCore delegation tests ───────────────────────────────────────────
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_peek_slice() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![1, 2, 3].into_iter());
@@ -309,6 +349,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_take_slice() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![10, 20, 30].into_iter());
@@ -319,6 +360,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_advance_take_index() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![1, 2, 3].into_iter());
@@ -328,6 +370,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_try_peek() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![42].into_iter());
@@ -336,6 +379,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_try_peek_iter() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![1, 2, 3].into_iter());
@@ -344,6 +388,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_is_empty() {
         let (_, mut rx) = make_channel();
         assert!(SteadyActorCore::is_empty(&mut rx));
@@ -353,6 +398,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_avail_units() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![1, 2].into_iter());
@@ -360,6 +406,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_try_take() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![99].into_iter());
@@ -369,6 +416,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_take_into_iter() {
         let (mut tx, mut rx) = make_channel();
         tx.shared_send_iter_until_full(vec![1, 2, 3].into_iter());
@@ -379,6 +427,7 @@ mod steady_actor_core_tests {
     // ── TxCore delegation tests ───────────────────────────────────────────
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_send_slice() {
         let (mut tx, _rx) = make_channel();
         let done = SteadyActorCore::send_slice(&mut tx, &[5, 6, 7]);
@@ -386,6 +435,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_poke_slice() {
         let (mut tx, _rx) = make_channel();
         let (a, b) = SteadyActorCore::poke_slice(&mut tx);
@@ -394,6 +444,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_advance_send_index() {
         let (mut tx, _rx) = make_channel();
         let done = SteadyActorCore::advance_send_index(&mut tx, 3);
@@ -401,6 +452,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_send_iter_until_full() {
         let (mut tx, _rx) = make_channel();
         let sent = SteadyActorCore::send_iter_until_full(&mut tx, vec![1, 2, 3].into_iter());
@@ -408,6 +460,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_try_send() {
         let (mut tx, _rx) = make_channel();
         let outcome = SteadyActorCore::try_send(&mut tx, 42);
@@ -415,6 +468,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_is_full() {
         let (mut tx, _rx) = make_channel();
         assert!(!SteadyActorCore::is_full(&mut tx));
@@ -426,6 +480,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_vacant_units() {
         let (mut tx, _rx) = make_channel();
         assert_eq!(SteadyActorCore::vacant_units(&mut tx), 10);
@@ -434,6 +489,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_send_async() {
         let (mut tx, _rx) = make_channel();
         let ident = ActorIdentity::new(0, "test", None);
@@ -449,6 +505,7 @@ mod steady_actor_core_tests {
     // ── Async wait helpers tests ──────────────────────────────────────────
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_wait_shutdown() {
         let shutdown = terminated_shutdown();
         let result = core_exec::block_on(SteadyActorCore::wait_shutdown(&shutdown));
@@ -456,6 +513,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_wait() {
         let (_sender, shutdown) = pending_shutdown();
         let start = std::time::Instant::now();
@@ -464,6 +522,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_wait_shutdown_aborts() {
         let shutdown = terminated_shutdown();
         let start = std::time::Instant::now();
@@ -473,6 +532,7 @@ mod steady_actor_core_tests {
     }
 
     #[test]
+    // ss[verify actor.run-dispatcher]
     fn test_yield_now() {
         core_exec::block_on(SteadyActorCore::yield_now());
     }

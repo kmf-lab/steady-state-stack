@@ -3,6 +3,7 @@
 //! Provides compile-time and runtime configuration for telemetry, debugging behavior,
 //! and other internal system settings.
 
+// ss[related philosophy.structural-hierarchy]
 use std::env;
 
 /// Whether the telemetry server is enabled.
@@ -11,47 +12,59 @@ use std::env;
 /// - `telemetry_server_builtin`
 /// - `prometheus_metrics`
 #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature = "prometheus_metrics"))]
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_SERVER: bool = true;
 
 #[cfg(not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin", feature = "prometheus_metrics")))]
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_SERVER: bool = false;
 
 /// Capacity of the backplane channel for test messages.
+// ss[related philosophy.structural-hierarchy]
 pub const BACKPLANE_CAPACITY: usize = 32;
 
 /// Whether telemetry history is enabled (controlled by `telemetry_history` feature).
 #[cfg(feature = "telemetry_history")]
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_HISTORY: bool = true;
 
 #[cfg(not(feature = "telemetry_history"))]
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_HISTORY: bool = false;
 
 /// Maximum seconds between repeated telemetry error reports.
+// ss[related philosophy.structural-hierarchy]
 pub const MAX_TELEMETRY_ERROR_RATE_SECONDS: usize = 20;
 
 /// Number of slots in the real channel for telemetry collection.
+// ss[related philosophy.structural-hierarchy]
 pub const REAL_CHANNEL_LENGTH_TO_COLLECTOR: usize = 256;
 
 /// Number of telemetry samples to send per frame.
 /// This defines the Nyquist resolution for motion capture.
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_SAMPLES_PER_FRAME: usize = 4;
 
 /// Maximum messages pulled from each telemetry ring (actor / take / send) per metrics-collector wake.
 /// Bounded at `2 * TELEMETRY_SAMPLES_PER_FRAME` so one backlog-heavy actor does not starve others
 /// within the same frame; backlog drains across subsequent wakes.
+// ss[related philosophy.structural-hierarchy]
 pub const TELEMETRY_COLLECTOR_SLICE_MAX: usize = 2 * TELEMETRY_SAMPLES_PER_FRAME;
 
 
 //should be big enought to hold one message for every actor, on graph def we need this much space
 //for large graphs this will be fine as we consume and produce and await until it is done.
 //this must be large enought to hold all actors which may panic at the same moment.
+// ss[related philosophy.structural-hierarchy]
 pub const REAL_CHANNEL_LENGTH_TO_FEATURE: usize = 256;
 
 /// Threshold for aggregating parallel edges into a single logical bundle.
 #[allow(dead_code)]
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const AGGREGATION_THRESHOLD: usize = 4;
 
 // Default values for runtime configuration
+// ss[related philosophy.structural-hierarchy]
 const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;
 const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
 
@@ -61,6 +74,7 @@ const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
 /// # Behavior
 /// - If `TELEMETRY_SERVER_PORT` is unset, returns `DEFAULT_TELEMETRY_SERVER_PORT`.
 /// - If the variable is set but cannot be parsed as `u16`, returns the default.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) fn telemetry_server_port() -> u16 {
     env::var("TELEMETRY_SERVER_PORT")
         .ok()
@@ -73,16 +87,19 @@ pub(crate) fn telemetry_server_port() -> u16 {
 ///
 /// # Behavior
 /// - If `TELEMETRY_SERVER_IP` is unset, returns `DEFAULT_TELEMETRY_SERVER_IP`.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) fn telemetry_server_ip() -> String {
     env::var("TELEMETRY_SERVER_IP").unwrap_or_else(|_| DEFAULT_TELEMETRY_SERVER_IP.to_string())
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 mod tests {
     use super::*;
     use std::env;
 
     #[test]
+    // ss[verify philosophy.structural-hierarchy]
     fn test_default_constants() {
         // `TELEMETRY_*` toggles follow `#[cfg(feature = ...)]`; builds may use
         // `--all-features`, `cargo mutants`, etc., so assert consistency with the active set.
@@ -105,6 +122,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify philosophy.structural-hierarchy]
     fn test_telemetry_server_port_env_handling() {
         unsafe {
             env::remove_var("TELEMETRY_SERVER_PORT");
@@ -120,6 +138,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify philosophy.structural-hierarchy]
     fn test_telemetry_server_ip_env_handling() {
         unsafe {
             env::remove_var("TELEMETRY_SERVER_IP");

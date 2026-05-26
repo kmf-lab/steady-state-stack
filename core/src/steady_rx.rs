@@ -1,21 +1,28 @@
+// ss[related philosophy.zero-copy-discipline]
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use futures_util::{select, task, FutureExt};
 use std::sync::Arc;
+// ss[related philosophy.zero-copy-discipline]
 use futures_util::lock::{Mutex, MutexLockFuture};
 use std::time::{Duration, Instant};
 use log::error;
+// ss[related philosophy.zero-copy-discipline]
 use futures::channel::oneshot;
 use futures_util::future::{select_all, FusedFuture};
 use async_ringbuf::consumer::AsyncConsumer;
+// ss[related philosophy.zero-copy-discipline]
 use ringbuf::consumer::Consumer;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref};
+// ss[related philosophy.zero-copy-discipline]
 use futures_timer::Delay;
 use crate::channel_builder::InternalReceiver;
 use crate::monitor::{ChannelMetaData};
+// ss[related philosophy.zero-copy-discipline]
 use crate::core_rx::RxCore;
 use crate::{RxBundle, SteadyRxBundle};
 use crate::distributed::aqueduct_stream::RxChannelMetaDataWrapper;
+// ss[related philosophy.zero-copy-discipline]
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 
@@ -27,6 +34,7 @@ use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 ///
 /// # Type Parameters
 /// - `T`: The type of messages that the channel can hold.
+// ss[related philosophy.zero-copy-discipline]
 pub struct Rx<T> {
     /// Internal ring buffer consumer for managing message reception.
     pub(crate) rx: InternalReceiver<T>,
@@ -58,6 +66,7 @@ pub struct Rx<T> {
     pub(crate) registry_key: usize,
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T> Drop for Rx<T> {
     fn drop(&mut self) {
         if self.registry_key != 0 {
@@ -66,23 +75,27 @@ impl<T> Drop for Rx<T> {
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T> Debug for Rx<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Rx") // TODO: Add more details for debugging purposes.
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T> RxMetaDataProvider for Rx<T> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.channel_meta_data.meta_data)
     }
 }
+// ss[related philosophy.zero-copy-discipline]
 impl<T> Rx<T> {
 
     /// Retrieves metadata for this receiver in a single-element array.
     ///
     /// This provides consistency with bundle interfaces, allowing a single
     /// receiver to be treated as a collection of metadata providers.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn meta_data(&self) -> [&dyn RxMetaDataProvider; 1] {
         [self as &dyn RxMetaDataProvider]
     }
@@ -103,6 +116,7 @@ impl<T> Rx<T> {
     /// # Requirements
     /// The message type `T` must implement the `Copy` trait.
     #[inline]
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn shared_try_peek_slice(&self, elems: &mut [T]) -> usize
     where
         T: Copy,
@@ -134,6 +148,7 @@ impl<T> Rx<T> {
     /// # Returns
     /// `Some(&T)` if a message is available, `None` if the channel is empty.
     #[inline]
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
         let result = self.rx.try_peek();
         if result.is_some() {
@@ -162,6 +177,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the peek count exceeds the threshold, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn is_showstopper(&self, threshold: usize) -> bool {
         assert_ne!(threshold, 0, "Threshold must be greater than zero.");
         assert_ne!(threshold, 1, "Threshold of one is not meaningful for detection.");
@@ -186,6 +202,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `Some(T)` if a message is available, `None` if the channel is empty.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn try_take(&mut self) -> Option<T> {
         if let Some((_done, msg)) = self.shared_try_take() {
             Some(msg)
@@ -201,6 +218,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `Some(&T)` if a message is available, `None` if the channel is empty.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn try_peek(&self) -> Option<&T> {
         self.shared_try_peek()
     }
@@ -218,6 +236,7 @@ impl<T> Rx<T> {
     ///
     /// # Requirements
     /// The message type `T` must implement the `Copy` trait.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn try_peek_slice(&self, elems: &mut [T]) -> usize
     where
         T: Copy,
@@ -232,11 +251,13 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// An iterator yielding references to the messages in the channel.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn try_peek_iter(&self) -> impl Iterator<Item = &T> {
         self.shared_try_peek_iter()
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T> Rx<T> {
     /// Returns the unique identifier of the channel.
     ///
@@ -245,6 +266,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// The channel's unique ID as a `usize`.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn id(&self) -> usize {
         self.channel_meta_data.meta_data.id
     }
@@ -256,6 +278,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the transmitter instance has changed, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn tx_instance_changed(&mut self) -> bool {
         let id = self.tx_version.load(Ordering::SeqCst);
         if id == self.last_checked_tx_instance {
@@ -270,6 +293,7 @@ impl<T> Rx<T> {
     ///
     /// This method updates the receiver's internal state to reflect the current transmitter instance,
     /// typically called after handling a detected change.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn tx_instance_reset(&mut self) {
         let id = self.tx_version.load(Ordering::SeqCst);
         self.last_checked_tx_instance = id;
@@ -282,6 +306,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the channel is closed and empty, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn is_closed_and_empty(&mut self) -> bool {
         if self.is_closed.is_terminated() {
             self.shared_is_empty()
@@ -301,6 +326,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the channel is closed, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn is_closed(&mut self) -> bool {
         if self.is_closed.is_terminated() {
             true
@@ -318,6 +344,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `true` if the channel is empty, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn is_empty(&self) -> bool {
         self.shared_is_empty()
     }
@@ -329,6 +356,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// The channel's capacity as a `usize`.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn capacity(&self) -> usize {
         self.shared_capacity()
     }
@@ -340,6 +368,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// The number of available messages as a `usize`.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn avail_units(&mut self) -> usize {
         self.shared_avail_units()
     }
@@ -351,6 +380,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `Some(T)` if a message is available, `None` if the channel is closed and empty.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) async fn shared_take_async(&mut self) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         let result = if !one_down.is_terminated() {
@@ -375,6 +405,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// `Some(T)` if a message is available within the timeout, `None` if the timeout expires or the channel is closed and empty.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) async fn shared_take_async_timeout(&mut self, timeout: Option<Duration>) -> Option<T> {
         let mut one_down = &mut self.oneshot_shutdown;
         let result = if !one_down.is_terminated() {
@@ -408,6 +439,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// An iterator yielding the messages in the channel.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn shared_take_into_iter(&mut self) -> impl Iterator<Item = T> + '_ {
         CountingIterator::new(self.rx.pop_iter(), &self.take_count)
     }
@@ -419,6 +451,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// An iterator yielding references to the messages in the channel.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn shared_try_peek_iter(&self) -> impl Iterator<Item = &T> {
         self.rx.iter()
     }
@@ -434,6 +467,7 @@ impl<T> Rx<T> {
     ///
     /// # Returns
     /// An iterator yielding references to the messages in the channel.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) async fn _shared_peek_async_iter_timeout(
         &mut self,
         wait_for_count: usize,
@@ -472,6 +506,7 @@ impl<T> Rx<T> {
     ///
     /// # Requirements
     /// The message type `T` must implement the `Copy` trait.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn deprecated_shared_take_slice(&mut self, elems: &mut [T]) -> usize
     where
         T: Copy,
@@ -492,6 +527,7 @@ impl<T> Rx<T> {
     /// # Parameters
     /// - `done`: The receive operation result containing the count of items received.
     /// - `tel`: The telemetry send structure to record the event in.
+    // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         // CRITICAL FIX: Resolve lazy index if not yet established
         if self.local_monitor_index == MONITOR_UNKNOWN {
@@ -517,11 +553,13 @@ impl<T> Rx<T> {
 ///
 /// This struct wraps an existing iterator and increments a counter each time an item is yielded,
 /// aiding in telemetry or logging of message processing.
+// ss[related philosophy.zero-copy-discipline]
 pub(crate) struct CountingIterator<'a, I> {
     iter: I,
     counter: &'a AtomicU32,
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<'a, I> CountingIterator<'a, I> {
     /// Creates a new counting iterator with the given iterator and counter.
     ///
@@ -534,15 +572,18 @@ impl<'a, I> CountingIterator<'a, I> {
     ///
     /// # Returns
     /// A new `CountingIterator` instance.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn new(iter: I, count: &'a AtomicU32) -> Self {
         CountingIterator { iter, counter: count }
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<I> Iterator for CountingIterator<'_, I>
 where
     I: Iterator,
 {
+    // ss[related philosophy.zero-copy-discipline]
     type Item = I::Item;
 
     /// Yields the next item from the underlying iterator and increments the counter.
@@ -552,6 +593,7 @@ where
     ///
     /// # Returns
     /// `Some(I::Item)` if an item is available, `None` if the iterator is exhausted.
+    // ss[related philosophy.zero-copy-discipline]
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.iter.next();
         if item.is_some() {
@@ -562,6 +604,7 @@ where
 }
 
 /// Trait defining the required methods for providing receiver metadata.
+// ss[related philosophy.zero-copy-discipline]
 pub trait RxMetaDataProvider: Debug {
     /// Retrieves metadata associated with the receiver.
     ///
@@ -570,9 +613,11 @@ pub trait RxMetaDataProvider: Debug {
     ///
     /// # Returns
     /// A shared reference to the channel's metadata.
+    // ss[related philosophy.zero-copy-discipline]
     fn meta_data(&self) -> Arc<ChannelMetaData>;
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T: Send + Sync> RxMetaDataProvider for Mutex<Rx<T>> {
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         loop {
@@ -585,6 +630,7 @@ impl<T: Send + Sync> RxMetaDataProvider for Mutex<Rx<T>> {
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
     /// Retrieves metadata associated with the receiver.
     ///
@@ -592,6 +638,7 @@ impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
     ///
     /// # Returns
     /// A shared reference to the channel's metadata, or a default instance if not found.
+    // ss[related philosophy.zero-copy-discipline]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         let key = Arc::as_ptr(self) as usize;
         if let Some(meta) = crate::monitor::METADATA_REGISTRY.read().get(&key) {
@@ -602,6 +649,7 @@ impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
 }
 
 /// Trait defining the required methods for a steady receiver bundle.
+// ss[related philosophy.zero-copy-discipline]
 pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     /// Locks all receivers in the bundle.
     ///
@@ -610,6 +658,8 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// A future resolving to a collection of mutex guards for the receivers.
+    // ss[impl philosophy.lock-first-contract]
+    // ss[impl actor.lock-first.channels]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>>;
 
     /// Retrieves metadata for all receivers in the bundle.
@@ -618,6 +668,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// An array of references to metadata providers, one for each receiver.
+    // ss[related philosophy.zero-copy-discipline]
     fn meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH];
 
     /// Asynchronously waits for a specified number of units to be available in the bundle.
@@ -631,6 +682,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     ///
     /// # Returns
     /// A future that resolves when the conditions are met.
+    // ss[related philosophy.zero-copy-discipline]
     fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) -> impl std::future::Future<Output = ()>;
 
     /// Waits for the first receiver in the bundle to have at least its required item count.
@@ -639,18 +691,22 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     /// least one channel satisfies `avail_units >= avail_counts[i]`, then returns its index.
     /// Positions with `avail_counts[i] == 0` are skipped.
     ///
+    // ss[impl bundle.trait-vs-actor-index]
     /// **Prefer [`SteadyActor::wait_avail_index`](crate::steady_actor::SteadyActor::wait_avail_index) inside actors:**
     /// that API is graph-shutdown-aware, returns `Option<usize>`, and uses round-robin among lanes.
     /// This bundle-trait method returns `usize` only, does not integrate the actor shutdown signal,
     /// and does not apply monitor round-robin state.
+    // ss[related philosophy.zero-copy-discipline]
     fn wait_avail_index(&self, avail_counts: &[usize]) -> impl std::future::Future<Output = usize>;
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn meta_data(&self) -> [&dyn RxMetaDataProvider; GIRTH] {
         self.iter()
             .map(|x| x as &dyn RxMetaDataProvider)
@@ -659,6 +715,7 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
             .expect("Wrong number of elements")
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     async fn wait_avail_units(&self, avail_count: usize, ready_channels: usize) {
         let futures = self.iter().map(|rx| {
             let rx = rx.clone();
@@ -681,6 +738,8 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
         }
     }
 
+    // ss[impl bundle.index-wait-readiness]
+    // ss[verify bundle.trait-vs-actor-index]
     async fn wait_avail_index(&self, avail_counts: &[usize]) -> usize {
         debug_assert_eq!(GIRTH, avail_counts.len(), "wait_avail_index: bundle and counts length mismatch");
 
@@ -708,6 +767,7 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
 }
 
 /// Trait defining the required methods for a receiver bundle.
+// ss[related philosophy.zero-copy-discipline]
 pub trait RxBundleTrait {
     /// Checks if all receivers in the bundle are closed and empty.
     ///
@@ -715,6 +775,7 @@ pub trait RxBundleTrait {
     ///
     /// # Returns
     /// `true` if all receivers are closed and empty, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     fn is_closed_and_empty(&mut self) -> bool;
 
     /// Checks if all receivers in the bundle are closed.
@@ -723,6 +784,7 @@ pub trait RxBundleTrait {
     ///
     /// # Returns
     /// `true` if all receivers are closed, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     fn is_closed(&mut self) -> bool;
 
     /// Checks if all receivers in the bundle are empty.
@@ -732,6 +794,7 @@ pub trait RxBundleTrait {
     ///
     /// # Returns
     /// `true` if all receivers are empty, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     fn is_empty(&mut self) -> bool;
 
     /// Checks if the transmitter instance has changed for any receiver in the bundle.
@@ -740,28 +803,34 @@ pub trait RxBundleTrait {
     ///
     /// # Returns
     /// `true` if any transmitter instance has changed, `false` otherwise.
+    // ss[related philosophy.zero-copy-discipline]
     fn tx_instance_changed(&mut self) -> bool;
 
     /// Resets the transmitter instance for all receivers in the bundle.
     ///
     /// This method updates the internal state of all receivers to reflect current transmitter instances,
     /// typically after a change is handled.
+    // ss[related philosophy.zero-copy-discipline]
     fn tx_instance_reset(&mut self);
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl<T> RxBundleTrait for RxBundle<'_, T> {
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn is_closed(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed())
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn is_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_empty())
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn tx_instance_changed(&mut self) -> bool {
         if self.iter_mut().any(|f| f.tx_instance_changed()) {
             self.iter_mut().for_each(|f| f.tx_instance_reset());
@@ -771,6 +840,7 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
         }
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     fn tx_instance_reset(&mut self) {
         self.iter_mut().for_each(|f| f.tx_instance_reset());
     }
@@ -781,6 +851,7 @@ impl<T> RxBundleTrait for RxBundle<'_, T> {
 /// This enum distinguishes between normal and stream-based receive operations, providing item and
 /// byte counts for telemetry or logging purposes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// ss[related philosophy.zero-copy-discipline]
 pub enum RxDone {
     /// Indicates a standard receive operation with the number of items received.
     Normal(usize),
@@ -788,6 +859,7 @@ pub enum RxDone {
     Stream(usize, usize),
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl RxDone {
     /// Returns the number of items received.
     ///
@@ -796,6 +868,7 @@ impl RxDone {
     ///
     /// # Returns
     /// The number of items as a `usize`.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn item_count(&self) -> usize {
         match *self {
             RxDone::Normal(count) => count,
@@ -809,6 +882,7 @@ impl RxDone {
     ///
     /// # Returns
     /// `Some(usize)` for stream operations, `None` for normal operations.
+    // ss[related philosophy.zero-copy-discipline]
     pub fn payload_count(&self) -> Option<usize> {
         match *self {
             RxDone::Normal(_) => None,
@@ -817,12 +891,14 @@ impl RxDone {
     }
 }
 
+// ss[related philosophy.zero-copy-discipline]
 impl Deref for RxDone {
     type Target = usize;
 
     /// Allows dereferencing to the item count.
     ///
     /// This enables treating `RxDone` as its item count in contexts where a `usize` is expected.
+    // ss[related philosophy.zero-copy-discipline]
     fn deref(&self) -> &usize {
         match self {
             RxDone::Normal(count) => count,
@@ -832,12 +908,15 @@ impl Deref for RxDone {
 }
 
 #[cfg(test)]
+// ss[related philosophy.zero-copy-discipline]
 mod rx_tests {
     use crate::core_rx::RxCore;
     use crate::core_tx::TxCore;
+    // ss[related philosophy.zero-copy-discipline]
     use super::*;
     use crate::*;
 
+    // ss[verify bundle.index-wait-readiness]
     #[test]
     fn test_bundle() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -887,10 +966,14 @@ mod rx_tests {
 }
 
 #[cfg(test)]
+// ss[related philosophy.zero-copy-discipline]
 mod steady_rx_tests {
     use crate::channel_builder::ChannelBuilder;
     use crate::*;
 
+    // ss[verify philosophy.zero-copy-discipline]
+    // ss[verify philosophy.pull-reactor]
+    // ss[verify philosophy.lock-first-contract]
     #[test]
     fn test_peek_slice_and_iter() {
         let builder = ChannelBuilder::default().with_capacity(4);
@@ -909,6 +992,7 @@ mod steady_rx_tests {
         assert_eq!(collected, vec![5, 6, 7]);
     }
 
+    // ss[verify philosophy.zero-copy-discipline]
     #[test]
     fn test_shared_try_peek_empty_channel() {
         let builder = ChannelBuilder::default().with_capacity(4);

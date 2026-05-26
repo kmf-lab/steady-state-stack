@@ -2,55 +2,72 @@
 //! of the `SteadyCommander` trait, enabling telemetry collection, profiling, and controlled
 //! execution monitoring for actors and channels within the Steady framework.
 
+// ss[related actor.shadow-spotlight]
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use log::*;
 use std::time::{Duration, Instant};
+// ss[related actor.shadow-spotlight]
 use std::sync::{Arc, OnceLock};
 use async_lock::Barrier;
 use parking_lot::RwLock;
+// ss[related actor.shadow-spotlight]
 use futures_util::lock::{Mutex};
 use futures::channel::oneshot;
 use std::any::Any;
+// ss[related actor.shadow-spotlight]
 use std::error::Error;
 use futures_util::future::{FusedFuture, Shared};
 use futures_timer::Delay;
+// ss[related actor.shadow-spotlight]
 use futures_util::{select, FutureExt, StreamExt};
 use std::future::Future;
 use num_traits::Zero;
+// ss[related actor.shadow-spotlight]
 use std::task::Poll;
 use aeron::aeron::Aeron;
 use futures_util::stream::FuturesUnordered;
+// ss[related actor.shadow-spotlight]
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
+// ss[related actor.shadow-spotlight]
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
 use crate::actor_builder::NodeTxRx;
+// ss[related actor.shadow-spotlight]
 use crate::steady_actor::{
     index_wait_avoid_repeat_lane, next_index_wait_start, wait_paired_lane_ready, wait_rx_until_avail_items_ready,
     wait_tx_until_vacant_satisfied, BlockingCallFuture, SendOutcome,
 };
+// ss[related actor.shadow-spotlight]
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
+// ss[related actor.shadow-spotlight]
 use crate::graph_testing::SideChannelResponder;
 use crate::monitor_telemetry::SteadyTelemetry;
 use crate::simulate_edge::IntoSimRunner;
+// ss[related actor.shadow-spotlight]
 use crate::steady_config::{TELEMETRY_SAMPLES_PER_FRAME};
 use crate::steady_rx::RxDone;
 use crate::steady_tx::TxDone;
+// ss[related actor.shadow-spotlight]
 use crate::telemetry::setup;
 use crate::telemetry::setup::send_all_local_telemetry_async;
 use crate::logging_util::steady_logger;
+// ss[related actor.shadow-spotlight]
 use crate::core_exec;
 
 // Debug constant to enable verbose telemetry debugging
+// ss[related actor.shadow-spotlight]
 const ENABLE_TELEMETRY_DEBUG: bool = false;
 
 // Threshold multiplier for detecting telemetry transmission issues
+// ss[related actor.shadow-spotlight]
 const TELEMETRY_DELAY_THRESHOLD_MULTIPLIER: u64 = 2; // e.g., 2 times the frame rate
 
 /// Automatically sends the last telemetry data when a `LocalMonitor` instance is dropped.
+// ss[related actor.shadow-spotlight]
 impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL> {
     fn drop(&mut self) {
         if self.is_in_graph {
@@ -73,6 +90,7 @@ impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL>
 /// # Type Parameters
 /// - `RX_LEN`: THE length of the receiver array.
 /// - `TX_LEN`: THE length of the transmitter array.
+// ss[related actor.shadow-spotlight]
 pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) ident: ActorIdentity,
     pub(crate) is_in_graph: bool,
@@ -106,6 +124,7 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
 }
 
+// ss[related actor.shadow-spotlight]
 impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     /// Checks if telemetry data has not been sent for longer than the threshold and logs a warning.
     fn check_telemetry_delay(&self) {
@@ -127,6 +146,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
     #[allow(async_fn_in_trait)]
     /// Runs simulation runners within the context of this local monitor.
+    // ss[related actor.shadow-spotlight]
     pub async fn simulated_behavior(
         &mut self,
         sims: Vec<&dyn IntoSimRunner<Self>>
@@ -136,6 +156,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 
     /// Marks the start of a high-activity profile period for telemetry monitoring.
+    // ss[related actor.shadow-spotlight]
     pub(crate) fn start_profile(&self, x: usize) -> Option<FinallyRollupProfileGuard<'_>> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[x].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -149,11 +170,13 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     pub(crate) async fn internal_wait_shutdown(&self) -> bool {
         let _ = self.oneshot_shutdown.clone().await;
         true
     }
 
+    // ss[related actor.shadow-spotlight]
     fn telemetry_remaining_micros(&self) -> i64 {
         ((1000i64 * self.frame_rate_ms as i64) / (TELEMETRY_SAMPLES_PER_FRAME as i64))
             - (self.last_telemetry_send.elapsed().as_micros() as i64)
@@ -161,25 +184,30 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 }
 
+// ss[related actor.shadow-spotlight]
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_showstopper<T>(&self, rx: &mut Rx<T>, threshold: usize) -> bool {
         rx.is_showstopper(threshold)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn simulated_behavior(mut self, sims: Vec<&dyn IntoSimRunner<Self>>
     ) -> Result<(), Box<dyn Error>> {
         simulate_edge::simulated_behavior::<SteadyActorSpotlight<RX_LEN, TX_LEN>>(&mut self, sims).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    // ss[related actor.shadow-spotlight]
     fn relay_stats_smartly(&mut self) -> bool {
 
 
@@ -214,6 +242,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
     /// Triggers the transmission of all collected telemetry data to the configured telemetry endpoints.
+    // ss[related actor.shadow-spotlight]
     fn relay_stats(&mut self) {
         let last_elapsed = self.last_telemetry_send.elapsed();
         setup::try_send_all_local_telemetry(self, Some(last_elapsed.as_micros() as u64));
@@ -228,6 +257,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
     /// Periodically relays telemetry data at a specified rate.
+    // ss[related actor.shadow-spotlight]
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
         let result = self.wait_periodic(duration_rate).await;
         self.relay_stats_smartly();
@@ -235,33 +265,40 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         result
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_in(&self, target: &[GraphLivelinessState]) -> bool {
         let liveliness = self.runtime_state.read();
         liveliness.is_in_state(target)
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_building(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::Building])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_running(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::Running])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_stop_requested(&self) -> bool {
         self.is_liveliness_in(&[GraphLivelinessState::StopRequested])
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> {
         let liveliness = self.runtime_state.read();
         liveliness.shutdown_timeout
     }
 
+    // ss[related actor.shadow-spotlight]
     fn peek_slice<'b, T>(&self, this: &'b mut T) -> T::SliceSource<'b>
     where T: RxCore {
         this.shared_peek_slice()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn take_slice<T: RxCore>(&mut self, this: &mut T, slice: T::SliceTarget<'_>) -> RxDone
     where T::MsgItem: Copy {
         if let Some(ref st) = self.telemetry.state {
@@ -277,6 +314,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
+    // ss[related actor.shadow-spotlight]
     fn advance_take_index<T: RxCore>(&mut self, this: &mut T, count: T::MsgSize) -> RxDone {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -291,6 +329,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
+    // ss[related actor.shadow-spotlight]
     fn advance_send_index<T: TxCore>(&mut self, this: &mut T, count: T::MsgSize) -> TxDone {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -306,22 +345,27 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_peek<'a, T>(&'a self, this: &'a mut Rx<T>) -> Option<&'a T> {
         this.shared_try_peek()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_peek_iter<'a, T>(&'a self, this: &'a mut Rx<T>) -> impl Iterator<Item = &'a T> + 'a {
         this.shared_try_peek_iter()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_empty<T: RxCore>(&self, this: &mut T) -> bool {
         this.shared_is_empty()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_avail_units()
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn peek_async<'a, T: RxCore>(&'a self, this: &'a mut T) -> Option<T::MsgPeek<'a>> {
         let _guard = self.start_profile(CALL_OTHER);
         let timeout = if self.telemetry.is_dirty() {
@@ -337,6 +381,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         this.shared_peek_async_timeout(timeout).await
     }
 
+    // ss[related actor.shadow-spotlight]
     fn send_slice<T: TxCore>(&mut self, this: &mut T, slice: T::SliceSource<'_>) -> TxDone
     where T::MsgOut: Copy {
         if let Some(ref mut st) = self.telemetry.state {
@@ -354,12 +399,14 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
+    // ss[related actor.shadow-spotlight]
     fn poke_slice<'b, T>(&self, this: &'b mut T) -> T::SliceTarget<'b>
     where
         T: TxCore {
         this.shared_poke_slice()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, this: &mut Tx<T>, iter: I) -> usize {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -374,6 +421,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         done
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
         if let Some(ref mut st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_WRITE].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -392,6 +440,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn flush_defrag_messages<S: StreamControlItem>(
         &mut self,
         out_item: &mut Tx<S>,
@@ -482,14 +531,17 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn is_full<T: TxCore>(&self, this: &mut T) -> bool {
         this.shared_is_full()
     }
 
+    // ss[related actor.shadow-spotlight]
     fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize {
         this.shared_vacant_units()
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         if self.telemetry.is_dirty() {
@@ -513,6 +565,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn take_into_iter<'a, T: Sync + Send>(&mut self, this: &'a mut Rx<T>) -> impl Iterator<Item = T> + 'a {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_BATCH_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -531,6 +584,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         DriftCountIterator::new(units, this.shared_take_into_iter(), iterator_count_drift)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn call_async<F>(&self, operation: F) -> Option<F::Output>
     where F: Future {
 
@@ -558,6 +612,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
     where
         F: FnOnce() -> T + Send + 'static,
@@ -571,6 +626,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         BlockingCallFuture(core_exec::spawn_blocking(f))
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_periodic(&self, duration_rate: Duration) -> bool {
         let now_nanos = self.actor_start_time.elapsed().as_nanos() as u64;
         let last = self.last_periodic_wait.load(Ordering::SeqCst);
@@ -606,6 +662,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
                  };
         result
     }
+    // ss[related actor.shadow-spotlight]
     async fn wait_timeout(&self, timeout: Duration) -> bool {
         let delay = Delay::new(timeout);
         let _guard = self.start_profile(CALL_WAIT);
@@ -616,6 +673,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         result
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait(&self, duration: Duration) {
         let _guard = self.start_profile(CALL_WAIT);
         if !self.oneshot_shutdown.is_terminated() {
@@ -623,11 +681,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn yield_now(&self) {
         let _guard = self.start_profile(CALL_WAIT);
         yield_now().await;
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where F: FusedFuture<Output = ()> + 'static + Send + Sync {
         let mut pinned_fut = Box::pin(fut);
@@ -639,6 +699,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn send_async<T: TxCore>(&mut self, this: &mut T, a: T::MsgIn<'_>, saturation: SendSaturation) -> SendOutcome<T::MsgOut> {
         let guard = self.start_profile(CALL_SINGLE_WRITE);
         let timeout = if self.telemetry.is_dirty() {
@@ -671,6 +732,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
         if let Some(ref st) = self.telemetry.state {
             let _ = st.calls[CALL_SINGLE_READ].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |f| Some(f.saturating_add(1)));
@@ -689,6 +751,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn take_async<T>(&mut self, this: &mut Rx<T>) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
         let shutdown_timeout = if self.telemetry.is_dirty() {
@@ -717,6 +780,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn take_async_with_timeout<T>(&mut self, this: &mut Rx<T>, user_timeout: Duration) -> Option<T> {
         let guard = self.start_profile(CALL_SINGLE_READ);
         let shutdown_timeout = if self.telemetry.is_dirty() {
@@ -750,6 +814,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail<T: RxCore>(&self, this: &mut T, count: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
 
@@ -782,6 +847,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, size: T::MsgSize) -> bool {
         let _guard = self.start_profile(CALL_WAIT);
         if this.shared_vacant_units_for(size) {
@@ -811,6 +877,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_shutdown(&self) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         if self.telemetry.is_dirty() {
@@ -830,11 +897,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn sidechannel_responder(&self) -> Option<SideChannelResponder> {
         self.node_tx_rx.as_ref().map(|tr| SideChannelResponder::new(tr.clone(), self.ident))
     }
 
     #[inline]
+    // ss[related actor.shadow-spotlight]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
 
         let current_state = self.runtime_state.read().state.clone();
@@ -859,6 +928,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
     #[inline]
+    // ss[related actor.shadow-spotlight]
     async fn request_shutdown(&mut self) {
         self.relay_stats();
         //if we have a shutdown barrier count we will await here until all are ready
@@ -868,6 +938,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         GraphLiveliness::internal_request_shutdown(self.runtime_state.clone()).await;
     }
 
+    // ss[related actor.shadow-spotlight]
     fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
@@ -879,6 +950,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     ///
     /// No-op if telemetry was not initialized (for example when the graph has no telemetry server
     /// features or `frame_rate_ms` is zero).
+    // ss[related actor.shadow-spotlight]
     fn set_dot_display_text(&mut self, text: Option<&str>) {
         if let Some(ref st) = self.telemetry.state {
             st.set_dot_display_text(text);
@@ -886,11 +958,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
 
+    // ss[related actor.shadow-spotlight]
     fn identity(&self) -> ActorIdentity {
         self.ident
     }
 
     #[allow(deprecated)]
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant_bundle<T: TxCore>(&self, this: &mut TxCoreBundle<'_, T>, size: T::MsgSize, ready_channels: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
@@ -928,6 +1002,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     }
 
     #[allow(deprecated)]
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail_bundle<T: RxCore>(&self, this: &mut RxCoreBundle<'_, T>, item_count: usize, ready_channels: usize) -> bool {
         let _guard = self.start_profile(CALL_OTHER);
         let count_down = ready_channels.min(this.len());
@@ -964,6 +1039,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         result.load(Ordering::Relaxed)
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -1043,6 +1119,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -1118,6 +1195,7 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -1224,10 +1302,12 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
         }
     }
 
+    // ss[related actor.shadow-spotlight]
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }
 
+    // ss[related actor.shadow-spotlight]
     fn regeneration(&self) -> u32 {
         self.regeneration
     }
@@ -1235,13 +1315,16 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 #[cfg(test)]
+// ss[related actor.shadow-spotlight]
 mod steady_actor_spotlight_tests {
     use std::sync::atomic::{Ordering};
     use std::time::Duration;
+    // ss[related actor.shadow-spotlight]
     use crate::*;
     use super::*;
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_spotlight_wait_periodic_overrun() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -1256,6 +1339,7 @@ mod steady_actor_spotlight_tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_spotlight_wait_timeout() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -1268,6 +1352,7 @@ mod steady_actor_spotlight_tests {
     }
 
     #[test]
+    // ss[verify actor.shadow-spotlight]
     fn test_spotlight_relay_stats_periodic() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");

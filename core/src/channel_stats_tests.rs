@@ -3,14 +3,18 @@
 // 2. rate_std_dev_trigger line 265: fix the trigger assertion
 
 #[cfg(test)]
+// ss[related telemetry.channel-labels]
 mod channel_stats_tests {
     use std::cmp::Ordering;
     use std::time::Duration;
+    // ss[related telemetry.channel-labels]
     use crate::channel_stats::{ChannelStatsComputer, DOT_RED, DOT_GREY};
     use crate::monitor::ChannelMetaData;
     use crate::{ActorName, Trigger, Rate, AlertColor, Filled, StdDev, Percentile};
+    // ss[related telemetry.channel-labels]
     use std::sync::Arc;
 
+    // ss[related telemetry.channel-labels]
     fn mock_meta() -> Arc<ChannelMetaData> {
         Arc::new(ChannelMetaData {
             capacity: 100,
@@ -23,6 +27,7 @@ mod channel_stats_tests {
         })
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_avg_filled_percentage_none() {
         let computer = ChannelStatsComputer {
@@ -32,6 +37,7 @@ mod channel_stats_tests {
         assert_eq!(computer.avg_filled_percentage(&50, &100), Ordering::Equal);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_avg_filled_whole_percent_formula() {
         use crate::actor_stats::ChannelBlock;
@@ -54,6 +60,7 @@ mod channel_stats_tests {
         assert_eq!(c.avg_filled_whole_percent(), None);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_avg_latency_none() {
         let computer = ChannelStatsComputer::default();
@@ -64,6 +71,7 @@ mod channel_stats_tests {
     /// as the single source of truth (PROBLEM #3 fix). The display label should
     /// contain "Avg filled: <N> %" and the numeric portion must be consistent
     /// with what avg_filled_whole_percent() returns.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_edge_label_avg_filled_matches_unified_percent() {
         use crate::actor_stats::ChannelBlock;
@@ -123,6 +131,7 @@ mod channel_stats_tests {
         );
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_init_and_label_building() {
         let mut computer = ChannelStatsComputer::default();
@@ -138,6 +147,7 @@ mod channel_stats_tests {
         assert!(computer.prometheus_labels.contains("type=\"u64\""));
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_monotonic_total_and_resets() {
         let mut computer = ChannelStatsComputer::default();
@@ -156,6 +166,7 @@ mod channel_stats_tests {
         assert_eq!(computer.total_consumed, 60);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_bundle_and_memory_display() {
         let mut computer = ChannelStatsComputer::default();
@@ -171,6 +182,7 @@ mod channel_stats_tests {
         assert!(computer.show_memory);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_alert_color_priority() {
         let mut computer = ChannelStatsComputer::default();
@@ -191,6 +203,7 @@ mod channel_stats_tests {
         assert_eq!(color, DOT_RED); // Red should override Yellow
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_trigger_gauntlet_latency() {
         let mut computer = ChannelStatsComputer::default();
@@ -215,6 +228,7 @@ mod channel_stats_tests {
         assert!(computer.triggered_latency(&Trigger::PercentileAbove(Percentile::p90(), Duration::from_micros(200))));
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_trigger_gauntlet_rate() {
         let mut computer = ChannelStatsComputer::default();
@@ -233,6 +247,7 @@ mod channel_stats_tests {
         assert!(computer.triggered_rate(&Trigger::AvgBelow(Rate::per_seconds(10000))));
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_trigger_gauntlet_filled() {
         let mut computer = ChannelStatsComputer::default();
@@ -251,6 +266,7 @@ mod channel_stats_tests {
         assert!(computer.triggered_filled(&Trigger::AvgBelow(Filled::Exact(80))));
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_std_dev_triggers() {
         let mut computer = ChannelStatsComputer::default();
@@ -269,6 +285,7 @@ mod channel_stats_tests {
         assert!(computer.latency_std_dev() >= 0.0);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_zero_capacity_safety() {
         let mut computer = ChannelStatsComputer::default();
@@ -279,6 +296,7 @@ mod channel_stats_tests {
         assert_eq!(color, DOT_GREY);
     }
 
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_histogram_creation_failure_handling() {
         let mut computer = ChannelStatsComputer::default();
@@ -300,6 +318,7 @@ mod channel_stats_tests {
     /// Test 1: Single channel total accumulation over multiple frames
     /// This verifies that total_consumed correctly accumulates the delta between
     /// successive take values, and last_total shows the current inflight.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_single_channel_total_accumulation() {
         // Setup: Create a channel with capacity 100
@@ -341,6 +360,7 @@ mod channel_stats_tests {
     /// 
     /// IMPORTANT: total_consumed accumulates DELTAS (differences between successive take values),
     /// not the cumulative take values themselves.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_bundle_four_channels_aggregation() {
         // Setup: Create 4 channels (bundle of 4)
@@ -415,6 +435,7 @@ mod channel_stats_tests {
 
     /// Test 3: Partner with three channels rollup
     /// This verifies that partner channels (3 lanes) correctly roll up their totals.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_partner_three_channels_rollup() {
         // Setup: Create 3 partner channels (like 3 lanes of a partner)
@@ -473,6 +494,7 @@ mod channel_stats_tests {
     /// Test 4: Edge label display uses total_consumed (cumulative)
     /// This verifies that the edge label shows total_consumed, not last_total.
     /// The user sees this on the graph edge itself.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_edge_label_display_shows_total_consumed() {
         let mut computer = ChannelStatsComputer::default();
@@ -506,6 +528,7 @@ mod channel_stats_tests {
     /// Test 5: Counter reset handling
     /// Verifies that when a counter resets to 0, we handle it correctly
     /// and don't get negative deltas.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_counter_reset_handling() {
         let mut computer = ChannelStatsComputer::default();
@@ -537,6 +560,7 @@ mod channel_stats_tests {
     /// Test 6: Verify last_total vs total_consumed distinction
     /// last_total = inflight (send - take)
     /// total_consumed = cumulative consumed over time
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_last_total_vs_total_consumed_distinction() {
         let mut computer = ChannelStatsComputer::default();
@@ -574,6 +598,7 @@ mod channel_stats_tests {
     /// Tests aggregation with 10 channels to simulate larger bundles.
     /// 
     /// IMPORTANT: total_consumed accumulates DELTAS (differences between successive take values).
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_large_bundle_ten_channels() {
         let mut computers = vec![];
@@ -633,6 +658,7 @@ mod channel_stats_tests {
     /// When send resets to a lower value while take continues normally,
     /// inflight should be computed correctly (new send - new take).
     /// total_consumed should NOT be affected since it only depends on take deltas.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_send_counter_reset_handling() {
         let mut computer = ChannelStatsComputer::default();
@@ -671,6 +697,7 @@ mod channel_stats_tests {
     /// Test 9: show_total = false suppresses total in display
     /// When show_total is disabled, the Total: line should NOT appear
     /// in the edge label when rendered through compute() + display_label.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_show_total_false_suppresses_total() {
         let mut computer = ChannelStatsComputer::default();
@@ -701,6 +728,7 @@ mod channel_stats_tests {
     /// Test 10: End-to-end verification that total_consumed vs last_total distinction
     /// is maintained across multiple frames with varying consumption patterns.
     /// total_consumed is always cumulative (monotonic), last_total is snapshot.
+    // ss[verify telemetry.channel-labels]
     #[test]
     fn test_total_consumed_vs_last_total_distinction() {
         let mut computer = ChannelStatsComputer::default();

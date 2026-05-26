@@ -5,23 +5,29 @@
 //! This module defines the `ChannelBuilder`, channel families (e.g., steady and stream channels),
 //! and macros for constructing and monitoring channels in an actor graph.
 
+// ss[related channel.lazy.defer-allocation]
 use std::fmt::Debug;
 use std::ops::Sub;
 use ringbuf::storage::Heap;
+// ss[related channel.lazy.defer-allocation]
 use std::sync::Arc;
 use futures::lock::Mutex;
 use std::time::{Duration, Instant};
+// ss[related channel.lazy.defer-allocation]
 use async_ringbuf::AsyncRb;
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
 use crate::core_exec;
 
 /** Type alias for the underlying storage backing of the channel, using a heap-based ring buffer. */
+// ss[related channel.lazy.defer-allocation]
 pub(crate) type ChannelBacking<T> = Heap<T>;
 
 /** Type alias for the internal sender component of the channel, wrapping an asynchronous producer. */
+// ss[related channel.lazy.defer-allocation]
 pub(crate) type InternalSender<T> = AsyncProd<Arc<AsyncRb<ChannelBacking<T>>>>;
 
 /** Type alias for the internal receiver component of the channel, wrapping an asynchronous consumer. */
+// ss[related channel.lazy.defer-allocation]
 pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>;
 
 //TODO: 2026, we should use static for all telemetry work.
@@ -33,21 +39,27 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 //let rb = AsyncRb::<Heap<u8>>::new(1000).split();
 //let rb = AsyncRb::<Array<u8,1000>>::default().split();  //static
 
+// ss[related channel.lazy.defer-allocation]
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
 use futures::channel::oneshot;
 #[allow(unused_imports)]
+// ss[related channel.lazy.defer-allocation]
 use log::*;
 use async_ringbuf::traits::Split;
 use crate::{AlertColor, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
+// ss[related channel.lazy.defer-allocation]
 use crate::actor_builder::ActorBuilder;
 use crate::actor_builder_units::Percentile;
 use crate::channel_builder_lazy::{LazyChannel, LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
+// ss[related channel.lazy.defer-allocation]
 use crate::channel_builder_units::{Filled, Rate};
 use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
 use crate::monitor::ChannelMetaData;
+// ss[related channel.lazy.defer-allocation]
 use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
 use crate::telemetry_window::compute_refresh_window_frames;
 use crate::steady_rx::Rx;
+// ss[related channel.lazy.defer-allocation]
 use crate::steady_tx::Tx;
 
 /**
@@ -57,6 +69,7 @@ use crate::steady_tx::Tx;
  * may rely on this value, so it should not be changed. For specific use cases requiring a
  * different capacity, use a custom builder configuration.
  */
+// ss[impl channel.default-capacity]
 const DEFAULT_CAPACITY: usize = 64; // do not change
 
 /**
@@ -67,6 +80,7 @@ const DEFAULT_CAPACITY: usize = 64; // do not change
  * of channels, making it suitable for a variety of actor-based communication scenarios.
  */
 #[derive(Clone, Debug, Default)]
+// ss[related channel.lazy.defer-allocation]
 pub struct ChannelBuilder {
     /// Shared counter for the number of channels created.
     channel_count: Arc<AtomicUsize>,
@@ -172,6 +186,7 @@ pub struct ChannelBuilder {
     show_memory: bool,
 }
 
+// ss[related channel.lazy.defer-allocation]
 impl ChannelBuilder {
     /**
      * Creates a new `ChannelBuilder` instance with default settings.
@@ -193,6 +208,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with default configurations applied.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub(crate) fn new(
         channel_count: Arc<AtomicUsize>,
         oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
@@ -261,6 +277,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with updated telemetry settings.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_compute_refresh_window_floor(&self, refresh: Duration, window: Duration) -> Self {
         let mut result = self.clone();
         let (refresh_in_bits, window_in_bits) =
@@ -279,6 +296,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with telemetry disabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_no_refresh_window(&self) -> Self {
         let mut result = self.clone();
         result.refresh_rate_in_bits = 0;
@@ -295,6 +313,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with total counts display disabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_no_totals(&self) -> Self {
         let mut result = self.clone();
         result.show_total = false;
@@ -308,6 +327,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with memory usage display enabled.
      */
+    // ss[impl channel.memory-usage-telemetry]
     pub fn with_memory_usage(&self) -> Self {
         let mut result = self.clone();
         result.show_memory = true;
@@ -333,6 +353,7 @@ impl ChannelBuilder {
      *
      * Panics with an "Internal error, incorrect length" message if the bundle size does not match `GIRTH`.
      */
+    // ss[impl bundle.girth-const-generic]
     pub fn build_channel_bundle<T, const GIRTH: usize>(&self) -> (LazySteadyTxBundle<T, GIRTH>, LazySteadyRxBundle<T, GIRTH>) {
         let mut tx_vec = Vec::with_capacity(GIRTH);
         let mut rx_vec = Vec::with_capacity(GIRTH);
@@ -386,6 +407,7 @@ impl ChannelBuilder {
      *
      * Panics with an "Internal error, incorrect length" message if the bundle size does not match `GIRTH`.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn build_stream_bundle<T: StreamControlItem, const GIRTH: usize>(&self
                                                                          , bytes_per_item: usize
     ) -> (LazySteadyStreamTxBundle<T, GIRTH>, LazySteadyStreamRxBundle<T, GIRTH>) {
@@ -437,6 +459,7 @@ impl ChannelBuilder {
      *
      * a tuple of `LazyStreamTx<T>` and `LazyStreamRx<T>` representing the transmitter and receiver.
      */
+    // ss[impl channel.stream-dual-buffer]
     pub fn build_stream<T: StreamControlItem>(&self, bytes_per_item: usize) -> (LazyStreamTx<T>, LazyStreamRx<T>) {
         let bytes_capacity = self.capacity*bytes_per_item;
         let lazy_stream = Arc::new(LazyStream::new(self
@@ -458,6 +481,8 @@ impl ChannelBuilder {
      *
      * a tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
      */
+    // ss[impl philosophy.lazy-to-established]
+    // ss[impl channel.lazy.defer-allocation]
     pub fn build_channel<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
@@ -474,6 +499,7 @@ impl ChannelBuilder {
      *
      * a tuple of `LazySteadyTx<T>` and `LazySteadyRx<T>` representing the transmitter and receiver.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn build<T>(&self) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let lazy_channel = Arc::new(LazyChannel::new(self));
         (LazySteadyTx::<T>::new(lazy_channel.clone()), LazySteadyRx::<T>::new(lazy_channel.clone()))
@@ -492,6 +518,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the specified capacity.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_capacity(&self, capacity: usize) -> Self {
         let mut result = self.clone();
         result.capacity = capacity;
@@ -507,6 +534,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with type display enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_type(&self) -> Self {
         let mut result = self.clone();
         result.show_type = true;
@@ -526,6 +554,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with line expansion configured.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_line_expansion(&self, scale: f32) -> Self {
         let mut result = self.clone();
         result.line_expansion = scale;
@@ -538,6 +567,7 @@ impl ChannelBuilder {
      * # Arguments
      * - `partner`: A static string literal identifying the partner or task.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_partner(&self, partner: &'static str) -> Self {
         let mut result = self.clone();
         result.partner = Some(partner);
@@ -553,6 +583,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with average filled state monitoring enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_avg_filled(&self) -> Self {
         let mut result = self.clone();
         result.avg_filled = true;
@@ -568,6 +599,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with maximum filled state monitoring enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_filled_max(&self) -> Self {
         let mut result = self.clone();
         result.max_filled = true;
@@ -575,6 +607,7 @@ impl ChannelBuilder {
     }
 
     /// show the max latency
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_latency_max(&self) -> Self {
         let mut result = self.clone();
         result.max_latency = true;
@@ -582,6 +615,7 @@ impl ChannelBuilder {
     }
 
     /// show the max rate
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_rate_max(&self) -> Self {
         let mut result = self.clone();
         result.max_rate = true;
@@ -597,6 +631,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with minimum filled state monitoring enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_filled_min(&self) -> Self {
         let mut result = self.clone();
         result.min_filled = true;
@@ -604,6 +639,7 @@ impl ChannelBuilder {
     }
 
     /// show the min latency
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_latency_min(&self) -> Self {
         let mut result = self.clone();
         result.min_latency = true;
@@ -611,6 +647,7 @@ impl ChannelBuilder {
     }
 
     /// show the min rate
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_rate_min(&self) -> Self {
         let mut result = self.clone();
         result.min_rate = true;
@@ -627,6 +664,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with average rate monitoring enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_avg_rate(&self) -> Self {
         let mut result = self.clone();
         result.avg_rate = true;
@@ -642,6 +680,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with average latency monitoring enabled.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_avg_latency(&self) -> Self {
         let mut result = self.clone();
         result.avg_latency = true;
@@ -657,6 +696,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the sidecar flag set.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn connects_sidecar(&self) -> Self {
         let mut result = self.clone();
         result.connects_sidecar = true;
@@ -677,6 +717,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with configured labels.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_labels(&self, labels: &'static [&'static str], display: bool) -> Self {
         let mut result = self.clone();
         result.labels = if display { labels } else { &[] };
@@ -696,6 +737,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_filled_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_filled.push(config);
@@ -715,6 +757,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_rate_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_rate.push(config);
@@ -734,6 +777,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_latency_standard_deviation(&self, config: StdDev) -> Self {
         let mut result = self.clone();
         result.std_dev_latency.push(config);
@@ -753,6 +797,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_filled_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_filled.push(config);
@@ -772,6 +817,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_rate_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_rate.push(config);
@@ -791,6 +837,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the metric added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_latency_percentile(&self, config: Percentile) -> Self {
         let mut result = self.clone();
         result.percentiles_latency.push(config);
@@ -811,6 +858,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the trigger added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_rate_trigger(&self, bound: Trigger<Rate>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_rate.push((bound, color));
@@ -831,6 +879,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the trigger added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_filled_trigger(&self, bound: Trigger<Filled>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_filled.push((bound, color));
@@ -851,6 +900,7 @@ impl ChannelBuilder {
      *
      * a new `ChannelBuilder` instance with the trigger added.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub fn with_latency_trigger(&self, bound: Trigger<Duration>, color: AlertColor) -> Self {
         let mut result = self.clone();
         result.trigger_latency.push((bound, color));
@@ -875,6 +925,7 @@ impl ChannelBuilder {
      *
      * Panics if `capacity` is zero, as a valid channel requires a positive capacity.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub(crate) fn to_meta_data(&self, type_name: &'static str, type_byte_count: usize) -> ChannelMetaData {
         assert!(self.capacity > 0);
         let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
@@ -923,6 +974,7 @@ impl ChannelBuilder {
 
     /// Finalizes the channel configuration and creates the channel with the specified settings.
     /// This method ties together all the configured options, applying them to the newly created channel.
+    // ss[related channel.lazy.defer-allocation]
     pub const UNSET: u32 = u32::MAX;
 
     /**
@@ -938,6 +990,7 @@ impl ChannelBuilder {
      *
      * a tuple of `Tx<T>` and `Rx<T>` representing the raw transmitter and receiver.
      */
+    // ss[related channel.lazy.defer-allocation]
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
         let now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
 
@@ -1010,6 +1063,7 @@ impl ChannelBuilder {
      *
      * a tuple of `SteadyTx<T>` and `SteadyRx<T>` representing the transmitter and receiver.
      */
+    // ss[impl channel.eager-build-test]
     pub fn eager_build<T>(&self) -> (SteadyTx<T>, SteadyRx<T>) {
         let (tx, rx) = self.eager_build_internal();
         let tx_meta = tx.channel_meta_data.meta_data.clone();
@@ -1051,6 +1105,7 @@ impl ChannelBuilder {
  * Panics if available units do not match the expected value, with detailed error information.
  */
 #[macro_export]
+// ss[impl testing.assert-steady-rx]
 macro_rules! assert_steady_rx_eq_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
@@ -1095,6 +1150,7 @@ macro_rules! assert_steady_rx_eq_count {
  * Panics if available units are not greater than the expected value.
  */
 #[macro_export]
+// ss[related channel.lazy.defer-allocation]
 macro_rules! assert_steady_rx_gt_count {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
@@ -1142,6 +1198,7 @@ macro_rules! assert_steady_rx_gt_count {
  * Panics if values are unavailable or do not match expected values.
  */
 #[macro_export]
+// ss[related channel.lazy.defer-allocation]
 macro_rules! assert_steady_rx_eq_take {
     ($self:expr, $expected:expr) => {{
         let rx = $self.clone();
@@ -1194,39 +1251,46 @@ macro_rules! assert_steady_rx_eq_take {
 // }
 
 #[cfg(test)]
+// ss[related channel.lazy.defer-allocation]
 mod tests_inputs {
     use super::*;
 
+    // ss[verify channel.default-capacity]
     #[test]
     fn test_rate_per_millis() {
         let rate = Rate::per_millis(5);
         assert_eq!(rate.rational_ms(), (5, 1));
     }
 
+    // ss[verify channel.default-capacity]
     #[test]
     fn test_rate_per_seconds() {
         let rate = Rate::per_seconds(5);
         assert_eq!(rate.rational_ms(), (5, 1000));
     }
 
+    // ss[verify channel.default-capacity]
     #[test]
     fn test_rate_per_minutes() {
         let rate = Rate::per_minutes(5);
         assert_eq!(rate.rational_ms(), (5, 60000));
     }
 
+    // ss[verify channel.default-capacity]
     #[test]
     fn test_rate_per_hours() {
         let rate = Rate::per_hours(5);
         assert_eq!(rate.rational_ms(), (5, 3600000));
     }
 
+    // ss[verify channel.default-capacity]
     #[test]
     fn test_rate_per_days() {
         let rate = Rate::per_days(5);
         assert_eq!(rate.rational_ms(), (5, 86400000));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_percentage_valid() {
         assert_eq!(Filled::percentage(75.0), Some(Filled::Percentage(75000, 100000)));
@@ -1234,62 +1298,74 @@ mod tests_inputs {
         assert_eq!(Filled::percentage(100.0), Some(Filled::Percentage(100000, 100000)));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_percentage_invalid() {
         assert_eq!(Filled::percentage(-1.0), None);
         assert_eq!(Filled::percentage(101.0), None);
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_exact() {
         assert_eq!(Filled::exact(42), Filled::Exact(42));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p10() {
         assert_eq!(Filled::p10(), Filled::Percentage(10, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p20() {
         assert_eq!(Filled::p20(), Filled::Percentage(20, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p30() {
         assert_eq!(Filled::p30(), Filled::Percentage(30, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p40() {
         assert_eq!(Filled::p40(), Filled::Percentage(40, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p50() {
         assert_eq!(Filled::p50(), Filled::Percentage(50, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p60() {
         assert_eq!(Filled::p60(), Filled::Percentage(60, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p70() {
         assert_eq!(Filled::p70(), Filled::Percentage(70, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p80() {
         assert_eq!(Filled::p80(), Filled::Percentage(80, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p90() {
         assert_eq!(Filled::p90(), Filled::Percentage(90, 100));
     }
 
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_filled_p100() {
         assert_eq!(Filled::p100(), Filled::Percentage(100, 100));
@@ -1298,13 +1374,16 @@ mod tests_inputs {
 
 #[cfg(test)]
 pub(crate) mod test_builder {
+    // ss[related channel.lazy.defer-allocation]
     use super::*;
 
     use crate::actor_builder_units::Percentile;
+    // ss[related channel.lazy.defer-allocation]
     use crate::steady_rx::RxMetaDataProvider;
     use crate::distributed::aqueduct_stream::StreamIngress;
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_new() {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
@@ -1318,6 +1397,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_capacity() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_capacity(128);
@@ -1326,6 +1406,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_type() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_type();
@@ -1334,6 +1415,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_avg_filled() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_filled();
@@ -1342,6 +1424,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_filled_max() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_filled_max();
@@ -1350,6 +1433,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_filled_min() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_filled_min();
@@ -1358,6 +1442,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_avg_rate() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_rate();
@@ -1366,6 +1451,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_avg_latency() {
         let builder = create_test_channel_builder();
         let new_builder = builder.with_avg_latency();
@@ -1374,6 +1460,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_labels() {
         let builder = create_test_channel_builder();
         let labels = &["label1", "label2"];
@@ -1383,6 +1470,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_filled_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
@@ -1392,6 +1480,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_rate_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
@@ -1401,6 +1490,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_latency_standard_deviation() {
         let builder = create_test_channel_builder();
         let std_dev = StdDev::one();
@@ -1410,6 +1500,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_filled_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
@@ -1419,6 +1510,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_rate_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
@@ -1428,6 +1520,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_with_latency_percentile() {
         let builder = create_test_channel_builder();
         let percentile = Percentile::p50();
@@ -1437,6 +1530,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.lazy.defer-allocation]
     pub(crate) fn test_channel_builder_to_meta_data() {
         let builder = create_test_channel_builder();
         let type_name = "TestType";
@@ -1448,6 +1542,7 @@ pub(crate) mod test_builder {
         assert_eq!(meta_data.bundle_index, builder.bundle_index);
     }
 
+    // ss[verify channel.memory-usage-telemetry]
     #[test]
     pub(crate) fn test_channel_builder_with_memory_usage_sets_flag() {
         let builder = create_test_channel_builder();
@@ -1456,6 +1551,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify bundle.girth-const-generic]
     pub(crate) fn test_channel_builder_bundle_index() {
         let builder = create_test_channel_builder();
         let (_, rx_bundle) = builder.build_channel_bundle::<i32, 3>();
@@ -1467,6 +1563,7 @@ pub(crate) mod test_builder {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     pub(crate) fn test_stream_builder_bundle_index() {
         let builder = create_test_channel_builder();
         let (_, rx_bundle) = builder.build_stream_bundle::<StreamIngress, 3>(8);
@@ -1477,6 +1574,7 @@ pub(crate) mod test_builder {
         }
     }
 
+    // ss[related channel.lazy.defer-allocation]
     fn create_test_channel_builder() -> ChannelBuilder {
         let channel_count = Arc::new(AtomicUsize::new(0));
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));

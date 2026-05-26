@@ -1,6 +1,8 @@
+// ss[related tooling.cargo-driver-strings]
 use clap::*;
 
 #[derive(Parser, Debug, PartialEq, Clone)]
+// ss[related tooling.cargo-driver-strings]
 pub struct Args {
 
     #[arg(short = 'l', long = "loglevel"
@@ -21,15 +23,18 @@ pub struct Args {
 
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod tests {
     use super::*;
 
 
 
+    // ss[related tooling.cargo-driver-strings]
     fn log_variants() -> &'static [&'static str] {
         &["error", "warn", "info", "debug", "trace"]
     }
 
+    // ss[related tooling.cargo-driver-strings]
     fn validate_logging_level(level: String) -> Result<(), String> {
         let level_lower = level.to_lowercase();
         let valid_levels = log_variants();
@@ -40,6 +45,7 @@ mod tests {
         }
     }
     
+    // ss[related tooling.cargo-driver-strings]
     #[test]
     fn test_default_values() {
         let args = Args::parse_from([""]);
@@ -48,6 +54,7 @@ mod tests {
         assert_eq!(args.name, "unnamed");
     }
 
+    // ss[related tooling.cargo-driver-strings]
     #[test]
     fn test_custom_values() {
         let args = Args::parse_from([
@@ -61,6 +68,7 @@ mod tests {
         assert_eq!(args.name, "custom_name");
     }
 
+    // ss[related tooling.cargo-driver-strings]
     #[test]
     fn test_logging_level_variants() {
         for &level in log_variants() {
@@ -68,6 +76,7 @@ mod tests {
         }
     }
 
+    // ss[related tooling.cargo-driver-strings]
     #[test]
     fn test_invalid_logging_level_validation() {
         let invalid_level = "invalid_level".to_string();

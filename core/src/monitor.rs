@@ -1,30 +1,38 @@
+// ss[related philosophy.single-wake-up]
 use std::ops::*;
 use std::time::{Duration, Instant};
 use std::sync::Arc;
+// ss[related philosophy.single-wake-up]
 use num_traits::One;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::thread::ThreadId;
 
+// ss[related philosophy.single-wake-up]
 use crate::*;
 use crate::actor_builder_units::{Percentile, Work, MCPU};
 use crate::channel_builder_units::{Filled, Rate};
+// ss[related philosophy.single-wake-up]
 use crate::dot::RemoteDetails;
 pub(crate) use crate::graph_liveliness::ActorIdentity;
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+// ss[related philosophy.single-wake-up]
 use crate::steady_rx::RxMetaDataProvider;
 use crate::steady_tx::TxMetaDataProvider;
 
+// ss[related philosophy.single-wake-up]
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 
 lazy_static! {
+    // ss[related philosophy.single-wake-up]
     pub(crate) static ref METADATA_REGISTRY: RwLock<HashMap<usize, Arc<ChannelMetaData>>> =
         RwLock::new(HashMap::new());
 }
 
 /// Represents the current status of an actor, including performance metrics and state flags.
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
+// ss[related philosophy.single-wake-up]
 pub struct ActorStatus {
     /// Unique identifier for the actor.
     pub(crate) ident: ActorIdentity,
@@ -52,6 +60,7 @@ pub struct ActorStatus {
 
 /// Contains information about the thread on which an actor is running.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// ss[related philosophy.single-wake-up]
 pub struct ThreadInfo {
     /// Unique identifier of the thread.
     pub(crate) thread_id: ThreadId,
@@ -61,14 +70,17 @@ pub struct ThreadInfo {
 }
 
 /// Index for single read operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.single-wake-up]
 pub(crate) const CALL_SINGLE_READ: usize = 0;
 /// Index for batch read operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_BATCH_READ: usize = 1;
 /// Index for single write operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.single-wake-up]
 pub(crate) const CALL_SINGLE_WRITE: usize = 2;
 /// Index for batch write operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_BATCH_WRITE: usize = 3;
 /// Index for miscellaneous operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.single-wake-up]
 pub(crate) const CALL_OTHER: usize = 4;
 /// Index for wait operations in the `calls` array of `ActorStatus`.
 pub(crate) const CALL_WAIT: usize = 5;
@@ -77,6 +89,7 @@ pub(crate) const CALL_WAIT: usize = 5;
 ///
 /// This struct holds settings and identifiers for tracking an actor's behavior within the Steady State framework.
 #[derive(Clone, Default, Debug)]
+// ss[related philosophy.single-wake-up]
 pub struct ActorMetaData {
     /// Unique identifier for the actor.
     pub(crate) ident: ActorIdentity,
@@ -112,6 +125,7 @@ pub struct ActorMetaData {
 ///
 /// This struct is finalized during channel creation and used for telemetry and performance tracking.
 #[derive(Clone, Default, Debug, PartialEq)]
+// ss[related philosophy.single-wake-up]
 pub struct ChannelMetaData {
     /// Unique identifier for the channel.
     pub(crate) id: usize,
@@ -185,11 +199,13 @@ pub struct ChannelMetaData {
 }
 
 /// Type alias for transmitter channel metadata, shared via an atomic reference count.
+// ss[related philosophy.single-wake-up]
 pub type TxMetaData = Arc<ChannelMetaData>;
 
 /// Provides access to transmitter metadata, facilitating macro usage.
 ///
 /// This trait implementation allows easy retrieval of `TxMetaData` instances.
+// ss[related philosophy.single-wake-up]
 impl TxMetaDataProvider for TxMetaData {
     /// Returns a clone of the transmitter metadata.
     fn meta_data(&self) -> TxMetaData {
@@ -198,11 +214,13 @@ impl TxMetaDataProvider for TxMetaData {
 }
 
 /// Holds a fixed-size array of transmitter metadata instances.
+// ss[related philosophy.single-wake-up]
 pub struct TxMetaDataHolder<const LEN: usize> {
     /// Array of transmitter metadata.
     pub(crate) array: [TxMetaData; LEN],
 }
 
+// ss[related philosophy.single-wake-up]
 impl<const LEN: usize> TxMetaDataHolder<LEN> {
     /// Creates a new holder with the specified array of transmitter metadata.
     pub fn new(array: [TxMetaData; LEN]) -> Self {
@@ -210,17 +228,20 @@ impl<const LEN: usize> TxMetaDataHolder<LEN> {
     }
 
     /// Returns the array of transmitter metadata.
+    // ss[related philosophy.single-wake-up]
     pub fn meta_data(self) -> [TxMetaData; LEN] {
         self.array
     }
 }
 
 /// Type alias for receiver channel metadata, shared via an atomic reference count.
+// ss[related philosophy.single-wake-up]
 pub type RxMetaData = Arc<ChannelMetaData>;
 
 /// Provides access to receiver metadata, facilitating macro usage.
 ///
 /// This trait implementation allows easy retrieval of `RxMetaData` instances.
+// ss[related philosophy.single-wake-up]
 impl RxMetaDataProvider for Arc<ChannelMetaData> {
     /// Returns a clone of the receiver metadata.
     fn meta_data(&self) -> Arc<ChannelMetaData> {
@@ -229,11 +250,13 @@ impl RxMetaDataProvider for Arc<ChannelMetaData> {
 }
 
 /// Holds a fixed-size array of receiver metadata instances.
+// ss[related philosophy.single-wake-up]
 pub struct RxMetaDataHolder<const LEN: usize> {
     /// Array of receiver metadata.
     pub(crate) array: [RxMetaData; LEN],
 }
 
+// ss[related philosophy.single-wake-up]
 impl<const LEN: usize> RxMetaDataHolder<LEN> {
     /// Creates a new holder with the specified array of receiver metadata.
     pub fn new(array: [RxMetaData; LEN]) -> Self {
@@ -241,6 +264,7 @@ impl<const LEN: usize> RxMetaDataHolder<LEN> {
     }
 
     /// Returns the array of receiver metadata.
+    // ss[related philosophy.single-wake-up]
     pub fn meta_data(self) -> [RxMetaData; LEN] {
         self.array
     }
@@ -249,28 +273,34 @@ impl<const LEN: usize> RxMetaDataHolder<LEN> {
 /// Defines methods for telemetry receivers to manage and access telemetry data.
 ///
 /// This trait ensures that implementations are thread-safe and can be sent across threads.
+// ss[related philosophy.single-wake-up]
 pub trait RxTel: Send + Sync {
     /// Returns a vector of metadata for all transmitter channels.
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
 
     /// Returns a vector of metadata for all receiver channels.
+    // ss[related philosophy.single-wake-up]
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
 
     /// Consumes and returns the current actor status, if available.
+    // ss[related philosophy.single-wake-up]
     fn consume_actor(&self) -> Option<ActorStatus>;
 
     /// Consumes a pending DOT graph subtitle update for this telemetry receiver, if any.
     ///
     /// Return value: `None` = no pending change; `Some(None)` = clear subtitle; `Some(Some(s))` =
     /// set subtitle to `s`. Default: no subtitle channel (always `None`).
+    // ss[related philosophy.single-wake-up]
     fn consume_dot_subtitle(&self) -> Option<Option<String>> {
         None
     }
 
     /// Returns the metadata associated with the actor.
+    // ss[related philosophy.single-wake-up]
     fn actor_metadata(&self) -> Arc<ActorMetaData>;
 
     /// Consumes take data into the provided vectors, indicating whether data was consumed.
+    // ss[related philosophy.single-wake-up]
     fn consume_take_into(
         &self,
         take_send_source: &mut Vec<(i64, i64)>,
@@ -279,6 +309,7 @@ pub trait RxTel: Send + Sync {
     ) -> bool;
 
     /// Consumes send data into the provided vectors, indicating whether data was consumed.
+    // ss[related philosophy.single-wake-up]
     fn consume_send_into(
         &self,
         take_send_source: &mut Vec<(i64, i64)>,
@@ -286,12 +317,15 @@ pub trait RxTel: Send + Sync {
     ) -> bool;
 
     /// Returns an actor receiver definition for the specified version, if available.
+    // ss[related philosophy.single-wake-up]
     fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>>;
 
     /// Checks if the telemetry is empty and the channel is closed.
+    // ss[related philosophy.single-wake-up]
     fn is_empty_and_closed(&self) -> bool;
 
     /// Checks if the telemetry is currently empty.
+    // ss[related philosophy.single-wake-up]
     fn is_empty(&self) -> bool;
 }
 
@@ -303,6 +337,7 @@ pub trait RxTel: Send + Sync {
 ///
 /// # Returns
 /// THE local index if found, otherwise `MONITOR_NOT`.
+// ss[related philosophy.single-wake-up]
 pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LEN>, goal: usize) -> usize {
     let (idx, _) = telemetry.inverse_local_index
         .iter()
@@ -315,6 +350,7 @@ pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LE
 /// A guard that updates profiling information upon being dropped.
 ///
 /// This struct ensures that profiling metrics are finalized when it goes out of scope.
+// ss[related philosophy.single-wake-up]
 pub(crate) struct FinallyRollupProfileGuard<'a> {
     /// Reference to the telemetry sender for updating profiling data.
     pub(crate) st: &'a SteadyTelemetryActorSend,
@@ -322,6 +358,7 @@ pub(crate) struct FinallyRollupProfileGuard<'a> {
     pub(crate) start: Instant,
 }
 
+// ss[related philosophy.single-wake-up]
 impl Drop for FinallyRollupProfileGuard<'_> {
     /// Updates the await time and decrements the concurrent profile counter when dropped.
     fn drop(&mut self) {
@@ -339,6 +376,7 @@ impl Drop for FinallyRollupProfileGuard<'_> {
 /// Wraps an iterator to track and adjust for drift in item counts.
 ///
 /// This struct monitors the difference between expected and actual yields, updating a shared drift counter.
+// ss[related philosophy.single-wake-up]
 pub(crate) struct DriftCountIterator<I> {
     /// THE underlying iterator being wrapped.
     iter: I,
@@ -350,6 +388,7 @@ pub(crate) struct DriftCountIterator<I> {
     iterator_count_drift: Arc<AtomicIsize>,
 }
 
+// ss[related philosophy.single-wake-up]
 impl<I> DriftCountIterator<I>
 where
     I: Iterator + Send,
@@ -360,6 +399,7 @@ where
     /// - `expected_count`: Expected number of items to be yielded.
     /// - `iter`: THE iterator to wrap.
     /// - `iterator_count_drift`: Shared counter for tracking drift.
+    // ss[related philosophy.single-wake-up]
     pub fn new(
         expected_count: usize,
         iter: I,
@@ -374,6 +414,7 @@ where
     }
 }
 
+// ss[related philosophy.single-wake-up]
 impl<I> Drop for DriftCountIterator<I> {
     /// Adjusts the shared drift counter based on the difference between actual and expected counts.
     fn drop(&mut self) {
@@ -384,13 +425,16 @@ impl<I> Drop for DriftCountIterator<I> {
     }
 }
 
+// ss[related philosophy.single-wake-up]
 impl<I> Iterator for DriftCountIterator<I>
 where
     I: Iterator,
 {
+    // ss[related philosophy.single-wake-up]
     type Item = I::Item;
 
     /// Yields the next item from the wrapped iterator, incrementing the actual count.
+    // ss[related philosophy.single-wake-up]
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.iter.next();
         if item.is_some() {
@@ -403,41 +447,52 @@ where
 #[cfg(test)]
 pub(crate) mod monitor_tests {
     #![allow(deprecated)] // legacy bundle-wait tests still exercise deprecated SteadyActor API
+    // ss[related philosophy.single-wake-up]
     use std::any::Any;
     use crate::*;
     use super::*;
+    // ss[related philosophy.single-wake-up]
     use std::ops::DerefMut;
     use lazy_static::lazy_static;
     use std::sync::{Once, OnceLock};
+    // ss[related philosophy.single-wake-up]
     use std::time::Duration;
     use futures_timer::Delay;
     use std::sync::Arc;
+    // ss[related philosophy.single-wake-up]
     use parking_lot::RwLock;
     use futures::channel::oneshot;
     use std::time::Instant;
+    // ss[related philosophy.single-wake-up]
     use std::sync::atomic::AtomicUsize;
     use crate::channel_builder::ChannelBuilder;
     use crate::core_rx::DoubleSlice;
+    // ss[related philosophy.single-wake-up]
     use crate::steady_actor::{
         wait_paired_lane_ready, wait_rx_until_avail_items_ready, wait_tx_until_vacant_satisfied,
         SendOutcome,
     };
+    // ss[related philosophy.single-wake-up]
     use crate::steady_actor_shadow::SteadyActorShadow;
     use crate::graph_liveliness::{GraphLiveliness, GraphLivelinessState};
     use crate::core_tx::TxCore;
+    // ss[related philosophy.single-wake-up]
     use crate::steady_tx::TxDone;
 
     lazy_static! {
+        // ss[related philosophy.single-wake-up]
         static ref INIT: Once = Once::new();
     }
 
     // Helper method to build tx and rx arguments
+    // ss[related philosophy.single-wake-up]
     fn build_tx_rx() -> (oneshot::Sender<()>, oneshot::Receiver<()>) {
         oneshot::channel()
     }
 
     // Test for try_peek
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_peek() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
@@ -451,6 +506,7 @@ pub(crate) mod monitor_tests {
 
     // Test for take_slice
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_take_slice() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let mut slice = [0; 3];
@@ -466,6 +522,7 @@ pub(crate) mod monitor_tests {
 
     // Test for try_peek_slice
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_peek_slice() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
@@ -484,6 +541,7 @@ pub(crate) mod monitor_tests {
 
     // Test is_empty method
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_is_empty() {
         let context = test_steady_context();
         let (_tx,rx) = create_rx::<String>(vec![]); // Creating an empty Rx
@@ -496,6 +554,7 @@ pub(crate) mod monitor_tests {
 
     // Test for is_full
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_is_full() {
         let (tx, _rx) = create_test_channel::<String>(10);
         let context = test_steady_context();
@@ -509,6 +568,7 @@ pub(crate) mod monitor_tests {
 
     // Test for vacant_units
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_vacant_units() {
         let (tx, _rx) = create_test_channel::<String>(13);
         let context = test_steady_context();
@@ -523,6 +583,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_empty
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_empty() {
         let (tx, _rx) = create_test_channel::<String>(10);
         let tx  = tx.clone();
@@ -537,6 +598,7 @@ pub(crate) mod monitor_tests {
 
     // Test avail_units method
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_avail_units() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
@@ -550,6 +612,7 @@ pub(crate) mod monitor_tests {
 
     // Test for try_peek_iter
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_peek_iter() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
@@ -565,6 +628,7 @@ pub(crate) mod monitor_tests {
 
     // Test for peek_async_iter
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_peek_async_iter() {
         let (_tx,rx) = create_rx(vec![1, 2, 3, 4, 5]);
         let context = test_steady_context();
@@ -581,6 +645,7 @@ pub(crate) mod monitor_tests {
 
     // Test for peek_async
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_peek_async() {
         let (_tx,rx) = create_rx(vec![1, 2, 3]);
         let context = test_steady_context();
@@ -594,6 +659,7 @@ pub(crate) mod monitor_tests {
 
     // Test for send_slice_until_full
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_send_slice_until_full() {
         let (tx, rx) = create_test_channel(10);
         let context = test_steady_context();
@@ -616,6 +682,7 @@ pub(crate) mod monitor_tests {
 
     // Test for try_send
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_send() {
         let (tx, _rx) = create_test_channel(10);
         let context = test_steady_context();
@@ -632,6 +699,7 @@ pub(crate) mod monitor_tests {
     }
 
     // Common function to create a test SteadyContext
+    // ss[related philosophy.single-wake-up]
     fn test_steady_context() -> SteadyActorShadow {
         let (tx, rx) = build_tx_rx();
         let oneshot_shutdown_vec = Arc::new(Mutex::new(vec![tx]));
@@ -668,6 +736,7 @@ pub(crate) mod monitor_tests {
     }
 
     // Helper function to create a new Rx instance
+    // ss[related philosophy.single-wake-up]
     fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> (Arc<Mutex<Tx<T>>>,Arc<Mutex<Rx<T>>>) {
         let (tx, rx) = create_test_channel(10);
 
@@ -680,6 +749,7 @@ pub(crate) mod monitor_tests {
         (tx.clone(),rx.clone())
     }
 
+    // ss[related philosophy.single-wake-up]
     fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
         let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
         let builder = ChannelBuilder::new(
@@ -693,6 +763,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_simple_monitor_build() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -700,6 +771,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_macro_monitor_build() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -709,6 +781,7 @@ pub(crate) mod monitor_tests {
 
     /// Unit test for relay_stats_tx_custom.
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_relay_stats_tx_rx_custom() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -762,6 +835,7 @@ pub(crate) mod monitor_tests {
 
     /// Unit test for relay_stats_tx_rx_batch.
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_relay_stats_tx_rx_batch() {
         let _ = logging_util::steady_logger::initialize();
 
@@ -815,6 +889,7 @@ pub(crate) mod monitor_tests {
 
     // Test for send_iter_until_full
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_send_iter_until_full() {
         let (tx, rx) = create_test_channel(10);
         let context = test_steady_context();
@@ -835,6 +910,7 @@ pub(crate) mod monitor_tests {
 
     // Test for take_into_iter
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_take_into_iter() {
         let data = vec![1, 2, 3, 4, 5];
         let (tx1, rx1) = create_test_channel(5);
@@ -926,6 +1002,8 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_shutdown_or_avail_units_bundle
     #[async_std::test]
+    // ss[verify bundle.deprecated-bundle-waits]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_shutdown_or_avail_units_bundle() {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
@@ -948,6 +1026,8 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_closed_or_avail_units_bundle
     #[async_std::test]
+    // ss[verify bundle.deprecated-bundle-waits]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_closed_or_avail_units_bundle() {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
@@ -970,6 +1050,8 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_avail_units_bundle
     #[async_std::test]
+    // ss[verify bundle.deprecated-bundle-waits]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_avail_units_bundle() {
         let context = test_steady_context();
         let (_tx1,rx1) = create_rx(vec![1, 2]);
@@ -990,6 +1072,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_shutdown_or_vacant_units_bundle
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_shutdown_or_vacant_units_bundle() {
         let (tx1, _rx1) = create_test_channel::<i32>(10);
         let (tx2, _rx2) = create_test_channel::<i32>(10);
@@ -1016,6 +1099,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_vacant_units_bundle
     #[async_std::test]
+    // ss[verify actor.wait-avail-vacant]
     async fn test_wait_vacant_units_bundle() {
         let (tx1, _rx1) = create_test_channel::<i32>(10);
         let (tx2, _rx2) = create_test_channel::<i32>(10);
@@ -1038,6 +1122,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_avail_vacant_index: same index must have both RX avail and TX vacancy
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_avail_vacant_index_paired_lane() {
         let cap = 2usize;
         let (_in_tx0, in_rx0) = create_rx(vec![42_i32]);
@@ -1110,6 +1195,7 @@ pub(crate) mod monitor_tests {
 
     /// Two lanes both have data: successive `wait_avail_index` calls rotate 0, 1, 0, ...
     #[async_std::test]
+    // ss[verify actor.index-wait-round-robin]
     async fn test_wait_avail_index_round_robin_two_ready() {
         let (_in_tx0, in_rx0) = create_rx(vec![1_i32]);
         let (_in_tx1, in_rx1) = create_rx(vec![1_i32]);
@@ -1180,6 +1266,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify bundle.index-wait-readiness]
     async fn test_index_wait_helpers_rx_tx_and_paired() {
         let (_t, rx_arc) = create_rx::<i32>(vec![5]);
         if let Some(mut rx) = rx_arc.try_lock() {
@@ -1200,6 +1287,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.index-wait-round-robin]
     async fn test_wait_avail_index_async_path_delayed_send() {
         let (tx0_arc, rx0) = create_rx::<i32>(vec![]);
         let (_tx1_arc, rx1) = create_rx::<i32>(vec![]);
@@ -1220,6 +1308,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.index-wait-round-robin]
     async fn test_wait_avail_index_returns_none_on_shutdown() {
         let (_t, rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
@@ -1235,6 +1324,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.index-wait-round-robin]
     async fn test_wait_avail_index_empty_bundle_returns_none() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1244,6 +1334,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.index-wait-round-robin]
     async fn test_wait_avail_index_all_zero_counts_returns_none() {
         let (_t, rx) = create_rx::<i32>(vec![1]);
         let context = test_steady_context();
@@ -1254,6 +1345,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify actor.wait-avail-vacant]
     async fn test_wait_vacant_index_round_robin_two_vacant() {
         let (tx0, _r0) = create_test_channel::<i32>(4);
         let (tx1, _r1) = create_test_channel::<i32>(4);
@@ -1278,6 +1370,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_avail_vacant_index_fast_path_both_ready() {
         let (_in_tx0, in_rx0) = create_rx(vec![1_i32]);
         let (out_tx0_lazy, _out_rx0) = create_test_channel::<i32>(4);
@@ -1303,6 +1396,7 @@ pub(crate) mod monitor_tests {
     }
 
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_avail_vacant_index_avail_zero_skips_rx_threshold() {
         let (_in_tx0, in_rx0) = create_rx::<i32>(vec![]);
         let (out_tx0_lazy, _out_rx0) = create_test_channel::<i32>(2);
@@ -1333,6 +1427,7 @@ pub(crate) mod monitor_tests {
         assert_eq!(idx, Some(1));
     }
 
+    // ss[verify bundle.wait-for-index-macro]
     #[async_std::test]
     async fn test_wait_for_index_macro_with_wait_avail_index() {
         let (_t, rx) = create_rx(vec![3_i32]);
@@ -1349,6 +1444,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_shutdown
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_shutdown() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1365,6 +1461,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_periodic
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_periodic() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1376,6 +1473,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1389,6 +1487,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_shutdown_or_avail_units
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_shutdown_or_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1,2]);
         let context = test_steady_context();
@@ -1402,6 +1501,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_closed_or_avail_units
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_closed_or_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1]);
         let context = test_steady_context();
@@ -1415,6 +1515,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_avail_units
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_avail_units() {
         let (_tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
         let context = test_steady_context();
@@ -1428,6 +1529,7 @@ pub(crate) mod monitor_tests {
 
     // Test for send_async
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_send_async() {
         let (tx, _rx) = create_test_channel::<i32>(10);
         let context = test_steady_context();
@@ -1442,6 +1544,7 @@ pub(crate) mod monitor_tests {
 
     // Test for args method
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_args() {
         let args = 42u32;
         let context = test_steady_context_with_args(args);
@@ -1453,6 +1556,7 @@ pub(crate) mod monitor_tests {
 
     // Test for identity method
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_identity() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1462,6 +1566,7 @@ pub(crate) mod monitor_tests {
     }
 
     // Helper function to create a test context with arguments
+    // ss[related philosophy.single-wake-up]
     fn test_steady_context_with_args<A: Any + Send + Sync>(args: A) -> SteadyActorShadow {
         let (tx, rx) = build_tx_rx();
         let oneshot_shutdown_vec = Arc::new(Mutex::new(vec![tx]));
@@ -1499,6 +1604,7 @@ pub(crate) mod monitor_tests {
 
     // Test for is_liveliness_in
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_is_liveliness_in() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1510,6 +1616,7 @@ pub(crate) mod monitor_tests {
 
     // Test for yield_now
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_yield_now() {
         let context = test_steady_context();
         let monitor = context.into_spotlight([], []);
@@ -1522,6 +1629,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_shutdown_or_avail_units with closed channel
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_shutdown_or_avail_units_closed_channel() {
         let (tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
@@ -1563,6 +1671,7 @@ pub(crate) mod monitor_tests {
 
     // Test for args method with String
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_args_string() {
         let args = "test_args".to_string();
         let context = test_steady_context_with_args(args.clone());
@@ -1574,6 +1683,7 @@ pub(crate) mod monitor_tests {
 
     // Test for take_slice with empty channel
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_take_slice_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let mut slice = [0; 3];
@@ -1588,6 +1698,7 @@ pub(crate) mod monitor_tests {
 
     // Test for send_slice_until_full with full channel
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_send_slice_until_full_full_channel() {
         let (tx, _rx) = create_test_channel::<i32>(1);
         let context = test_steady_context();
@@ -1607,6 +1718,7 @@ pub(crate) mod monitor_tests {
 
     // Test for take_into_iter with empty channel
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_take_into_iter_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
@@ -1620,6 +1732,7 @@ pub(crate) mod monitor_tests {
 
     // Test for try_peek_slice with empty channel
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_peek_slice_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
@@ -1633,6 +1746,7 @@ pub(crate) mod monitor_tests {
 
     // Test for try_take with empty channel
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_try_take_empty_channel() {
         let (_tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();
@@ -1646,6 +1760,7 @@ pub(crate) mod monitor_tests {
 
     // Test for is_empty when channel has elements
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_is_empty_with_elements() {
         let (_tx,rx) = create_rx::<i32>(vec![1, 2, 3]);
         let context = test_steady_context();
@@ -1658,6 +1773,7 @@ pub(crate) mod monitor_tests {
 
     // Test for is_full when channel is full
     #[test]
+    // ss[verify philosophy.single-wake-up]
     fn test_is_full_when_full() {
         let (tx, _rx) = create_test_channel::<i32>(1);
         let context = test_steady_context();
@@ -1673,6 +1789,7 @@ pub(crate) mod monitor_tests {
 
     // Test for wait_closed_or_avail_units with closed channel
     #[async_std::test]
+    // ss[verify philosophy.single-wake-up]
     async fn test_wait_closed_or_avail_units_closed_channel() {
         let (tx,rx) = create_rx::<i32>(vec![]);
         let context = test_steady_context();

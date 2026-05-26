@@ -2,41 +2,53 @@
 //! graph and graph liveliness components. THE graph manages the execution of actors,
 //! and the liveliness state handles the shutdown process and state transitions.
 
+// ss[related graph.for-testing]
 use crate::{logging_util, Troupe};
 use std::collections::HashSet;
 use std::ops::{Deref};
+// ss[related graph.for-testing]
 use std::sync::{Arc, OnceLock};
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::time::{Duration, Instant};
+// ss[related graph.for-testing]
 use futures::lock::Mutex;
 use crate::core_exec;
 
 #[allow(unused_imports)]
+// ss[related graph.for-testing]
 use log::*;
 use std::any::Any;
 use std::backtrace::{Backtrace};
+// ss[related graph.for-testing]
 use std::error::Error;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related graph.for-testing]
 use std::thread;
 use futures::channel::oneshot;
 use futures::channel::oneshot::Sender;
 
+// ss[related graph.for-testing]
 use futures_util::lock::{MutexGuard};
 use aeron::aeron::Aeron;
 use aeron::context::Context;
+// ss[related graph.for-testing]
 use async_lock::Barrier;
 use crate::actor_builder::{ActorBuilder, TroupeGuard};
 use crate::telemetry;
+// ss[related graph.for-testing]
 use crate::channel_builder::ChannelBuilder;
 use crate::steady_actor_shadow::SteadyActorShadow;
 use crate::distributed::aeron_channel_structs::aeron_utils::*;
+// ss[related graph.for-testing]
 use crate::graph_testing::StageManager;
 use crate::expression_steady_eye::{i_take_expression, Eye};
 use crate::monitor::ActorMetaData;
+// ss[related graph.for-testing]
 use crate::telemetry::metrics_collector::CollectorDetail;
 use crate::telemetry::{metrics_collector, metrics_server};
 use crate::logging_util::steady_logger;
+// ss[related graph.for-testing]
 use futures_util::FutureExt;
 
 /// Represents the possible states of the graph's liveliness within the SteadyState framework.
@@ -44,6 +56,7 @@ use futures_util::FutureExt;
 /// This enum tracks the lifecycle of a graph, from its construction through to its shutdown,
 /// reflecting the operational status of its actors.
 #[derive(PartialEq, Eq, Debug, Clone)]
+// ss[related graph.for-testing]
 pub enum GraphLivelinessState {
     /// Indicates that the graph is in the process of being constructed.
     ///
@@ -76,6 +89,7 @@ pub enum GraphLivelinessState {
 /// This struct encapsulates the details of an actor's decision during the shutdown voting process,
 /// including their identity and reasoning if they oppose the shutdown.
 #[derive(Default)]
+// ss[related graph.for-testing]
 pub struct ShutdownVote {
     /// THE unique identifier of the actor casting the vote.
     pub(crate) id: usize,
@@ -96,6 +110,7 @@ pub struct ShutdownVote {
 /// This enum defines whether an actor is actively registered, marked as dead, or not yet registered,
 /// affecting its participation in shutdown votes.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+// ss[related graph.for-testing]
 pub(crate) enum VoterStatus {
     /// THE actor has not yet registered as a voter.
     #[default]
@@ -110,6 +125,7 @@ pub(crate) enum VoterStatus {
 ///
 /// This struct oversees the graph's operational state, tracks registered voters, and handles the
 /// collection and evaluation of shutdown votes from actors.
+// ss[related graph.for-testing]
 pub struct GraphLiveliness {
     /// A list of statuses for all registered voters.
     pub(crate) registered_voters: Vec<VoterStatus>,
@@ -131,6 +147,7 @@ pub struct GraphLiveliness {
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
 }
 
+// ss[related graph.for-testing]
 impl GraphLiveliness {
     /// Creates a new instance of `GraphLiveliness` with an initial building state.
     ///
@@ -144,6 +161,7 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// A newly initialized `GraphLiveliness` instance.
+    // ss[related graph.for-testing]
     pub(crate) fn new(
         one_shot_shutdown: Arc<Mutex<Vec<Sender<()>>>>,
         actors_count: Arc<AtomicUsize>,
@@ -162,6 +180,7 @@ impl GraphLiveliness {
         }
     }
 
+    // ss[related graph.for-testing]
     pub(crate) fn actor_by_id(&self, id: usize) -> Option<ActorIdentity> {
 
        let vec = self.actor_catalog.read();
@@ -175,6 +194,7 @@ impl GraphLiveliness {
     /// # Panics
     ///
     /// Panics if the current state is not `Building`, ensuring a valid state transition.
+    // ss[related graph.for-testing]
     pub(crate) fn building_to_running(&mut self) {
         if self.state.eq(&GraphLivelinessState::Building) {
             self.state = GraphLivelinessState::Running;
@@ -190,6 +210,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `ident` - THE identity of the actor to be removed from voting.
+    // ss[related graph.for-testing]
     pub(crate) fn remove_voter(&mut self, ident: ActorIdentity) {
         if self.registered_voters[ident.id].eq(&VoterStatus::Registered(ident)) {
             self.registered_voters[ident.id] = VoterStatus::Dead(ident);
@@ -203,6 +224,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `ident` - THE identity of the actor to register.
+    // ss[impl graph.liveliness-voters]
     pub(crate) fn register_voter(&mut self, ident: ActorIdentity) {
         if ident.id >= self.registered_voters.len() {
             self.registered_voters.resize(ident.id + 1, VoterStatus::None);
@@ -220,6 +242,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `timeout` - THE maximum duration to wait for actor registration.
+    // ss[related graph.for-testing]
     pub(crate) fn wait_for_registrations(&mut self, timeout: Duration) {
         let expected_count = self.actors_count.load(Ordering::SeqCst);
         if expected_count > 0 {
@@ -263,6 +286,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `runtime_state` - A shared reference to the graph's liveliness state.
+    // ss[impl graph.request-shutdown]
     pub(crate) async fn internal_request_shutdown(runtime_state: Arc<RwLock<GraphLiveliness>>) {
         trace!("starting shutdown one shots");
         if runtime_state.read().state.eq(&GraphLivelinessState::Running) {
@@ -303,6 +327,7 @@ impl GraphLiveliness {
     /// # Arguments
     ///
     /// * `runtime_state` - A shared reference to the graph's liveliness state.
+    // ss[related graph.for-testing]
     pub(crate) fn vote_for_the_dead(runtime_state: Arc<RwLock<GraphLiveliness>>) {
         let read = runtime_state.read();
         let the_dead: Vec<(usize, ActorIdentity)> = read.registered_voters.iter().enumerate().flat_map(|(i, v)| {
@@ -350,6 +375,7 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// An optional new state if the graph has stopped, or `None` if still in progress.
+    // ss[related graph.for-testing]
     pub fn check_is_stopped(&self, now: Instant, timeout: Duration) -> Option<GraphLivelinessState> {
         if self.is_in_state(&[
             GraphLivelinessState::StopRequested,
@@ -385,6 +411,7 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// `true` if the current state matches any of the provided states, `false` otherwise.
+    // ss[related graph.for-testing]
     pub fn is_in_state(&self, matches: &[GraphLivelinessState]) -> bool {
         matches.iter().any(|f| f.eq(&self.state))
     }
@@ -396,6 +423,7 @@ impl GraphLiveliness {
     /// # Panics
     /// Panics if there are fewer than 2 actors, as the telemetry system itself requires
     /// both a Collector and a Server.
+    // ss[related graph.for-testing]
     pub fn is_shutdown_telemetry_complete(&self, count: usize) -> bool {
         let total = self.votes.len();
         assert!(total >= count, "Invariant failure: Telemetry system requires at least {:?} actors (ie, Collector and Server)", count);
@@ -415,6 +443,11 @@ impl GraphLiveliness {
     /// # Returns
     ///
     /// `Some(true)` if the actor should keep running, `Some(false)` if it should stop, or `None` if still building.
+    // ss[impl philosophy.cooperative-liveliness]
+    // ss[impl actor.is-running-loop]
+    // ss[impl actor.shutdown-veto]
+    // ss[impl graph.shutdown.veto]
+    // ss[impl graph.shutdown.accept]
     pub(crate) fn is_running<F: FnMut() -> bool>(&self, ident: ActorIdentity, mut accept_fn: F) -> Option<bool> {
         match self.state {
             GraphLivelinessState::Building => {
@@ -464,6 +497,7 @@ impl GraphLiveliness {
 ///
 /// This struct combines a numeric identifier with a human-readable name for actor distinction.
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash)]
+// ss[impl graph.actor-identity]
 pub struct ActorIdentity {
     /// A unique numeric identifier for the actor within the graph.
     pub id: usize,
@@ -475,6 +509,7 @@ pub struct ActorIdentity {
 ///
 /// This struct provides a static base name and an optional numeric suffix to differentiate actors.
 #[derive(Clone, Default, Copy, PartialEq, Eq, Hash, Debug)]
+// ss[related graph.for-testing]
 pub struct ActorName {
     /// THE static, immutable base name of the actor.
     pub name: &'static str,
@@ -482,6 +517,7 @@ pub struct ActorName {
     pub suffix: Option<usize>,
 }
 
+// ss[related graph.for-testing]
 impl ActorIdentity {
     /// Constructs a new `ActorIdentity` with the specified parameters.
     ///
@@ -496,6 +532,7 @@ impl ActorIdentity {
     /// # Returns
     ///
     /// A new `ActorIdentity` instance.
+    // ss[related graph.for-testing]
     pub fn new(id: usize, name: &'static str, suffix: Option<usize>) -> Self {
         ActorIdentity {
             id,
@@ -504,6 +541,7 @@ impl ActorIdentity {
     }
 }
 
+// ss[related graph.for-testing]
 impl ActorName {
     /// Constructs a new `ActorName` with the specified name and optional suffix.
     ///
@@ -517,15 +555,18 @@ impl ActorName {
     /// # Returns
     ///
     /// A new `ActorName` instance.
+    // ss[related graph.for-testing]
     pub fn new(name: &'static str, suffix: Option<usize>) -> Self {
         ActorName { name, suffix }
     }
 }
 
+// ss[related graph.for-testing]
 impl Debug for ActorIdentity {
     /// Formats the `ActorIdentity` for debugging purposes.
     ///
     /// This implementation provides a string representation including the ID and name, with suffix if present.
+    // ss[related graph.for-testing]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "#{:?} {}", self.id, self.label.name)?;
         if let Some(suffix) = self.label.suffix {
@@ -539,6 +580,7 @@ impl Debug for ActorIdentity {
 ///
 /// This enum specifies different strategies for handling I/O, each tailored to specific performance needs.
 #[derive(Clone, Debug)]
+// ss[related graph.for-testing]
 pub enum ProactorConfig {
     /// Configures the proactor for interrupt-driven I/O with minimal CPU usage.
     ///
@@ -563,6 +605,7 @@ pub enum ProactorConfig {
 /// This struct allows setting up the graph for either production or testing environments, adjusting
 /// parameters like telemetry and I/O behavior.
 #[derive(Clone, Debug)]
+// ss[related graph.for-testing]
 pub struct GraphBuilder {
     /// Indicates whether the graph is intended for testing purposes.
     is_for_testing: bool,
@@ -592,17 +635,21 @@ pub struct GraphBuilder {
     test_pipeline_internal_names: HashSet<&'static str>,
 }
 
+// ss[related graph.for-testing]
 impl Default for GraphBuilder {
     /// Provides a default `GraphBuilder` configured for production use.
     ///
     /// This implementation returns a builder with production-ready settings.
+    // ss[related graph.for-testing]
     fn default() -> Self {
         GraphBuilder::for_production()
     }
 }
 
+// ss[related graph.for-testing]
 const MIN_MS_RATE: u64 = 100;
 
+// ss[related graph.for-testing]
 impl GraphBuilder {
     /// Creates a `GraphBuilder` configured for production environments.
     ///
@@ -611,6 +658,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance tailored for production.
+    // ss[related graph.for-testing]
     pub fn for_production() -> Self {
         #[cfg(test)]
         panic!("should not call for_production in tests");
@@ -639,6 +687,9 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance tailored for testing.
+    // ss[impl graph.for-testing]
+    // ss[impl testing.graph-for-testing]
+    // ss[impl testing.mock-main-thread]
     pub fn for_testing() -> Self {
         let _ = logging_util::steady_logger::initialize();
         GraphBuilder {
@@ -660,6 +711,7 @@ impl GraphBuilder {
 
     /// Replaces the set of actor base names that run real `internal_behavior` in **test** graphs
     /// (for pipeline processors while edges use StageManager simulation). Empty clears the set.
+    // ss[related graph.for-testing]
     pub fn with_test_pipeline_internal_behavior_names(
         &self,
         names: HashSet<&'static str>,
@@ -680,6 +732,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with the updated queue length.
+    // ss[related graph.for-testing]
     pub fn with_iouring_queue_length(&self, len: u32) -> Self {
         let mut result = self.clone();
         result.iouring_queue_length = len;
@@ -698,6 +751,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with the updated telemetry rate.
+    // ss[related graph.for-testing]
     pub fn with_telemtry_production_rate_ms(&self, ms: u64) -> Self {
         let mut result = self.clone();
         if ms >= MIN_MS_RATE {
@@ -720,6 +774,7 @@ impl GraphBuilder {
     }
 
     /// Sets the telemetry top bar colors (primary and secondary hex strings).
+    // ss[related graph.for-testing]
     pub fn with_telemetry_colors(&self, primary: &str, secondary: &str) -> Self {
         let mut result = self.clone();
         result.telemetry_colors = Some((primary.to_string(), secondary.to_string()));
@@ -737,6 +792,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with the shutdown barrier configured.
+    // ss[related graph.for-testing]
     pub fn with_shutdown_barrier(&self, latched_actor_count: usize) -> Self {
         let mut result = self.clone();
         result.shutdown_barrier = Some(Arc::new(Barrier::new(latched_actor_count)));
@@ -752,6 +808,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with the updated stack size.
+    // ss[related graph.for-testing]
     pub fn with_default_actor_stack_size(&self, bytes_count: usize) -> Self {
         let mut result = self.clone();
         result.default_stack_size = Some(bytes_count);
@@ -763,6 +820,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with fail-fast behavior blocked.
+    // ss[related graph.for-testing]
     pub fn with_block_fail_fast(&self) -> Self {
         let mut result = self.clone();
         result.block_fail_fast = true;
@@ -770,6 +828,7 @@ impl GraphBuilder {
     }
 
     /// Sets the threshold for bundling edges in the telemetry visualization.
+    // ss[related graph.for-testing]
     pub fn with_aggregation_threshold(&self, threshold: usize) -> Self {
         let mut result = self.clone();
         result.bundle_floor_size = threshold;
@@ -777,6 +836,7 @@ impl GraphBuilder {
     }
 
     /// Sets the minimum size for bundles.
+    // ss[related graph.for-testing]
     pub fn with_bundle_floor_size(&self, size: usize) -> Self {
         let mut result = self.clone();
         result.bundle_floor_size = size;
@@ -794,6 +854,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A new `GraphBuilder` instance with updated telemetry settings.
+    // ss[related graph.for-testing]
     pub fn with_telemetry_metric_features(&self, enable: bool) -> Self {
         let mut result = self.clone();
         result.telemetry_metric_features = enable;
@@ -818,6 +879,7 @@ impl GraphBuilder {
     /// # Returns
     ///
     /// A fully configured `Graph` instance.
+    // ss[related graph.for-testing]
     pub fn build<A: Any + Send + Sync>(self, args: A) -> Graph {
         let g = Graph::internal_new(args, self.clone());
         #[cfg(feature = "disable_actor_restart_on_failure")]
@@ -856,6 +918,7 @@ impl GraphBuilder {
 ///
 /// This struct orchestrates the actors within the SteadyState framework, handling their startup,
 /// execution, telemetry, and shutdown processes.
+// ss[impl philosophy.explicit-ownership]
 pub struct Graph {
     /// THE arguments passed to the graph, stored in a thread-safe manner.
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
@@ -898,31 +961,37 @@ pub struct Graph {
 /// A guard that provides access to the stage manager for testing purposes.
 ///
 /// This struct holds a lock on the backplane, allowing test code to interact with it safely.
+// ss[related graph.for-testing]
 pub struct StageManagerGuard<'a> {
     /// THE mutex guard holding the lock on the backplane.
     guard: MutexGuard<'a, Option<StageManager>>,
 }
 
+// ss[related graph.for-testing]
 impl Deref for StageManagerGuard<'_> {
     type Target = StageManager;
 
     /// Provides immutable access to the underlying stage manager.
     ///
     /// This allows dereferencing the guard to interact with the stage manager directly.
+    // ss[related graph.for-testing]
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("SideChannelHub is not initialized")
     }
 }
 
+// ss[related graph.for-testing]
 impl StageManagerGuard<'_> {
     /// Releases the lock on the stage manager explicitly.
     ///
     /// This method allows the guard to be dropped manually, freeing the lock for other operations.
+    // ss[related graph.for-testing]
     pub fn final_bow(self) {
     }
 }
 
 /// Minimum shutdown wait used by [`Graph::block_until_stopped`], derived from telemetry cadence.
+// ss[related graph.for-testing]
 pub(crate) fn effective_block_until_stopped_timeout(
     clean_shutdown_timeout: Duration,
     telemetry_production_rate_ms: u64,
@@ -930,6 +999,7 @@ pub(crate) fn effective_block_until_stopped_timeout(
     clean_shutdown_timeout.max(Duration::from_millis(3 * telemetry_production_rate_ms))
 }
 
+// ss[related graph.for-testing]
 impl Graph {
     /// Acquires a lock on the stage manager for testing purposes.
     ///
@@ -938,6 +1008,7 @@ impl Graph {
     /// # Returns
     ///
     /// A `StageManagerGuard` that holds the lock until dropped.
+    // ss[related graph.for-testing]
     pub fn stage_manager(&self) -> StageManagerGuard<'_> {
         let guard = core_exec::block_on(self.backplane.lock());
         StageManagerGuard { guard }
@@ -950,11 +1021,13 @@ impl Graph {
     /// # Returns
     ///
     /// An optional reference to the media driver, or `None` if unavailable.
+    // ss[related graph.for-testing]
     pub fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Self::aeron_media_driver_internal(&self.aeron, self.is_for_testing)
     }
 
     /// Retry budget for [`aeron_context_with_retry`] when the graph or actor was built for testing.
+    // ss[related graph.for-testing]
     pub(crate) fn aeron_init_timeouts(for_tests: bool) -> (Duration, Duration) {
         if for_tests {
             (Duration::from_secs(2), Duration::from_millis(100))
@@ -975,6 +1048,7 @@ impl Graph {
     /// # Returns
     ///
     /// An optional reference to the media driver.
+    // ss[related graph.for-testing]
     pub(crate) fn aeron_media_driver_internal(
         holder: &OnceLock<Option<Arc<Mutex<Aeron>>>>,
         for_tests: bool,
@@ -992,6 +1066,7 @@ impl Graph {
     /// # Arguments
     ///
     /// * `loglevel` - THE desired logging level to apply.
+    // ss[related graph.for-testing]
     pub fn loglevel(&self, loglevel: crate::LogLevel) {
         let _ = steady_logger::initialize_with_level(loglevel);
     }
@@ -1007,6 +1082,7 @@ impl Graph {
     /// # Returns
     ///
     /// An optional reference to the arguments if the cast succeeds, or `None` if it fails.
+    // ss[related graph.for-testing]
     pub fn args<A: Any>(&self) -> Option<&A> {
         self.args.downcast_ref::<A>()
     }
@@ -1022,6 +1098,7 @@ impl Graph {
     /// # Returns
     ///
     /// A `SteadyActorShadow` instance configured for testing.
+    // ss[related graph.for-testing]
     pub fn new_testing_test_monitor(&self, name: &'static str) -> SteadyActorShadow {
         trace!("this is for testing only, never run as part of your release");
         let channel_count = self.channel_count.clone();
@@ -1078,6 +1155,7 @@ impl Graph {
     /// # Returns
     ///
     /// A new `ActorBuilder` instance linked to this graph.
+    // ss[related graph.for-testing]
     pub fn actor_builder(&mut self) -> ActorBuilder {
         ActorBuilder::new(self)
     }
@@ -1089,6 +1167,7 @@ impl Graph {
     /// # Returns
     ///
     /// A `TroupeGuard` instance for managing the actor troupe.
+    // ss[related graph.for-testing]
     pub fn actor_troupe(&self) -> TroupeGuard {
         TroupeGuard {
             troupe: Some(Troupe::new(self)),
@@ -1099,6 +1178,7 @@ impl Graph {
     ///
     /// This method is active only in debug builds and can be disabled via configuration.
     #[cfg(feature = "disable_actor_restart_on_failure")]
+    // ss[related graph.for-testing]
     fn apply_fail_fast(&self) {
             let default_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |panic_info| {
@@ -1110,6 +1190,7 @@ impl Graph {
     /// Starts the graph with a default timeout of 40 seconds for actor registration.
     ///
     /// This method initiates the graph's operation, waiting for actors to register before proceeding.
+    // ss[related graph.for-testing]
     pub fn start(&mut self) {
         self.start_with_timeout(Duration::from_secs(20));
     }
@@ -1125,6 +1206,7 @@ impl Graph {
     /// # Returns
     ///
     /// `true` if all actors registered within the timeout, `false` otherwise.
+    // ss[related graph.for-testing]
     pub fn start_with_timeout(&mut self, duration: Duration) -> bool {
         trace!("start was called");
         let mut state = self.runtime_state.write();
@@ -1140,6 +1222,7 @@ impl Graph {
     /// Requests the shutdown of the graph, notifying all actors.
     ///
     /// This method initiates the shutdown process, triggering the voting mechanism among actors.
+    // ss[impl graph.request-shutdown]
     pub fn request_shutdown(&mut self) {
         let a = self.runtime_state.clone();
         core_exec::block_on(async move { GraphLiveliness::internal_request_shutdown(a).await });
@@ -1156,6 +1239,7 @@ impl Graph {
     /// # Returns
     ///
     /// `Ok(())` if the shutdown was clean, or an error if it was unclean.
+    // ss[impl graph.block-until-stopped]
     pub fn block_until_stopped(self, clean_shutdown_timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
         let timeout = effective_block_until_stopped_timeout(
             clean_shutdown_timeout,
@@ -1196,6 +1280,7 @@ impl Graph {
     /// # Returns
     ///
     /// `Ok(())` if the shutdown was clean, or an error if it was unclean.
+    // ss[related graph.for-testing]
     fn watch_shutdown(timeout: Duration, now: Instant, rs: Arc<RwLock<GraphLiveliness>>, tel_prod_rate: Duration) -> Result<(), Box<dyn Error>> {
         loop {
             let is_stopped = rs.read().check_is_stopped(now, timeout);
@@ -1226,6 +1311,7 @@ impl Graph {
     /// # Arguments
     ///
     /// * `state` - A mutable reference to the graph's liveliness state under a write lock.
+    // ss[related graph.for-testing]
     fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
         debug!("voter log: (approved votes at the top, total:{})", state.votes.len());
         let mut voters = state.votes.iter().map(|f| f.try_lock()).collect::<Vec<_>>();
@@ -1313,6 +1399,7 @@ impl Graph {
     /// # Returns
     ///
     /// A new `Graph` instance ready for use.
+    // ss[related graph.for-testing]
     pub fn internal_new<A: Any + Send + Sync>(args: A, builder: GraphBuilder) -> Graph {
         let proactor_config = if let Some(config) = builder.proactor_config {
             config
@@ -1365,6 +1452,7 @@ impl Graph {
     /// # Returns
     ///
     /// A new `ChannelBuilder` instance linked to this graph.
+    // ss[related graph.for-testing]
     pub fn channel_builder(&mut self) -> ChannelBuilder {
         ChannelBuilder::new(
             self.channel_count.clone(),
@@ -1375,19 +1463,24 @@ impl Graph {
 }
 
 #[cfg(test)]
+// ss[related graph.for-testing]
 mod graph_liveliness_tests {
     use super::{
         effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
         GraphLivelinessState, ShutdownVote, VoterStatus,
     };
+    // ss[related graph.for-testing]
     use crate::core_exec;
     use crate::{ScheduleAs, SteadyActor};
     use futures::lock::Mutex as FutMutex;
+    // ss[related graph.for-testing]
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::thread;
+    // ss[related graph.for-testing]
     use std::time::{Duration, Instant};
 
+    // ss[related graph.for-testing]
     fn new_liveliness(
         actors: usize,
     ) -> (
@@ -1402,6 +1495,7 @@ mod graph_liveliness_tests {
         (Arc::new(parking_lot::RwLock::new(gl)), actors_count, catalog)
     }
 
+    // ss[verify graph.actor-identity]
     #[test]
     fn actor_by_id_finds_catalog_entries() {
         let (l, _, cat) = new_liveliness(0);
@@ -1413,6 +1507,7 @@ mod graph_liveliness_tests {
         }
     }
 
+    // ss[verify graph.liveliness-voters]
     #[test]
     fn remove_voter_marks_dead_when_registered() {
         let (l, _, _) = new_liveliness(0);
@@ -1426,6 +1521,7 @@ mod graph_liveliness_tests {
         }
     }
 
+    // ss[verify graph.liveliness-voters]
     #[test]
     fn wait_for_registrations_waits_until_actor_count_matches() {
         let (l, count, _) = new_liveliness(1);
@@ -1439,6 +1535,7 @@ mod graph_liveliness_tests {
         assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
+    // ss[verify graph.liveliness-voters]
     #[test]
     fn vote_for_the_dead_casts_dead_actor_ballots() {
         let (rs, _, _) = new_liveliness(0);
@@ -1469,6 +1566,7 @@ mod graph_liveliness_tests {
         assert!(v.in_favor);
     }
 
+    // ss[verify graph.block-until-stopped]
     #[test]
     fn check_is_stopped_clean_when_all_votes_in() {
         let (l, _, _) = new_liveliness(0);
@@ -1492,6 +1590,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn check_is_stopped_none_while_votes_pending_and_within_timeout() {
         let (l, _, _) = new_liveliness(0);
         let start = Instant::now();
@@ -1513,6 +1612,7 @@ mod graph_liveliness_tests {
         );
     }
 
+    // ss[verify graph.shutdown.veto]
     #[test]
     fn check_is_stopped_unclean_when_timeout_expired_with_pending_votes() {
         let (l, _, _) = new_liveliness(0);
@@ -1537,6 +1637,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn check_is_stopped_returns_none_for_running_state() {
         let (l, _, _) = new_liveliness(0);
         l.write().state = GraphLivelinessState::Running;
@@ -1547,6 +1648,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn is_in_state_matches_membership() {
         let (l, _, _) = new_liveliness(0);
         l.write().state = GraphLivelinessState::Running;
@@ -1555,6 +1657,7 @@ mod graph_liveliness_tests {
         assert!(!r.is_in_state(&[GraphLivelinessState::Building]));
     }
 
+    // ss[verify telemetry.shutdown-complete]
     #[test]
     fn is_shutdown_telemetry_complete_counts_non_telemetry_voters() {
         let (l, _, _) = new_liveliness(0);
@@ -1579,6 +1682,7 @@ mod graph_liveliness_tests {
         assert!(!l.read().is_shutdown_telemetry_complete(2));
     }
 
+    // ss[verify graph.shutdown.accept]
     #[test]
     fn is_running_accept_shutdown_transitions_vote() {
         let (l, _, _) = new_liveliness(0);
@@ -1605,6 +1709,7 @@ mod graph_liveliness_tests {
         assert_eq!(l.read().vote_in_favor_total.load(Ordering::SeqCst), 1);
     }
 
+    // ss[verify graph.request-shutdown]
     #[test]
     fn internal_request_shutdown_from_running_sets_stop_requested() {
         let (rs, _, _) = new_liveliness(0);
@@ -1619,6 +1724,7 @@ mod graph_liveliness_tests {
         assert_eq!(r.votes.len(), 1);
     }
 
+    // ss[verify graph.actor-identity]
     #[test]
     fn actor_identity_debug_includes_name_and_suffix() {
         let id = ActorIdentity::new(7, "ProbeActor", Some(2));
@@ -1627,6 +1733,7 @@ mod graph_liveliness_tests {
         assert!(s.contains("-2"));
     }
 
+    // ss[verify graph.for-testing]
     #[test]
     fn start_with_timeout_empty_graph_reaches_running() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1638,6 +1745,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn effective_block_until_stopped_timeout_uses_telemetry_floor() {
         assert_eq!(
             effective_block_until_stopped_timeout(Duration::from_millis(10), 100),
@@ -1649,6 +1757,7 @@ mod graph_liveliness_tests {
         );
     }
 
+    // ss[verify philosophy.explicit-ownership]
     #[test]
     fn graph_internal_new_reflects_builder_chain() {
         let b = GraphBuilder::for_testing()
@@ -1669,6 +1778,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn graph_telemetry_rate_respects_minimum_when_telemetry_on() {
         let b = GraphBuilder::for_testing()
             .with_telemetry_metric_features(true)
@@ -1678,11 +1788,13 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn graph_args_roundtrip() {
         let g = Graph::internal_new(42_u64, GraphBuilder::for_testing());
         assert_eq!(*g.args::<u64>().expect("typed args"), 42);
     }
 
+    // ss[verify distributed.media-driver-testing]
     #[test]
     fn graph_aeron_init_timeouts_depend_on_test_mode() {
         let (t_wait, t_retry) = Graph::aeron_init_timeouts(true);
@@ -1692,6 +1804,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn graph_stage_manager_guard_derefs_to_initialized_hub() {
         let g = Graph::internal_new((), GraphBuilder::for_testing());
         let guard = g.stage_manager();
@@ -1699,6 +1812,11 @@ mod graph_liveliness_tests {
         assert!(dbg.contains("SideChannelHub") || dbg.contains("node"));
     }
 
+    // ss[verify graph.shutdown.veto]
+    // ss[verify graph.panic-restart]
+    // ss[verify philosophy.cooperative-liveliness]
+    // ss[verify actor.is-running-loop]
+    // ss[verify actor.shutdown-veto]
     #[test]
     fn test_unclean_shutdown_veto() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1723,6 +1841,8 @@ mod graph_liveliness_tests {
         assert!(result.is_err());
     }
 
+    // ss[verify graph.shutdown.accept]
+    // ss[verify philosophy.cooperative-liveliness]
     #[test]
     fn test_clean_shutdown_actor_accepts_stop() {
         let mut graph = GraphBuilder::for_testing().build(());
@@ -1749,6 +1869,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn test_graph_liveliness_state_equality() {
         let building = GraphLivelinessState::Building;
         let running = GraphLivelinessState::Running;
@@ -1769,6 +1890,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn test_graph_liveliness_state_cloning() {
         let building = GraphLivelinessState::Building;
         let building_clone = building.clone();
@@ -1776,6 +1898,7 @@ mod graph_liveliness_tests {
     }
 
     #[test]
+    // ss[verify graph.for-testing]
     fn test_graph_liveliness_state_debug_output() {
         let building = GraphLivelinessState::Building;
         let debug_str = format!("{:?}", building);

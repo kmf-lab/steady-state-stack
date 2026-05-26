@@ -1,9 +1,12 @@
+// ss[related channel.stream-dual-buffer]
 use std::time::Duration;
 use futures_timer::Delay;
 use futures_util::{select, FutureExt};
+// ss[related channel.stream-dual-buffer]
 use ringbuf::traits::Observer;
 use ringbuf::consumer::Consumer;
 use futures_util::future::FusedFuture;
+// ss[related channel.stream-dual-buffer]
 use async_ringbuf::consumer::AsyncConsumer;
 use crate::{yield_now, RxCore, RxDone, StreamControlItem, StreamRx, warn};
 use crate::monitor_telemetry::SteadyTelemetrySend;
@@ -13,23 +16,29 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 /// This implementation manages a dual-channel system with a control channel for `T: StreamControlItem`
 /// and a payload channel for byte data, ensuring synchronized reception of control messages and
 /// their associated payloads.
+// ss[related channel.stream-dual-buffer]
 impl<T: StreamControlItem> RxCore for StreamRx<T> {
     /// The type of message item stored in the channel.
     type MsgItem = T;
 
     /// The type of message that is taken out of the channel, a tuple of the control item and its payload.
+    // ss[related channel.stream-dual-buffer]
     type MsgOut = (T, Box<[u8]>);
 
     /// The type used to peek at a message, a tuple of references to the control item and its payload slices.
+    // ss[related channel.stream-dual-buffer]
     type MsgPeek<'a> = (&'a T, &'a [u8], &'a [u8]) where T: 'a;
 
     /// The type used to count messages, a tuple of control items and payload bytes.
+    // ss[related channel.stream-dual-buffer]
     type MsgSize = (usize, usize);
 
     /// The type for a slice of messages to be peeked at, a quadruple of slices for control and payload.
+    // ss[related channel.stream-dual-buffer]
     type SliceSource<'a> = (&'a [T], &'a [T], &'a [u8], &'a [u8]) where T: 'a;
 
     /// The type for the target slices where messages are copied, a pair of mutable slices for control and payload.
+    // ss[related channel.stream-dual-buffer]
     type SliceTarget<'b> = (&'b mut [T], &'b mut [u8]) where T: 'b;
 
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
@@ -45,27 +54,33 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn monitor_not(&mut self) {
         self.control_channel.monitor_not();
         self.payload_channel.monitor_not();
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn log_periodic(&mut self) -> bool {
         self.control_channel.log_periodic()
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
         self.shared_capacity().0.min(items_count)
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_avail_items_count(&mut self) -> usize {
         self.shared_avail_units().0
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn is_closed_and_empty(&mut self) -> bool {
         self.control_channel.is_closed_and_empty() && self.payload_channel.is_closed_and_empty()
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> RxDone {
         let control_avail = self.control_channel.rx.occupied_len();
         let payload_avail = self.payload_channel.rx.occupied_len();
@@ -84,6 +99,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     async fn shared_peek_async_timeout(&mut self, timeout: Option<Duration>) -> Option<Self::MsgPeek<'_>> {
         let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -115,27 +131,33 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.rx.capacity().get(), self.payload_channel.rx.capacity().get())
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
         let cap = self.shared_capacity();
         size<=cap
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_is_empty(&self) -> bool {
         self.control_channel.rx.is_empty()
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_avail_units(&mut self) -> Self::MsgSize {
         (self.control_channel.rx.occupied_len(), self.payload_channel.rx.occupied_len())
     }
+    // ss[related channel.stream-dual-buffer]
     fn shared_avail_units_for(&mut self, size: Self::MsgSize) -> bool {
         let avail = self.shared_avail_units();
          avail >= size
     }
 
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_shutdown_or_avail_units(&mut self, count: Self::MsgSize) -> bool {
         let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -146,6 +168,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_closed_or_avail_units(&mut self, count:usize) -> bool {
         if self.shared_avail_units_for((count,1)) {
             true
@@ -161,6 +184,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_avail_units(&mut self, size: Self::MsgSize) -> bool {
         if self.shared_avail_units_for(size) {
             true
@@ -172,6 +196,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
     }
 
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_try_take(&mut self) -> Option<(RxDone, Self::MsgOut)> {
         if let Some(item) = self.control_channel.rx.try_peek() {
             if item.length() <= self.payload_channel.rx.occupied_len() as i32 {
@@ -193,6 +218,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_take_slice(&mut self, target: Self::SliceTarget<'_>) -> RxDone where Self::MsgItem: Copy {
         let (item_target, payload_target) = target;
         let (item_a, item_b) = self.control_channel.rx.as_slices();
@@ -248,25 +274,30 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         RxDone::Stream(items_copied, payload_copied)
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn shared_peek_slice(&mut self) -> Self::SliceSource<'_> {
         let (item_a, item_b) = self.control_channel.rx.as_slices();
         let (payload_a, payload_b) = self.payload_channel.rx.as_slices();
         (item_a, item_b, payload_a, payload_b)
     }
 
+    // ss[related channel.stream-dual-buffer]
     fn one(&self) -> Self::MsgSize {
        (1,1)
     }
 }
 
 #[cfg(test)]
+// ss[related channel.stream-dual-buffer]
 mod core_rx_stream_tests {
     use std::time::Duration;
     use async_ringbuf::traits::Producer;
+    // ss[related channel.stream-dual-buffer]
     use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone, steady_rx::RxMetaDataProvider};
     use crate::core_tx::TxCore;
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -295,6 +326,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_core_basics() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -321,6 +353,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_shared_capacity_for_bounds() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -341,6 +374,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_peek_async_timeout() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -361,6 +395,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_take_slice_logic() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -389,6 +424,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_telemetry_normal() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -446,6 +482,7 @@ mod core_rx_stream_tests {
     // }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_take_slice_wrap_around() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -486,6 +523,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_advance_fail() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -504,6 +542,7 @@ mod core_rx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_try_take_partial_payload() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());

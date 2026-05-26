@@ -4,6 +4,7 @@
 //! that will yield (i.e., return `Poll::Pending`) once before it completes. This is
 //! useful for cooperative multitasking scenarios where you want to allow other tasks to run.
 
+// ss[impl philosophy.mechanical-sympathy]
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -13,6 +14,7 @@ use std::task::{Context, Poll};
 /// This struct is used internally to create a future that will yield (i.e., return `Poll::Pending`)
 /// once before it completes. It is useful for cooperative multitasking scenarios where you want
 /// to allow other tasks to run.
+// ss[impl philosophy.mechanical-sympathy]
 pub struct YieldNow(bool);
 
 impl YieldNow {
@@ -20,11 +22,13 @@ impl YieldNow {
     ///
     /// This function initializes a new `YieldNow` future that will yield once before completing.
     ///
+    // ss[impl philosophy.mechanical-sympathy]
     fn new() -> Self {
         YieldNow(false)  // false indicates it has not yielded yet
     }
 }
 
+// ss[impl philosophy.mechanical-sympathy]
 impl Future for YieldNow {
     type Output = ();
 
@@ -44,6 +48,7 @@ impl Future for YieldNow {
     /// * `Poll::Pending` - If the future is yielding.
     /// * `Poll::Ready(())` - If the future is ready to complete.
     ///
+    // ss[impl philosophy.mechanical-sympathy]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.0 {
             Poll::Ready(())
@@ -61,22 +66,28 @@ impl Future for YieldNow {
 /// completes. It is useful for cooperative multitasking scenarios where you want to allow other
 /// tasks to run.
 ///
+// ss[impl philosophy.mechanical-sympathy]
+// ss[impl graph.troupes]
 pub fn yield_now() -> impl Future<Output = ()> {
     YieldNow::new()
 }
 
 #[cfg(test)]
+// ss[impl philosophy.mechanical-sympathy]
 mod tests {
     use super::*;
     use std::task::{Context, Poll, Waker};
+    // ss[impl philosophy.mechanical-sympathy]
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::{Arc};
 
     // A simple waker that does nothing, used for testing.
+    // ss[impl philosophy.mechanical-sympathy]
     fn noop_waker() -> Waker {
         struct NoopWaker;
         impl std::task::Wake for NoopWaker {
+            // ss[impl philosophy.mechanical-sympathy]
             fn wake(self: Arc<Self>) {}
         }
 
@@ -84,6 +95,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify philosophy.mechanical-sympathy]
     fn test_yield_now_initially_pending() {
         let mut yield_now = yield_now();
         let waker = noop_waker();
@@ -94,6 +106,7 @@ mod tests {
     }
 
     #[test]
+    // ss[verify philosophy.mechanical-sympathy]
     fn test_yield_now_ready_after_yielding() {
         let mut yield_now = yield_now();
         let waker = noop_waker();

@@ -1,5 +1,7 @@
 # Getting Started with Steady State
 
+> **Specification:** [docs/spec/README.md](spec/README.md) — normative requirements and learning path.
+
 Welcome to **Steady State**, a high‑performance, telemetry‑first actor framework for building resilient concurrent systems in Rust.
 
 This guide walks you through your first actor graph — from installation to seeing live telemetry.
@@ -147,9 +149,9 @@ cargo run --example your_first_actor
 
 ## Next Steps
 
-- Read the **[Actor Lifecycle Guide](actor_lifecycle.md)** to understand shutdown voting and restarts.
-- Explore **[Channel Configuration](channels.md)** for backpressure, bundles, and lazy initialization.
-- Learn how to **[Test](testing.md)** your actors using `internal_behavior` directly and the `StageManager`.
+- Read the **[Actor Lifecycle Guide](actor_lifecycle.md)** (spec: [02-actor](spec/02-actor.md), [05-graph](spec/05-graph-and-shutdown.md)).
+- Explore **[Channel Configuration](channels.md)** (spec: [03-channel](spec/03-channel.md), [04-bundle](spec/04-bundle-and-index.md)).
+- Learn how to **[Test](testing.md)** your actors (spec: [06-testing](spec/06-testing-and-simulation.md)).
 
 ---
 

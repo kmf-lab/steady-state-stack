@@ -1,15 +1,20 @@
+// ss[related channel.stream-dual-buffer]
 use log::{error, trace, warn};
 use std::time::{Duration, Instant};
 use futures_util::{select, FutureExt};
+// ss[related channel.stream-dual-buffer]
 use futures_util::future::{Either, FusedFuture};
 use std::future::pending;
 use ringbuf::traits::Observer;
+// ss[related channel.stream-dual-buffer]
 use ringbuf::producer::Producer;
 use async_ringbuf::producer::AsyncProducer;
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamControlItem, StreamEgress, StreamIngress, StreamTx, TxCore, TxDone, MONITOR_NOT};
+// ss[related channel.stream-dual-buffer]
 use crate::loop_driver::pin_mut;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::yield_now::yield_now;
+// ss[related channel.stream-dual-buffer]
 use crate::core_exec;
 
 /// Implementation of `TxCore` for stream-based channels with `StreamIngress`.
@@ -17,20 +22,25 @@ use crate::core_exec;
 /// This implementation manages a dual-channel system with a control channel for `StreamIngress`
 /// items and a payload channel for byte data, ensuring synchronized transmission of control
 /// messages and their associated payloads.
+// ss[related channel.stream-dual-buffer]
 impl TxCore for StreamTx<StreamIngress> {
     /// The type of message sent into the channel, a tuple of a `StreamIngress` item and its payload bytes.
     type MsgIn<'a> = (StreamIngress, &'a [u8]);
 
     /// The type of message that comes out of the channel, the `StreamIngress` control item.
+    // ss[related channel.stream-dual-buffer]
     type MsgOut = StreamIngress;
 
     /// The type used to count messages, a tuple of control items and payload bytes.
+    // ss[related channel.stream-dual-buffer]
     type MsgSize = (usize, usize);
 
     /// The type for a slice of messages, a tuple of control item slices and payload byte slices.
+    // ss[related channel.stream-dual-buffer]
     type SliceSource<'b> = (&'b [StreamIngress], &'b [u8]);
 
     /// The type for target slices, providing four mutable slices for control and payload buffers.
+    // ss[related channel.stream-dual-buffer]
     type SliceTarget<'a> = (
         &'a mut [std::mem::MaybeUninit<StreamIngress>],
         &'a mut [std::mem::MaybeUninit<StreamIngress>],
@@ -39,6 +49,7 @@ impl TxCore for StreamTx<StreamIngress> {
     );
 
     /// Returns a `TxDone` value indicating one control item and its payload size were processed.
+    // ss[related channel.stream-dual-buffer]
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Stream(1, one.1.len())
     }
@@ -47,6 +58,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// This method moves the write positions forward for both channels, returning the number of
     /// control items and bytes advanced, or zero if space is insufficient.
+    // ss[related channel.stream-dual-buffer]
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
         let control_avail = self.control_channel.tx.vacant_len();
         let payload_avail = self.payload_channel.tx.vacant_len();
@@ -65,6 +77,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Sends closure signals through the oneshot channels for both control and payload, logging
     /// trace messages if the receivers are already dropped. Always returns `true`.
+    // ss[related channel.stream-dual-buffer]
     fn shared_mark_closed(&mut self) {
         if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
@@ -83,6 +96,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Returns a tuple representing one control item and an estimated payload size.
     ///
     /// The payload size is calculated as the ratio of payload channel capacity to control channel capacity.
+    // ss[related channel.stream-dual-buffer]
     fn one(&self) -> Self::MsgSize {
         (1, self.payload_channel.capacity() / self.control_channel.capacity())
     }
@@ -91,6 +105,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Uses the control channel’s timer, returning `true` if the interval exceeds the configured
     /// maximum telemetry error rate, resetting the timer.
+    // ss[related channel.stream-dual-buffer]
     fn log_perodic(&mut self) -> bool {
         if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -105,6 +120,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Processes items up to the control channel’s capacity, waiting synchronously for payload
     /// space if needed. Returns the number of control items sent. Includes debug assertions
     /// to ensure the channels are not closed.
+    // ss[related channel.stream-dual-buffer]
     fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(), "Send called after channel marked closed");
@@ -128,6 +144,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Updates telemetry with the number of control items and payload bytes sent, logging a
     /// warning if a `Normal` value is received instead of the expected `Stream`.
+    // ss[related channel.stream-dual-buffer]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         match done_count {
             TxDone::Normal(i) => {
@@ -145,6 +162,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Sets the monitor indices to a predefined constant to stop monitoring activity.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn monitor_not(&mut self) {
         self.control_channel.local_monitor_index = MONITOR_NOT;
         self.payload_channel.local_monitor_index = MONITOR_NOT;
@@ -152,9 +170,11 @@ impl TxCore for StreamTx<StreamIngress> {
 
     /// Returns the capacity of the control channel.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.tx.capacity().get(),self.payload_channel.tx.capacity().get())
     }
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
         let cap = self.shared_capacity();
         size <= cap
@@ -162,21 +182,25 @@ impl TxCore for StreamTx<StreamIngress> {
 
     /// Checks if the control channel is full.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_is_full(&self) -> bool {
         self.control_channel.tx.is_full()
     }
 
     /// Checks if the control channel is empty.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_is_empty(&self) -> bool {
         self.control_channel.tx.is_empty()
     }
 
     /// Returns the number of vacant units in the control channel.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_vacant_units(&self) -> Self::MsgSize {
         (self.control_channel.tx.vacant_len(), self.payload_channel.tx.vacant_len())
     }
+    // ss[related channel.stream-dual-buffer]
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
         let vacant = self.shared_vacant_units();
         vacant >= size
@@ -187,6 +211,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Returns `true` if both channels have sufficient space or are empty, otherwise waits
     /// asynchronously, returning `false` on shutdown or `true` when space is available.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if (self.control_channel.tx.is_empty() || self.control_channel.tx.vacant_len() >= count.0) &&
             (self.payload_channel.tx.is_empty() || self.payload_channel.tx.vacant_len() >= count.1) {
@@ -213,6 +238,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Returns `true` immediately if enough space exists, otherwise waits asynchronously until
     /// both control and payload channels have the required vacant units.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
@@ -228,6 +254,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Returns `true` if the control channel empties, or `false` if shutdown occurs first.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -243,6 +270,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Attempts to send as many items as possible, limited by the vacant space in both channels,
     /// returning the number of control items and bytes sent.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy {
         let mut items_sent = 0;
         let mut bytes_sent = 0;
@@ -274,6 +302,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Returns four mutable slices representing the writable portions of both buffers.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
         let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
@@ -285,6 +314,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Returns `Ok` with the number of items and bytes sent if successful, or `Err` with the
     /// control item if either channel lacks sufficient space. Includes debug assertions for closure.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         let (item, payload) = msg;
         assert_eq!(item.length(), payload.len() as i32);
@@ -305,6 +335,7 @@ impl TxCore for StreamTx<StreamIngress> {
     /// Attempts an immediate send of both control item and payload, applying saturation strategies
     /// if needed, and waits for space, shutdown, or timeout, returning the outcome.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async_core(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -388,6 +419,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Delegates to the core method with no timeout, simplifying the interface for stream sends.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -401,6 +433,7 @@ impl TxCore for StreamTx<StreamIngress> {
     ///
     /// Delegates to the core method, allowing specification of a timeout for the stream send operation.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async_timeout(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -417,20 +450,25 @@ impl TxCore for StreamTx<StreamIngress> {
 /// This implementation manages a dual-channel system with a control channel for `StreamEgress`
 /// items (length markers) and a payload channel for byte data, synchronizing payload sends
 /// with control item creation.
+// ss[related channel.stream-dual-buffer]
 impl TxCore for StreamTx<StreamEgress> {
     /// The type of message sent into the channel, a slice of payload bytes.
     type MsgIn<'a> = &'a [u8];
 
     /// The type of message that comes out of the channel, a `StreamEgress` control item.
+    // ss[related channel.stream-dual-buffer]
     type MsgOut = StreamEgress;
 
     /// The type used to count messages, a tuple of control items and payload bytes.
+    // ss[related channel.stream-dual-buffer]
     type MsgSize = (usize, usize);
 
     /// The type for a slice of messages, a tuple of `StreamEgress` slices and payload byte slices.
+    // ss[related channel.stream-dual-buffer]
     type SliceSource<'b> = (&'b [StreamEgress], &'b [u8]);
 
     /// The type for target slices, providing four mutable slices for control and payload buffers.
+    // ss[related channel.stream-dual-buffer]
     type SliceTarget<'a> = (
         &'a mut [std::mem::MaybeUninit<StreamEgress>],
         &'a mut [std::mem::MaybeUninit<StreamEgress>],
@@ -442,6 +480,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Moves the write positions forward for both channels, returning the number of control items
     /// and bytes advanced, or zero if space is insufficient.
+    // ss[related channel.stream-dual-buffer]
     fn shared_advance_index(&mut self, count: Self::MsgSize) -> TxDone {
         let control_avail = self.control_channel.tx.vacant_len();
         let payload_avail = self.payload_channel.tx.vacant_len();
@@ -459,6 +498,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Returns a `TxDone` value indicating one payload slice was processed.
     ///
     /// Reports one control item and the length of the payload slice sent.
+    // ss[related channel.stream-dual-buffer]
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Stream(1, one.len())
     }
@@ -467,6 +507,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Sends closure signals through the oneshot channels for both, logging trace messages if
     /// receivers are dropped. Always returns `true`.
+    // ss[related channel.stream-dual-buffer]
     fn shared_mark_closed(&mut self) {
         if let Some(c) = self.control_channel.make_closed.take() {
             let result = c.send(());
@@ -485,6 +526,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Returns a tuple representing one control item and an estimated payload size.
     ///
     /// The payload size is based on the ratio of payload channel capacity to control channel capacity.
+    // ss[related channel.stream-dual-buffer]
     fn one(&self) -> Self::MsgSize {
         (1, self.payload_channel.capacity() / self.control_channel.capacity())
     }
@@ -493,6 +535,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Uses the control channel’s timer, returning `true` if the interval exceeds the configured
     /// maximum telemetry error rate, resetting the timer.
+    // ss[related channel.stream-dual-buffer]
     fn log_perodic(&mut self) -> bool {
         if self.control_channel.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -506,6 +549,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Processes payloads up to the control channel’s capacity, waiting synchronously for space
     /// if needed. Returns the number of payloads sent. Includes debug assertions for closure.
+    // ss[related channel.stream-dual-buffer]
     fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(), "Send called after channel marked closed");
@@ -528,6 +572,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Updates telemetry with the number of control items and payload bytes sent, handling both
     /// `Normal` and `Stream` cases appropriately.
+    // ss[related channel.stream-dual-buffer]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         match done_count {
             TxDone::Normal(i) => {
@@ -544,6 +589,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Sets the monitor indices to a predefined constant to stop monitoring activity.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn monitor_not(&mut self) {
         self.control_channel.local_monitor_index = MONITOR_NOT;
         self.payload_channel.local_monitor_index = MONITOR_NOT;
@@ -551,9 +597,11 @@ impl TxCore for StreamTx<StreamEgress> {
 
     /// Returns the capacity of the control channel.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity(&self) -> Self::MsgSize {
         (self.control_channel.tx.capacity().get(), self.payload_channel.tx.capacity().get())
     }
+    // ss[related channel.stream-dual-buffer]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
         let cap = self.shared_capacity();
         size <= cap
@@ -561,21 +609,25 @@ impl TxCore for StreamTx<StreamEgress> {
 
     /// Checks if the control channel is full.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_is_full(&self) -> bool {
         self.control_channel.tx.is_full()
     }
 
     /// Checks if the control channel is empty.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_is_empty(&self) -> bool {
         self.control_channel.tx.is_empty()
     }
 
     /// Returns the number of vacant units in the control channel.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_vacant_units(&self) -> Self::MsgSize {
         (self.control_channel.tx.vacant_len(), self.payload_channel.tx.vacant_len())
     }
+    // ss[related channel.stream-dual-buffer]
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
         let vacant = self.shared_vacant_units();
         vacant >= size
@@ -586,6 +638,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Returns `true` if both channels have sufficient space or are empty, otherwise waits
     /// asynchronously, returning `false` on shutdown or `true` when space is available.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if (self.control_channel.tx.is_empty() || self.control_channel.tx.vacant_len() >= count.0) &&
             (self.payload_channel.tx.is_empty() || self.payload_channel.tx.vacant_len() >= count.1) {
@@ -612,6 +665,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Returns `true` immediately if enough space exists, otherwise waits asynchronously until
     /// both control and payload channels have the required vacant units.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if self.control_channel.tx.vacant_len() >= count.0 &&
             self.payload_channel.tx.vacant_len() >= count.1 {
@@ -627,6 +681,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Returns `true` if the control channel empties, or `false` if shutdown occurs first.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.control_channel.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -642,6 +697,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Attempts to send as many items as possible, limited by the vacant space in both channels,
     /// returning the number of control items and bytes sent.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy {
         let mut items_sent = 0;
         let mut bytes_sent = 0;
@@ -673,6 +729,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Returns four mutable slices representing the writable portions of both buffers.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
         let (item_a, item_b) = self.control_channel.tx.vacant_slices_mut();
         let (payload_a, payload_b) = self.payload_channel.tx.vacant_slices_mut();
@@ -684,6 +741,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Returns `Ok` with the number of items and bytes sent if successful, or `Err` with a
     /// constructed `StreamEgress` if either channel lacks space. Includes debug assertions for closure.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     fn shared_try_send(&mut self, payload: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         debug_assert!(self.control_channel.make_closed.is_some(), "Send called after channel marked closed");
         debug_assert!(self.payload_channel.make_closed.is_some(), "Send called after channel marked closed");
@@ -702,6 +760,7 @@ impl TxCore for StreamTx<StreamEgress> {
     /// Attempts an immediate send of the payload and a generated control item, applying saturation
     /// strategies if needed, and waits for space, shutdown, or timeout, returning the outcome.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async_core(
         &mut self,
         payload: Self::MsgIn<'_>,
@@ -783,6 +842,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Delegates to the core method with no timeout, simplifying the interface for stream sends.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async(
         &mut self,
         payload: Self::MsgIn<'_>,
@@ -796,6 +856,7 @@ impl TxCore for StreamTx<StreamEgress> {
     ///
     /// Delegates to the core method, allowing specification of a timeout for the stream send operation.
     #[inline]
+    // ss[related channel.stream-dual-buffer]
     async fn shared_send_async_timeout(
         &mut self,
         payload: Self::MsgIn<'_>,
@@ -808,13 +869,16 @@ impl TxCore for StreamTx<StreamEgress> {
 }
 
 #[cfg(test)]
+// ss[related channel.stream-dual-buffer]
 mod core_tx_stream_tests {
     use std::time::{Duration, Instant};
     use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx, steady_tx::TxMetaDataProvider};
+    // ss[related channel.stream-dual-buffer]
     use crate::distributed::aqueduct_stream::Defrag;
     use async_ringbuf::traits::Producer;
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_general() -> Result<(),Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
 
@@ -843,6 +907,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -884,6 +949,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_egress_tx_core() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -920,6 +986,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_tx_iter_until_full() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -939,6 +1006,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -959,6 +1027,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_egress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -979,6 +1048,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_defrag_partial_flush() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder()
@@ -1011,6 +1081,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_send_async_timeout_saturation() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder()
@@ -1049,6 +1120,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_saturation_policies() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1076,6 +1148,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_partial_slice_send() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1098,6 +1171,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_advance_fail() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1115,6 +1189,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_telemetry_warning() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1137,6 +1212,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_periodic_log() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1157,6 +1233,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_wait_shutdown() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1182,6 +1259,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_egress_tx_core_capacity_checks() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1201,6 +1279,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_mark_closed_dropped() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1219,6 +1298,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_send_slice_payload_full() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1240,6 +1320,7 @@ mod core_tx_stream_tests {
     }
 
     #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_wait_empty_terminated() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());

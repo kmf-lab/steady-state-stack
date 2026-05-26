@@ -1,12 +1,16 @@
+// ss[related tooling.cargo-driver-strings]
 use std::cell::RefCell;
 use dot_parser::canonical::Graph;
 use std::error::Error;
+// ss[related tooling.cargo-driver-strings]
 use std::time::Duration;
 use log::{error, warn};
 use num_traits::Zero;
+// ss[related tooling.cargo-driver-strings]
 use crate::ProjectModel;
 use crate::templates::{Actor, ActorDriver, Channel, ConsumePattern};
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_type_name_from_edge_label(label_text: &str, from_node: &str, to_node: &str) -> String {
     ///////////////////////////////////
     // Attempt to find the type name
@@ -64,6 +68,7 @@ fn extract_type_name_from_edge_label(label_text: &str, from_node: &str, to_node:
     format!("From{}To{}",from_node,to_node).to_string()
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_capacity_from_edge_label(label_text: &str, default: usize) -> usize {
     if let Some(start) = label_text.find('#') {
         let remaining = &label_text[start + 1..];
@@ -79,6 +84,7 @@ fn extract_capacity_from_edge_label(label_text: &str, default: usize) -> usize {
 
 
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_module_name(node_id: &str, label_text: &str) -> String {
     let module_prefix = "mod::";
     if let Some(start) = label_text.find(module_prefix) {
@@ -98,6 +104,7 @@ fn extract_module_name(node_id: &str, label_text: &str) -> String {
     }
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn to_snake_case(input: &str) -> String {
     let mut result = String::new();
     for (i, c) in input.chars().enumerate() {
@@ -111,6 +118,7 @@ fn to_snake_case(input: &str) -> String {
     result
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_consume_pattern_from_label(label: &str) -> ConsumePattern {
     if label.contains(">>PeekCopy") {
         ConsumePattern::PeekCopy
@@ -122,6 +130,7 @@ fn extract_consume_pattern_from_label(label: &str) -> ConsumePattern {
 }
 
 
+// ss[related tooling.cargo-driver-strings]
 fn find_start_position(label: &str) -> usize {
     let keywords = ["AtMostEvery(", "AtLeastEvery(", "OnEvent(", "OnCapacity(", "Other("];
     keywords.iter()
@@ -130,6 +139,7 @@ fn find_start_position(label: &str) -> usize {
         .unwrap_or(label.len()) // Default
 }
 
+// ss[impl tooling.cargo-driver-strings]
 fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
 
     let start_pos = find_start_position(label);
@@ -185,6 +195,7 @@ fn extract_actor_driver_from_label(label: &str) -> Vec<ActorDriver> {
 
 /// will parse out strings like Event(xx:1||y:1) and Capacity(xx:1||y:1)
 /// where prefix is "Event" or "Capacity"
+// ss[impl tooling.cargo-percent-parse]
 fn parse_parts(part: &str, prefix: &str) -> Option<Vec<Vec<String>>> {
     part.strip_prefix(prefix)
         .and_then(|s| s.split_once('('))
@@ -204,6 +215,7 @@ fn parse_parts(part: &str, prefix: &str) -> Option<Vec<Vec<String>>> {
 }
 
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> String {
     let module_prefix = "name::";
     if let Some(start) = label_text.find(module_prefix) {
@@ -220,6 +232,7 @@ fn extract_channel_name(label_text: &str, from_node: &str, to_node: &str) -> Str
     }
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn extract_trailing_number(label: &str) -> (&str, Option<usize>) {
     // Find where the numeric portion starts, if any
     let mut numeric_start = None;
@@ -244,6 +257,7 @@ fn extract_trailing_number(label: &str) -> (&str, Option<usize>) {
 
 /////////////////////////
 ////////////////////////
+// ss[related tooling.cargo-driver-strings]
 pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     let empty = "".to_string();
@@ -279,6 +293,7 @@ pub(crate) fn extract_project_model(name: &str, dot_graph: Graph<(String, String
     build_pm(ProjectModel { name: name.to_string(), ..Default::default() }, nodes, edges)
 }
 
+// ss[related tooling.cargo-driver-strings]
 fn unified_name(name: &str, instance: Option<usize>) -> String {
     if let Some(instance) = instance {
         format!("{}{}", name, instance)
@@ -287,6 +302,7 @@ fn unified_name(name: &str, instance: Option<usize>) -> String {
     }
 }
 #[allow(clippy::type_complexity)]
+// ss[impl tooling.cargo-driver-strings]
 fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, mut edges: Vec<(&str, Option<usize>, &str, Option<usize>, &str)>) -> Result<ProjectModel, Box<dyn Error>> {
 
     nodes.sort(); //to ensure we get the same results on each run
@@ -475,6 +491,7 @@ fn build_pm(mut pm: ProjectModel, mut nodes: Vec<(&str, Option<usize>, &str)>, m
 /// This function is used to roll up channels into bundles and is important for the code generation
 /// Some Channels are grouped into vecs because they are all the same and either originate
 /// or terminate at the same actor. This simplifies code to allow for indexing of channels.
+// ss[impl tooling.cargo-bundle-codegen]
 fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, index: bool, group_by: fn(&Channel, &Vec<Channel>) -> bool) {
 
         if let Some(x) = collection.iter_mut().find(|f| {
@@ -538,10 +555,12 @@ fn roll_up_bundle(collection: &mut Vec<Vec<Channel>>, mut insert_me: Channel, in
 
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod tests {
     use crate::extract_details;
     use crate::extract_details::*;
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_type_name_from_edge_label() {
         let label = "IMAP server details\nemail, password";
@@ -551,6 +570,7 @@ mod tests {
         assert_eq!(result, "IMAPServerDetails".to_string());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_type_name_from_edge_label2() {
         let label = "<Widget>#1024";
@@ -564,6 +584,7 @@ mod tests {
         assert_eq!(extract_type_name_from_edge_label(label_missing_type, "NodeA", "NodeB"), "FromNodeAToNodeB".to_string());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_capacity_from_edge_label() {
         let label = "Capacity #1024";
@@ -575,6 +596,7 @@ mod tests {
     }
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_module_name() {
         let label = "mod::MyModule";
@@ -585,6 +607,7 @@ mod tests {
         assert_eq!(extract_module_name("NodeA", label_missing_module), "mod_node_a");
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_consume_pattern_from_label() {
         let label_peek_copy = ">>PeekCopy something else";
@@ -598,6 +621,7 @@ mod tests {
         assert_eq!(extract_consume_pattern_from_label(label_missing_pattern), ConsumePattern::Take);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_actor_driver_from_label() {
         let label = "AtLeastEvery(5000ms) && OnEvent(C1//10||B2//10) && OnCapacity(C2//20||A1//20)";
@@ -611,6 +635,7 @@ mod tests {
 
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_correct_format() {
         let input = "Event(xx:1||y:1)";
@@ -618,6 +643,7 @@ mod tests {
         assert_eq!(parse_parts(input, "Event"), expected);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_multiple_parts() {
         let input = "Capacity(a:1:b:2||c:3:d:4)";
@@ -625,24 +651,28 @@ mod tests {
         assert_eq!(parse_parts(input, "Capacity"), expected);
     }
 
-    #[test]
-    fn test_incorrect_prefix() {
+    // ss[verify tooling.cargo-driver-strings]
+#[test]
+        fn test_incorrect_prefix() {
         let input = "Event(xx:1||y:1)";
         assert_eq!(parse_parts(input, "Capacity"), None);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_missing_closing_parenthesis() {
         let input = "Event(xx:1||y:1";
         assert_eq!(parse_parts(input, "Event"), None);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_empty_content() {
         let input = "Event()";
         assert_eq!(parse_parts(input, "Event"), None);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_no_delimiters() {
         let input = "Event(xxy1)";
@@ -650,6 +680,7 @@ mod tests {
         assert_eq!(parse_parts(input, "Event"), expected);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_example_1() {
         let input = "OnEvent(client_request:1||feedback:1)";
@@ -660,6 +691,7 @@ mod tests {
         assert_eq!(parse_parts(input, "OnEvent"), expected);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_example_2() {
         let input = "OnEvent(pbft_message:1)";
@@ -670,10 +702,12 @@ mod tests {
 }
 
 #[cfg(test)]
+// ss[related tooling.cargo-driver-strings]
 mod additional_tests {
     use super::*;
     use crate::templates::{ Channel, ActorDriver, ConsumePattern};
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_to_snake_case() {
         assert_eq!(to_snake_case("CamelCase"), "camel_case");
@@ -682,6 +716,7 @@ mod additional_tests {
         assert_eq!(to_snake_case("already_snake_case"), "already_snake_case");
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_find_start_position() {
         let label = "AtLeastEvery(100ms) && OnEvent(C1//10||B2//10)";
@@ -694,6 +729,7 @@ mod additional_tests {
         assert_eq!(find_start_position(label), label.len());
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_channel_name() {
         let label = "name::MyChannelName";
@@ -704,6 +740,7 @@ mod additional_tests {
     }
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_capacity_from_edge_label_edge_cases() {
         let label = "Capacity #1024extra";
@@ -713,6 +750,7 @@ mod additional_tests {
         assert_eq!(extract_capacity_from_edge_label(label, 512), 512);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_type_name_from_edge_label() {
         assert_eq!(extract_type_name_from_edge_label("<TypeName>", "from_node", "to_node"), "TypeName");
@@ -720,6 +758,7 @@ mod additional_tests {
     //    assert_eq!(extract_type_name_from_edge_label("", "from_node", "to_node"), "Fromfrom_nodeTo_to_node");
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_capacity_from_edge_label() {
         assert_eq!(extract_capacity_from_edge_label("#10", 8), 10);
@@ -727,6 +766,7 @@ mod additional_tests {
         assert_eq!(extract_capacity_from_edge_label("", 8), 8);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_module_name() {
         assert_eq!(extract_module_name("node_id", "mod::module_name"), "module_name");
@@ -736,6 +776,7 @@ mod additional_tests {
 
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_consume_pattern_from_label() {
         assert_eq!(extract_consume_pattern_from_label(">>PeekCopy"), ConsumePattern::PeekCopy);
@@ -746,6 +787,7 @@ mod additional_tests {
 
 
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_extract_actor_driver_from_label() {
         assert_eq!(extract_actor_driver_from_label("AtMostEvery(10ms)"), vec![ActorDriver::AtMostEvery(Duration::from_millis(10))]);
@@ -756,6 +798,8 @@ mod additional_tests {
         assert_eq!(extract_actor_driver_from_label(""), vec![ActorDriver::AtMostEvery(Duration::from_secs(1))]);
     }
 
+    // ss[verify tooling.cargo-percent-parse]
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_parse_parts() {
         assert_eq!(parse_parts("Event(event:1||event2:2)", "Event"), Some(vec![vec!["event".to_string(), "1".to_string()], vec!["event2".to_string(), "2".to_string()]]));
@@ -764,6 +808,7 @@ mod additional_tests {
         assert_eq!(parse_parts("", "Event"), None);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_build_pm() {
         let pm = ProjectModel::default();
@@ -775,6 +820,7 @@ mod additional_tests {
         assert_eq!(result.channels.len(), 1);
     }
 
+    // ss[verify tooling.cargo-driver-strings]
     #[test]
     fn test_build_pm_empty_edges() {
         let pm = ProjectModel::default();
@@ -786,6 +832,7 @@ mod additional_tests {
         assert_eq!(result.channels.len(), 0);
     }
 
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_roll_up_bundle() {
         let mut channels = vec![];
@@ -812,6 +859,7 @@ mod additional_tests {
         assert_eq!(channels.len(), 1);
     }
 
+    // ss[verify tooling.cargo-bundle-codegen]
     #[test]
     fn test_roll_up_bundle_empty_channels() {
         let mut channels = vec![];

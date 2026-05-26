@@ -1,9 +1,12 @@
+// ss[related channel.lazy.establish-on-clone]
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
+// ss[related channel.lazy.establish-on-clone]
 use futures_util::lock::Mutex;
 use log::warn;
 use ringbuf::producer::Producer;
+// ss[related channel.lazy.establish-on-clone]
 use crate::{SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle};
 use crate::channel_builder::ChannelBuilder;
 use crate::core_exec;
@@ -14,6 +17,7 @@ use crate::core_exec;
  * Ensures resources are allocated near the point of use, improving efficiency in actor systems.
  */
 #[derive(Debug)]
+// ss[related channel.lazy.establish-on-clone]
 pub struct LazySteadyTx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
@@ -30,6 +34,7 @@ impl <T> LazySteadyTx<T> {
      *
      * A new `LazySteadyTx<T>` instance.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyTx {
             lazy_channel,
@@ -46,6 +51,7 @@ impl <T> LazySteadyTx<T> {
      * A `SteadyTx<T>` instance for sending data.
      */
     #[allow(clippy::should_implement_trait)]
+    // ss[impl channel.lazy.establish-on-clone]
     pub fn clone(&self) -> SteadyTx<T> {
         core_exec::block_on(self.lazy_channel.get_tx_clone())
     }
@@ -64,6 +70,7 @@ impl <T> LazySteadyTx<T> {
      *
      * Panics with "internal error" if the transmitter lock cannot be acquired.
      */
+    // ss[impl channel.testing-send-all]
     pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
         use crate::core_tx::TxCore;
 
@@ -97,6 +104,7 @@ impl <T> LazySteadyTx<T> {
      *
      * Panics with "internal error" if the transmitter lock cannot be acquired.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub fn testing_close(&self) {
         let tx = self.clone();
         let mut tx = tx.try_lock().expect("internal error");
@@ -110,6 +118,7 @@ impl <T> LazySteadyTx<T> {
  * Similar to `LazySteadyTx`, it ensures resource allocation occurs near the point of use.
  */
 #[derive(Debug)]
+// ss[related channel.lazy.establish-on-clone]
 pub struct LazySteadyRx<T> {
     lazy_channel: Arc<LazyChannel<T>>,
 }
@@ -126,6 +135,7 @@ impl <T> LazySteadyRx<T> {
      *
      * A new `LazySteadyRx<T>` instance.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub(crate) fn new(lazy_channel: Arc<LazyChannel<T>>) -> Self {
         LazySteadyRx {
             lazy_channel,
@@ -142,6 +152,7 @@ impl <T> LazySteadyRx<T> {
      * A `SteadyRx<T>` instance for receiving data.
      */
     #[allow(clippy::should_implement_trait)]
+    // ss[related channel.lazy.establish-on-clone]
     pub fn clone(&self) -> SteadyRx<T> {
         core_exec::block_on(self.lazy_channel.get_rx_clone())
     }
@@ -155,6 +166,7 @@ impl <T> LazySteadyRx<T> {
      *
      * A vector containing all available items from the channel.
      */
+    // ss[impl channel.testing-take-all]
     pub fn testing_take_all(&self) -> Vec<T> {
         core_exec::block_on(async {
             let rx = self.lazy_channel.get_rx_clone().await;
@@ -176,6 +188,7 @@ impl <T> LazySteadyRx<T> {
  * Holds the builder configuration and channel instance, initializing the channel on demand.
  */
 #[derive(Debug)]
+// ss[related channel.lazy.establish-on-clone]
 pub(crate) struct LazyChannel<T> {
     builder: Mutex<Option<ChannelBuilder>>,
     channel: Mutex<Option<(SteadyTx<T>, SteadyRx<T>)>>,
@@ -193,6 +206,7 @@ impl <T> LazyChannel<T> {
      *
      * A new `LazyChannel<T>` instance.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub(crate) fn new(builder: &ChannelBuilder) -> Self {
         LazyChannel {
             builder: Mutex::new(Some(builder.clone())),
@@ -211,6 +225,7 @@ impl <T> LazyChannel<T> {
      *
      * Panics with "internal error" if the builder is taken more than once or channel access fails.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub(crate) async fn get_tx_clone(&self) -> SteadyTx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
@@ -232,6 +247,7 @@ impl <T> LazyChannel<T> {
      *
      * Panics with "internal error" if the builder is taken more than once or channel access fails.
      */
+    // ss[related channel.lazy.establish-on-clone]
     pub(crate) async fn get_rx_clone(&self) -> SteadyRx<T> {
         let mut channel = self.channel.lock().await;
         if channel.is_none() {
@@ -250,19 +266,23 @@ impl <T> LazyChannel<T> {
 /// # Type Parameters
 /// - `T`: The type of data being transmitted.
 /// - `GIRTH`: The fixed size of the transmitter array.
+// ss[related channel.lazy.establish-on-clone]
 pub type LazySteadyTxBundle<T, const GIRTH: usize> = [LazySteadyTx<T>; GIRTH];
 
 /// Trait for cloning lazy transmitter bundles with initialization.
 ///
 /// Defines the behavior for cloning a bundle of lazy transmitters, triggering initialization.
+// ss[related channel.lazy.establish-on-clone]
 pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
     /// Clones the bundle of transmitters, lazily initializing the channels.
     ///
     /// # Returns
     /// - `SteadyTxBundle<T, GIRTH>`: A fully initialized bundle of transmitters.
+    // ss[related channel.lazy.establish-on-clone]
     fn clone(&self) -> SteadyTxBundle<T, GIRTH>;
 }
 
+// ss[impl bundle.clone-establishes]
 impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
         let tx_clones: Vec<SteadyTx<T>> = self.iter().map(|l| l.clone()).collect();
@@ -280,19 +300,23 @@ impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBu
 /// # Type Parameters
 /// - `T`: The type of data being received.
 /// - `GIRTH`: The fixed size of the receiver array.
+// ss[related channel.lazy.establish-on-clone]
 pub type LazySteadyRxBundle<T, const GIRTH: usize> = [LazySteadyRx<T>; GIRTH];
 
 /// Trait for cloning lazy receiver bundles with initialization.
 ///
 /// Defines the behavior for cloning a bundle of lazy receivers, triggering initialization.
+// ss[related channel.lazy.establish-on-clone]
 pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
     /// Clones the bundle of receivers, lazily initializing the channels.
     ///
     /// # Returns
     /// - `SteadyRxBundle<T, GIRTH>`: A fully initialized bundle of receivers.
+    // ss[related channel.lazy.establish-on-clone]
     fn clone(&self) -> SteadyRxBundle<T, GIRTH>;
 }
 
+// ss[impl bundle.clone-establishes]
 impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
     fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
         let rx_clones: Vec<SteadyRx<T>> = self.iter().map(|l| l.clone()).collect();
@@ -305,12 +329,16 @@ impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBu
 
 // Smoke tests for LazySteadyTx and LazySteadyRx to verify basic functionality.
 #[cfg(test)]
+// ss[related channel.lazy.establish-on-clone]
 mod steady_lazy_tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    // ss[related channel.lazy.establish-on-clone]
     use crate::*;
 
     /// Tests the basic flow of sending and receiving messages through lazy transmitter and receiver channels.
+    // ss[verify channel.lazy.establish-on-clone]
+    // ss[verify philosophy.lazy-to-established]
     #[test]
     fn test_lazy_flow() {
         let builder = ChannelBuilder::default().with_capacity(2);
@@ -340,6 +368,7 @@ mod steady_lazy_tests {
     }
 
     /// Tests lazy channel initialization - verifies that channels are properly created on first clone.
+    // ss[verify channel.lazy.defer-allocation]
     #[test]
     fn test_lazy_channel_initialization() {
         let builder = ChannelBuilder::default().with_capacity(10);
@@ -362,6 +391,7 @@ mod steady_lazy_tests {
     }
 
     /// Tests testing_send_all with close=true to verify channel closure.
+    // ss[verify channel.testing-send-all]
     #[test]
     fn test_testing_send_all_with_close() {
         let builder = ChannelBuilder::default().with_capacity(5);
@@ -386,6 +416,8 @@ mod steady_lazy_tests {
     }
 
     /// Tests LazySteadyRx::testing_take_all() to verify it retrieves all available items.
+    // ss[verify channel.testing-take-all]
+    // ss[verify testing.assert-steady-rx]
     #[test]
     fn test_testing_take_all() {
         let builder = ChannelBuilder::default().with_capacity(5);
@@ -404,9 +436,20 @@ mod steady_lazy_tests {
         assert!(ste_rx.shared_is_empty());
     }
 
+    // ss[verify testing.assert-steady-rx]
+    #[test]
+    fn test_assert_steady_rx_eq_count_macro() {
+        use crate::{assert_steady_rx_eq_count, GraphBuilder};
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
+        tx.testing_send_all(vec![1, 2], false);
+        assert_steady_rx_eq_count!(&rx, 2);
+    }
+
     /// Tests LazySteadyTxBundleClone trait implementation.
     /// This test verifies that cloning a lazy bundle triggers lazy initialization 
     /// and returns a SteadyTxBundle that can be used with the lock() method.
+    // ss[verify bundle.clone-establishes]
     #[test]
     fn test_lazy_tx_bundle_clone() {
         use crate::channel_builder_lazy::LazySteadyTxBundleClone;
@@ -430,6 +473,7 @@ mod steady_lazy_tests {
     /// Tests LazySteadyRxBundleClone trait implementation.
     /// This test verifies that cloning a lazy receiver bundle triggers lazy initialization
     /// and returns a SteadyRxBundle that can be used with the lock() method.
+    // ss[verify bundle.clone-establishes]
     #[test]
     fn test_lazy_rx_bundle_clone() {
         use crate::channel_builder_lazy::LazySteadyRxBundleClone;

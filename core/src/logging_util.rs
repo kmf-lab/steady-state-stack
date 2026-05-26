@@ -4,29 +4,36 @@
 //! This module enables per-test log capture, dynamic log level control, and
 //! robust assertions on log output, supporting both serial and parallel test execution.
 
+// ss[related philosophy.structural-hierarchy]
 use flexi_logger::writers::*;
 use flexi_logger::*;
 use std::sync::{Mutex, Arc};
+// ss[related philosophy.structural-hierarchy]
 use std::error::Error;
 use std::io;
 #[allow(unused_imports)]
+// ss[related philosophy.structural-hierarchy]
 use log::*;
 use crate::LogFileConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::collections::HashMap;
 use std::thread::{self, ThreadId};
 use crate::LogLevel;
+// ss[related philosophy.structural-hierarchy]
 use lazy_static::lazy_static;
 
 /// A simple memory writer that stores log messages per test context.
 ///
 /// This writer is used to capture log output in memory for each test thread,
 /// enabling assertions on log content during testing.
+// ss[related philosophy.structural-hierarchy]
 struct MemoryWriter {
     /// The formatting function used for log records.
     format: FormatFunction,
 }
 
+// ss[related philosophy.structural-hierarchy]
 impl MemoryWriter {
     /// Creates a new `MemoryWriter` with the specified formatting function.
     fn new(format: FormatFunction) -> Self {
@@ -39,6 +46,7 @@ impl MemoryWriter {
 /// Each test thread has its own capture state, including a flag for
 /// whether capturing is active and a buffer for captured log messages.
 #[derive(Clone)]
+// ss[related philosophy.structural-hierarchy]
 pub struct TestCaptureState {
     /// Indicates if log capturing is currently active for this test.
     is_capturing: Arc<AtomicBool>,
@@ -50,17 +58,21 @@ lazy_static! {
     /// Global map of test contexts keyed by test thread ID.
     ///
     /// Each entry holds the capture state for a test running on a given thread.
+    // ss[related philosophy.structural-hierarchy]
     pub static ref TEST_CONTEXTS: Arc<Mutex<HashMap<ThreadId, TestCaptureState>>> = Arc::new(Mutex::new(HashMap::new())); // pub for the macro
 
     /// Flag to track if the logger is in test mode.
+    // ss[related philosophy.structural-hierarchy]
     static ref IS_TEST_MODE: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
+// ss[related philosophy.structural-hierarchy]
 impl LogWriter for MemoryWriter {
     /// Writes a log record to all active test contexts' buffers.
     ///
     /// This method is called by the logger for each log record. In test mode,
     /// it appends the formatted log message to the buffer of every active test context.
+    // ss[related philosophy.structural-hierarchy]
     fn write(&self, now: &mut DeferredNow, record: &Record) -> io::Result<()> {
         let mut buffer = Vec::new();
         (self.format)(&mut buffer, now, record)?;
@@ -80,10 +92,12 @@ impl LogWriter for MemoryWriter {
         Ok(())
     }
 
+    // ss[related philosophy.structural-hierarchy]
     fn flush(&self) -> io::Result<()> {
         Ok(())
     }
 
+    // ss[related philosophy.structural-hierarchy]
     fn max_log_level(&self) -> LevelFilter {
         LevelFilter::max()
     }
@@ -94,6 +108,7 @@ impl LogWriter for MemoryWriter {
 /// This function sets up the logger with the specified log level, using a memory writer
 /// for capturing logs and duplicating output to stderr. It is used internally by the
 /// logger initialization routines.
+// ss[related philosophy.structural-hierarchy]
 fn steady_logging_init(level: LogLevel, file_config: Option<LogFileConfig>) -> Result<LoggerHandle, Box<dyn Error>> {
     let log_spec = LogSpecBuilder::new()
         .default(level.to_level_filter())
@@ -134,21 +149,25 @@ fn steady_logging_init(level: LogLevel, file_config: Option<LogFileConfig>) -> R
 /// This submodule manages logger initialization, per-test log capture, and dynamic log level changes.
 /// It is designed to support both normal operation and test environments.
 pub mod steady_logger {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
     use lazy_static::lazy_static;
 
     lazy_static! {
         /// Holds the global logger handle, if initialized.
+        // ss[related philosophy.structural-hierarchy]
         static ref LOGGER_HANDLE: Mutex<Option<LoggerHandle>> = Mutex::new(None);
     }
 
     /// Guard object for managing log capture in tests.
     ///
     /// When dropped, this guard stops capturing logs for the current thread.
+    // ss[related philosophy.structural-hierarchy]
     pub struct LogCaptureGuard {
         thread_id: ThreadId,
     }
 
+    // ss[related philosophy.structural-hierarchy]
     impl Drop for LogCaptureGuard {
         /// Stops capturing logs when the guard is dropped.
         fn drop(&mut self) {
@@ -160,6 +179,7 @@ pub mod steady_logger {
     ///
     /// This function enables test mode, initializes the logger if needed,
     /// and registers a new capture state for the current thread.
+    // ss[related philosophy.structural-hierarchy]
     pub fn start_log_capture() -> LogCaptureGuard {
         let thread_id = thread::current().id();
 
@@ -185,6 +205,7 @@ pub mod steady_logger {
     /// Initializes the logger with a default log level if not already initialized.
     ///
     /// This function is idempotent and safe to call multiple times.
+    // ss[related philosophy.structural-hierarchy]
     pub fn initialize() -> Result<(), Box<dyn Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init");
         if logger_handle.is_none() {
@@ -198,11 +219,13 @@ pub mod steady_logger {
     /// Initializes the logger with a specific log level, or changes the level if already initialized.
     ///
     /// This function allows dynamic adjustment of the log level at runtime.
+    // ss[related philosophy.structural-hierarchy]
     pub fn initialize_with_level(level: LogLevel) -> Result<(), Box<dyn Error>> {
         initialize_with_level_and_file(level, None)
     }
 
     /// Initializes the logger with a specific log level and optional file rotation.
+    // ss[related philosophy.structural-hierarchy]
     pub fn initialize_with_level_and_file(level: LogLevel, file_config: Option<LogFileConfig>) -> Result<(), Box<dyn Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init with level");
         if let Some(handle) = logger_handle.as_ref() {
@@ -223,6 +246,7 @@ pub mod steady_logger {
     /// Stops capturing logs and removes the test's log buffer for the given thread.
     ///
     /// This function is called automatically when a `LogCaptureGuard` is dropped.
+    // ss[related philosophy.structural-hierarchy]
     fn stop_capturing_logs(thread_id: ThreadId) {
         if let Ok(mut contexts) = TEST_CONTEXTS.lock() {
             if let Some(test_state) = contexts.get(&thread_id) {
@@ -239,6 +263,7 @@ pub mod steady_logger {
 /// slice appears in the log buffer for the current test thread, in the specified order.
 /// If any expected text is missing, the macro panics and prints the captured logs for debugging.
 #[macro_export]
+// ss[related philosophy.structural-hierarchy]
 macro_rules! assert_in_logs {
     ($texts:expr) => {{
         // Add a small delay to ensure all async logs are processed
@@ -286,6 +311,7 @@ macro_rules! assert_in_logs {
 }
 
 /// Formats log records without ANSI colors, suitable for file output.
+// ss[related philosophy.structural-hierarchy]
 pub fn plain_with_thread(
     w: &mut dyn std::io::Write,
     now: &mut DeferredNow,
@@ -304,6 +330,7 @@ pub fn plain_with_thread(
 }
 
 /// Formats log records with ANSI colors, suitable for terminal output.
+// ss[related philosophy.structural-hierarchy]
 pub fn colored_with_thread(
     w: &mut dyn std::io::Write,
     now: &mut DeferredNow,
@@ -324,4 +351,5 @@ pub fn colored_with_thread(
 }
 
 /// Timestamp format used in logging.
+// ss[related philosophy.structural-hierarchy]
 pub const TS_DASHES: &str = "%Y-%m-%d %H:%M:%S%.6f %:z";

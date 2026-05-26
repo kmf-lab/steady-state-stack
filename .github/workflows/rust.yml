@@ -21,5 +21,11 @@ jobs:
       run: cargo clean
     - name: Build
       run: RUST_BACKTRACE=1 cargo build --verbose --no-default-features --features "proactor_nuclei,prometheus_metrics"
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest
     - name: Run tests
-      run: RUST_LOG=debug RUST_BACKTRACE=full cargo test --verbose --workspace --tests --no-default-features --features "exec_async_std,prometheus_metrics" -- --show-output
+      run: RUST_LOG=debug RUST_BACKTRACE=full cargo nextest run --verbose --workspace --no-default-features --features "exec_async_std,prometheus_metrics" --success-output immediate
+    - name: Tracey validate (spec traceability)
+      run: bash scripts/tracey-ci-validate.sh
+    - name: Tracey unmapped gate (80% mapped code units)
+      run: bash scripts/tracey-unmapped-gate.sh

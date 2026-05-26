@@ -1,9 +1,11 @@
+// ss[related distributed.media-driver-testing]
 use std::future::Future;
 use std::time::{Duration, Instant};
 use async_std::task;
 
 /// this implementation requires we never schedule for more than this in the future
 /// the reason for this is to enable shutdown signals to be detected so we can exit clean
+// ss[related distributed.media-driver-testing]
 pub const MAX_SLEEP_SECONDS: u64 = 10;
 
 /// A general-purpose scheduler for executing async tasks with specified delays.
@@ -16,6 +18,7 @@ pub const MAX_SLEEP_SECONDS: u64 = 10;
 /// - `MAX_ITEMS`: The number of tasks the scheduler can handle, set at compile time.
 /// - `F`: The type of the closure that generates futures for each task.
 /// - `Fut`: The future type returned by the closure, which resolves to a `Duration`.
+// ss[related distributed.media-driver-testing]
 pub struct PerpetualScheduler<const MAX_ITEMS: usize, F, Fut>
 where
     F: FnMut(usize) -> Fut,
@@ -27,6 +30,7 @@ where
     func: F,
 }
 
+// ss[related distributed.media-driver-testing]
 impl<const MAX_ITEMS: usize, F, Fut> PerpetualScheduler<MAX_ITEMS, F, Fut>
 where
     F: FnMut(usize) -> Fut,
@@ -41,6 +45,7 @@ where
     ///
     /// # Panics
     /// Panics if `MAX_ITEMS` is 0, as the scheduler requires at least one task to operate.
+    // ss[related distributed.media-driver-testing]
     pub fn new(initial_delays: [Duration; MAX_ITEMS], func: F) -> Self {
         assert!(MAX_ITEMS > 0, "Scheduler requires at least one task (MAX_ITEMS > 0)");
 
@@ -64,6 +69,7 @@ where
     ///
     /// The scheduler finds the task with the earliest execution time, waits until that time,
     /// executes the task's async function, and updates its next execution time based on the returned delay.
+    // ss[related distributed.media-driver-testing]
     pub async fn run_single_pass(&mut self, now: Instant) -> Instant {
             // Find the task with the earliest next_time
 
@@ -96,14 +102,17 @@ where
 }
 
 #[cfg(test)]
+// ss[related distributed.media-driver-testing]
 mod tests {
     use std::sync::{Arc};
     use super::*;
+    // ss[related distributed.media-driver-testing]
     use std::time::Duration;
     use async_std::sync::Mutex;
     use async_std::task;
 
     #[async_std::test]
+    // ss[verify distributed.media-driver-testing]
     async fn test_perpetual_scheduler() {
         let initial_delays = [Duration::from_millis(10), Duration::from_millis(20), Duration::from_millis(30)];
 

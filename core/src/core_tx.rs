@@ -1,15 +1,20 @@
+// ss[related channel.backpressure-never-drop]
 use std::fmt::Debug;
 use log::{error, trace, warn};
 use futures_util::{select, FutureExt};
+// ss[related channel.backpressure-never-drop]
 use std::time::{Duration, Instant};
 use futures::pin_mut;
 use futures_timer::Delay;
+// ss[related channel.backpressure-never-drop]
 use ringbuf::traits::Observer;
 use futures_util::future::{FusedFuture};
 use async_ringbuf::producer::AsyncProducer;
+// ss[related channel.backpressure-never-drop]
 use ringbuf::producer::Producer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
 use crate::steady_tx::TxDone;
+// ss[related channel.backpressure-never-drop]
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, Tx, MONITOR_NOT, MONITOR_UNKNOWN};
 use crate::yield_now;
 
@@ -20,82 +25,100 @@ use crate::yield_now;
 /// by types that handle data transmission, such as standard channels (`Tx<T>`) and stream-based
 /// channels (`StreamTx<StreamControlItem>`). The trait supports both synchronous and asynchronous
 /// operations, as well as zero-copy mechanisms through slice-based methods.
+// ss[related channel.backpressure-never-drop]
 pub trait TxCore {
     /// The type of message that can be sent into the channel.
     type MsgIn<'a>;
 
     /// The type of message that comes out of the channel.
+    // ss[related channel.backpressure-never-drop]
     type MsgOut;
 
     /// The type used to represent the size or count of messages, typically `usize` for standard
     /// channels or a tuple for streams.
+    // ss[related channel.backpressure-never-drop]
     type MsgSize: Copy + Debug;
 
     /// The type for a slice of messages to be sent, used in zero-copy operations.
+    // ss[related channel.backpressure-never-drop]
     type SliceSource<'b> where Self::MsgOut: 'b;
 
     /// The type for the target slices where messages are written, typically for zero-copy writes.
+    // ss[related channel.backpressure-never-drop]
     type SliceTarget<'a> where Self: 'a;
 
     /// Marks the channel as closed, preventing further sends.
     ///
     /// This method signals that no more messages will be transmitted, often by notifying receivers
     /// through an oneshot channel. It always returns `true` to indicate the request was processed.
+    // ss[related channel.backpressure-never-drop]
     fn shared_mark_closed(&mut self);
 
     /// Sends messages from an iterator until the channel is full.
     ///
     /// This method processes messages from the provided iterator without blocking, stopping when
     /// the channel reaches capacity. It returns the number of messages successfully sent.
+    // ss[related channel.backpressure-never-drop]
     fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize;
 
     /// Determines whether it is time to perform periodic logging.
     ///
     /// This method checks if a sufficient amount of time has elapsed since the last log, based on
     /// a predefined interval, to decide if logging should occur.
+    // ss[related channel.backpressure-never-drop]
     fn log_perodic(&mut self) -> bool;
 
     /// Returns a value representing a single unit for message counting.
     ///
     /// For standard channels, this typically returns `1`. For stream channels, it may return a tuple
     /// representing one control item and an estimated payload size.
+    // ss[related channel.backpressure-never-drop]
     fn one(&self) -> Self::MsgSize;
 
     /// Increments telemetry data based on the number of messages sent.
     ///
     /// This method updates the telemetry based on the `TxDone` value, expecting `Normal` for
     /// standard channels and logging a warning if `Stream` is received unexpectedly.
+    // ss[related channel.backpressure-never-drop]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>);
 
     /// Notifies or resets the monitor, typically by setting a monitor index to a predefined value.
     ///
     /// This method is used to disable or reset monitoring activity for the channel.
+    // ss[related channel.backpressure-never-drop]
     fn monitor_not(&mut self);
 
     /// Returns the capacity of the channel.
     ///
     /// This method provides the total number of messages the channel can hold.
+    // ss[related channel.backpressure-never-drop]
     fn shared_capacity(&self) -> Self::MsgSize;
 
     /// Returns true if the size will fit into the capacity
+    // ss[related channel.backpressure-never-drop]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool;
 
+    // ss[impl channel.backpressure-never-drop]
     /// Checks if the channel is full.
     ///
     /// Returns `true` if the channel has reached its capacity and cannot accept more messages.
+    // ss[related channel.backpressure-never-drop]
     fn shared_is_full(&self) -> bool;
 
     /// Checks if the channel is empty.
     ///
     /// Returns `true` if there are no messages currently in the channel.
+    // ss[related channel.backpressure-never-drop]
     fn shared_is_empty(&self) -> bool;
 
     /// Returns the number of vacant units in the channel.
     ///
     /// This method indicates how many more messages can be sent before the channel is full.
+    // ss[related channel.backpressure-never-drop]
     fn shared_vacant_units(&self) -> Self::MsgSize;
 
     /// Return true if this message size will fit in the vacant space
+    // ss[related channel.backpressure-never-drop]
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool;
 
     /// Waits for either shutdown or for a specified number of units to become vacant.
@@ -103,6 +126,7 @@ pub trait TxCore {
     /// This asynchronous method returns `true` if the specified number of units became available,
     /// or `false` if a shutdown signal was received instead.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool;
 
     /// Waits until a specified number of units become vacant.
@@ -110,6 +134,7 @@ pub trait TxCore {
     /// This asynchronous method blocks until the channel has enough free space to accommodate
     /// the requested number of units, returning `true` when the condition is met.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool;
 
     /// Waits for the channel to become empty or for a shutdown signal.
@@ -117,6 +142,7 @@ pub trait TxCore {
     /// This asynchronous method returns `true` if the channel empties, or `false` if a shutdown
     /// is triggered before the channel becomes empty.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_empty(&mut self) -> bool;
 
     /// Advances the write index by a specified number of units.
@@ -124,24 +150,28 @@ pub trait TxCore {
     /// This method is used in zero-copy operations to manually update the write position after
     /// directly writing to the channel's buffer. It returns a `TxDone` value indicating the
     /// number of units advanced.
+    // ss[related channel.backpressure-never-drop]
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone;
 
     /// Sends a slice of messages to the channel.
     ///
     /// This method attempts to send all messages in the provided slice, returning a `TxDone`
     /// value with the number of items successfully sent.
+    // ss[related channel.backpressure-never-drop]
     fn shared_send_slice(&mut self, source: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy;
 
     /// Provides direct access to the vacant slices of the channel for zero-copy writing.
     ///
     /// This method returns the writable portions of the channel's buffer, allowing direct
     /// manipulation of the underlying memory.
+    // ss[related channel.backpressure-never-drop]
     fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_>;
 
     /// Attempts to send a single message without blocking.
     ///
     /// Returns `Ok(TxDone)` if the message was sent successfully, or `Err(Self::MsgOut)` if
     /// the channel is full and the message could not be sent.
+    // ss[related channel.backpressure-never-drop]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut>;
 
     /// Core asynchronous send method with support for timeouts.
@@ -150,6 +180,7 @@ pub trait TxCore {
     /// strategy if the channel is full and respecting an optional timeout. It returns a `SendOutcome`
     /// indicating success or failure.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async_core(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -163,6 +194,7 @@ pub trait TxCore {
     /// This method delegates to `shared_send_async_core`, providing a convenient interface for
     /// sending with a timeout parameter.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async_timeout(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -176,6 +208,7 @@ pub trait TxCore {
     /// This method delegates to `shared_send_async_core` with no timeout, offering a simpler
     /// interface for non-time-sensitive sends.
     #[allow(async_fn_in_trait)]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -187,6 +220,7 @@ pub trait TxCore {
     ///
     /// This method returns a `TxDone` value indicating the result of sending a single message,
     /// typically used to report the number of items or bytes sent.
+    // ss[related channel.backpressure-never-drop]
     fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone;
 }
 
@@ -194,26 +228,32 @@ pub trait TxCore {
 ///
 /// This implementation provides the transmission functionality for a standard channel, supporting
 /// synchronous and asynchronous message sending, zero-copy operations, and telemetry integration.
+// ss[related channel.backpressure-never-drop]
 impl<T> TxCore for Tx<T> {
     /// The type of message that can be sent into the channel, matching the channel's generic type.
     type MsgIn<'a> = T;
 
     /// The type of message that comes out of the channel, identical to `MsgIn` for standard channels.
+    // ss[related channel.backpressure-never-drop]
     type MsgOut = T;
 
     /// The type used to count messages, set to `usize` for standard channels.
+    // ss[related channel.backpressure-never-drop]
     type MsgSize = usize;
 
     /// The type for a slice of messages to be sent, a reference to an array of `T`.
+    // ss[related channel.backpressure-never-drop]
     type SliceSource<'b> = &'b [T] where T: 'b;
 
     /// The type for target slices, providing two mutable slices of uninitialized memory for zero-copy writes.
+    // ss[related channel.backpressure-never-drop]
     type SliceTarget<'a> = (&'a mut [std::mem::MaybeUninit<T>], &'a mut [std::mem::MaybeUninit<T>]) where T: 'a;
 
     /// Advances the write index by the requested number of units, limited by available space.
     ///
     /// This method adjusts the write position in the channel's buffer, ensuring it does not exceed
     /// the vacant space, and returns the number of units advanced.
+    // ss[related channel.backpressure-never-drop]
     fn shared_advance_index(&mut self, request: Self::MsgSize) -> TxDone {
         let avail = self.tx.vacant_len();
         let idx = if request > avail { avail } else { request };
@@ -224,6 +264,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns a `TxDone` value indicating one message was processed.
     ///
     /// For standard channels, this always reports a single message sent.
+    // ss[related channel.backpressure-never-drop]
     fn done_one(&self, _one: &Self::MsgIn<'_>) -> TxDone {
         TxDone::Normal(1)
     }
@@ -232,6 +273,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// If the oneshot sender is already taken, it logs a trace message indicating a redundant call.
     /// This method is idempotent and always returns `true`.
+    // ss[related channel.backpressure-never-drop]
     fn shared_mark_closed(&mut self) {
         if let Some(c) = self.make_closed.take() {
             let result = c.send(());
@@ -246,6 +288,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns `1` as the unit value for counting messages.
     ///
     /// This represents a single message in the context of a standard channel.
+    // ss[related channel.backpressure-never-drop]
     fn one(&self) -> Self::MsgSize {
         1
     }
@@ -254,6 +297,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// Returns `true` if the elapsed time exceeds the configured maximum telemetry error rate,
     /// resetting the timer, otherwise returns `false`.
+    // ss[related channel.backpressure-never-drop]
     fn log_perodic(&mut self) -> bool {
         if self.last_error_send.elapsed().as_secs() < steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS as u64 {
             false
@@ -267,6 +311,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// If the channel is already closed, it logs an error but proceeds with the send operation.
     /// Returns the number of messages successfully sent.
+    // ss[related channel.backpressure-never-drop]
     fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
         if self.make_closed.is_none() {
             #[cfg(not(test))]
@@ -279,6 +324,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// This method updates the telemetry based on the `TxDone` value, expecting `Normal` for
     /// standard channels and logging a warning if `Stream` is received unexpectedly.
+    // ss[related channel.backpressure-never-drop]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         // CRITICAL FIX: Resolve lazy index if not yet established
         if self.local_monitor_index == MONITOR_UNKNOWN {
@@ -312,16 +358,19 @@ impl<T> TxCore for Tx<T> {
 
     /// Disables monitoring by setting the local monitor index to a predefined constant.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn monitor_not(&mut self) {
         self.local_monitor_index = MONITOR_NOT;
     }
 
     /// Returns the total capacity of the channel.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_capacity(&self) -> usize {
         self.tx.capacity().get()
     }
 
+    // ss[related channel.backpressure-never-drop]
     fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
         let cap = self.shared_capacity();
         size <= cap
@@ -329,12 +378,14 @@ impl<T> TxCore for Tx<T> {
 
     /// Checks if the channel is at full capacity.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_is_full(&self) -> bool {
         self.tx.is_full()
     }
 
     /// Checks if the channel contains no messages.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_is_empty(&self) -> bool {
         self.tx.is_empty()
     }
@@ -344,6 +395,7 @@ impl<T> TxCore for Tx<T> {
     /// This method uses modulo arithmetic to determine the available space, accounting for
     /// wrap-around in the ring buffer.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_vacant_units(&self) -> Self::MsgSize {
         let capacity = self.tx.capacity().get();
         let modulus = 2 * capacity;
@@ -354,6 +406,7 @@ impl<T> TxCore for Tx<T> {
         result
     }
 
+    // ss[related channel.backpressure-never-drop]
     fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
         let vacant = self.shared_vacant_units();
         vacant >= size
@@ -365,6 +418,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns immediately with `true` if the channel is empty or has enough vacant space.
     /// Otherwise, it waits asynchronously, returning `false` on shutdown or `true` when space is available.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_shutdown_or_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if self.tx.is_empty() || self.tx.vacant_len() >= count {
             true
@@ -386,6 +440,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns `true` immediately if enough space is already available, otherwise waits
     /// asynchronously until the condition is met.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_vacant_units(&mut self, count: Self::MsgSize) -> bool {
         if self.tx.vacant_len() >= count {
             true
@@ -402,6 +457,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns `true` if the channel empties, or `false` if shutdown occurs first. If the
     /// shutdown signal is already received, it checks the current state directly.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_wait_empty(&mut self) -> bool {
         let mut one_down = &mut self.oneshot_shutdown;
         if !one_down.is_terminated() {
@@ -417,6 +473,7 @@ impl<T> TxCore for Tx<T> {
     /// If the slice is non-empty, it attempts to send as many messages as possible, returning
     /// the number of items sent. Returns zero if the slice is empty.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_send_slice(&mut self, slice: Self::SliceSource<'_>) -> TxDone where Self::MsgOut: Copy {
         if !slice.is_empty() {
             TxDone::Normal(self.tx.push_slice(slice))
@@ -429,6 +486,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// Returns two mutable slices representing the available portions of the buffer.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
         self.tx.vacant_slices_mut()
     }
@@ -438,6 +496,7 @@ impl<T> TxCore for Tx<T> {
     /// Returns `Ok` with a `TxDone` value if the message is sent, or `Err` with the message
     /// if the channel is full. Includes a debug assertion to ensure the channel is not closed.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
         debug_assert!(self.make_closed.is_some(), "Send called after channel marked closed");
         match self.tx.try_push(msg) {
@@ -451,6 +510,7 @@ impl<T> TxCore for Tx<T> {
     /// Attempts an immediate send, and if the channel is full, applies the saturation strategy.
     /// It then waits for space, shutdown, or timeout, returning the outcome of the operation.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async_core(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -515,6 +575,7 @@ impl<T> TxCore for Tx<T> {
     /// Delegates to the core method with no timeout specified, simplifying the interface for
     /// cases where timing out is not required.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -528,6 +589,7 @@ impl<T> TxCore for Tx<T> {
     ///
     /// Delegates to the core method, allowing specification of a timeout for the send operation.
     #[inline]
+    // ss[related channel.backpressure-never-drop]
     async fn shared_send_async_timeout(
         &mut self,
         msg: Self::MsgIn<'_>,
@@ -542,9 +604,11 @@ impl<T> TxCore for Tx<T> {
 
 // Unit-tests for the combined TxCore / RxCore behavior
 #[cfg(test)]
+// ss[related channel.backpressure-never-drop]
 mod core_tx_rx_tests {
     use super::*;
     use crate::channel_builder::ChannelBuilder;
+    // ss[related channel.backpressure-never-drop]
     use crate::*;
     use crate::core_rx::RxCore;
 
@@ -553,6 +617,7 @@ mod core_tx_rx_tests {
     /// Verifies that messages can be sent through the channel, checked for availability,
     /// and retrieved correctly, ensuring proper channel state management.
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_rx_basic_flow() {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx, rx) = builder.build_channel::<i32>();
@@ -582,6 +647,7 @@ mod core_tx_rx_tests {
     /// Sends a message and repeatedly peeks at it, verifying that the showstopper condition
     /// is triggered after a specified number of peeks without taking the message.
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_bad_message_detection() {
         let builder = ChannelBuilder::default().with_capacity(1);
         let (tx, rx) = builder.build_channel::<u8>();
@@ -597,9 +663,11 @@ mod core_tx_rx_tests {
         assert!(!rxg.is_showstopper(5));
     }
 
+    // ss[related channel.backpressure-never-drop]
     use futures::executor::block_on;
     use futures_util::lock::Mutex;
     use crate::TxCore;
+    // ss[related channel.backpressure-never-drop]
     use crate::{ActorIdentity, SendOutcome, SendSaturation};
     use std::time::Duration;
     use crate::GraphBuilder;
@@ -608,6 +676,7 @@ mod core_tx_rx_tests {
     ///
     /// Provides predictable responses to method calls, allowing verification of correct
     /// delegation through a mutex guard.
+    // ss[related channel.backpressure-never-drop]
     struct FakeTx {
         closed: bool,
         send_count: usize,
@@ -619,6 +688,7 @@ mod core_tx_rx_tests {
         vacant: usize,
     }
 
+    // ss[related channel.backpressure-never-drop]
     impl FakeTx {
         /// Creates a new instance with default values for testing.
         fn new() -> Self {
@@ -626,19 +696,23 @@ mod core_tx_rx_tests {
         }
     }
 
+    // ss[related channel.backpressure-never-drop]
     impl TxCore for FakeTx {
         type MsgIn<'a> = usize;
         type MsgOut = usize;
+        // ss[related channel.backpressure-never-drop]
         type MsgSize = usize;
         type SliceSource<'b> = &'b [usize];
         type SliceTarget<'a> = (&'a [usize], &'a [usize]);
 
         /// Marks the channel as closed and returns `true`.
+        // ss[related channel.backpressure-never-drop]
         fn shared_mark_closed(&mut self) {
             self.closed = true;
         }
 
         /// Counts and accumulates the number of items sent from an iterator.
+        // ss[related channel.backpressure-never-drop]
         fn shared_send_iter_until_full<'a, I: Iterator<Item = Self::MsgIn<'a>>>(&mut self, iter: I) -> usize {
             let cnt = iter.count();
             self.send_count += cnt;
@@ -646,93 +720,111 @@ mod core_tx_rx_tests {
         }
 
         /// Toggles logging based on the number of calls.
+        // ss[related channel.backpressure-never-drop]
         fn log_perodic(&mut self) -> bool {
             self.log_calls += 1;
             self.log_calls > 1
         }
 
         /// Returns a predefined unit value, adjustable by `monitor_not`.
+        // ss[related channel.backpressure-never-drop]
         fn one(&self) -> Self::MsgSize {
             self.one_val
         }
 
         /// Does nothing with telemetry, maintaining mock simplicity.
+        // ss[related channel.backpressure-never-drop]
         fn telemetry_inc<const LEN: usize>(&mut self, _d: TxDone, _tel: &mut crate::monitor_telemetry::SteadyTelemetrySend<LEN>) {
         }
 
         /// Resets the unit value to zero.
+        // ss[related channel.backpressure-never-drop]
         fn monitor_not(&mut self) {
             self.one_val = 0;
         }
 
         /// Returns a fixed capacity value.
+        // ss[related channel.backpressure-never-drop]
         fn shared_capacity(&self) -> usize {
             self.capacity
         }
 
+        // ss[related channel.backpressure-never-drop]
         fn shared_capacity_for(&self, size: Self::MsgSize) -> bool {
             let cap = self.shared_capacity();
             size <= cap
         }
         /// Returns a fixed full status.
+        // ss[related channel.backpressure-never-drop]
         fn shared_is_full(&self) -> bool {
             self.is_full
         }
 
         /// Returns a fixed empty status.
+        // ss[related channel.backpressure-never-drop]
         fn shared_is_empty(&self) -> bool {
             self.is_empty
         }
 
         /// Returns a fixed vacant units value.
+        // ss[related channel.backpressure-never-drop]
         fn shared_vacant_units(&self) -> usize {
             self.vacant
         }
 
+        // ss[related channel.backpressure-never-drop]
         fn shared_vacant_units_for(&self, size: Self::MsgSize) -> bool {
             let vacant = self.shared_vacant_units();
             vacant >= size
         }
 
         /// Simulates immediate availability for shutdown or vacant wait.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_wait_shutdown_or_vacant_units(&mut self, _count: Self::MsgSize) -> bool {
             true
         }
 
         /// Simulates immediate availability for vacant units wait.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_wait_vacant_units(&mut self, _count: Self::MsgSize) -> bool {
             true
         }
 
         /// Simulates immediate availability for empty wait.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_wait_empty(&mut self) -> bool {
             true
         }
 
         /// Returns zero advancement for simplicity.
+        // ss[related channel.backpressure-never-drop]
         fn shared_advance_index(&mut self, _request: Self::MsgSize) -> TxDone {
             TxDone::Normal(0)
         }
 
         /// Returns zero items sent for slice operations.
         #[inline]
+        // ss[related channel.backpressure-never-drop]
         fn shared_send_slice(&mut self, _slice: Self::SliceSource<'_>) -> TxDone {
             TxDone::Normal(0)
         }
 
         /// Returns empty slices for poking.
         #[inline]
+        // ss[related channel.backpressure-never-drop]
         fn shared_poke_slice(&mut self) -> Self::SliceTarget<'_> {
             let (item_a, item_b) = (&[], &[]);
             (item_a, item_b)
         }
 
         /// Always succeeds, returning the sent message as the number of items.
+        // ss[related channel.backpressure-never-drop]
         fn shared_try_send(&mut self, msg: Self::MsgIn<'_>) -> Result<TxDone, Self::MsgOut> {
             Ok(TxDone::Normal(msg))
         }
 
         /// Always returns success for async core send.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_send_async_core(
             &mut self,
             _msg: Self::MsgIn<'_>,
@@ -744,6 +836,7 @@ mod core_tx_rx_tests {
         }
 
         /// Always returns success for async send with timeout.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_send_async_timeout(
             &mut self,
             _msg: Self::MsgIn<'_>,
@@ -755,6 +848,7 @@ mod core_tx_rx_tests {
         }
 
         /// Always returns success for async send without timeout.
+        // ss[related channel.backpressure-never-drop]
         async fn shared_send_async(
             &mut self,
             _msg: Self::MsgIn<'_>,
@@ -765,6 +859,7 @@ mod core_tx_rx_tests {
         }
 
         /// Returns the input value as the number of items sent.
+        // ss[related channel.backpressure-never-drop]
         fn done_one(&self, one: &Self::MsgIn<'_>) -> TxDone {
             TxDone::Normal(*one)
         }
@@ -775,6 +870,7 @@ mod core_tx_rx_tests {
     /// Verifies that all trait methods behave as expected when called through a mutex guard,
     /// using a mock implementation to ensure predictable outcomes.
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_mutexguard_txcore_methods() {
         let mtx = Mutex::new(FakeTx::new());
         let mut guard = block_on(mtx.lock());
@@ -808,6 +904,7 @@ mod core_tx_rx_tests {
 
     /// Helper function to create a new `Tx<u8>` and keep the graph alive for the duration of the test.
     /// Returns the channel, graph, and a sender that must be kept alive to prevent premature shutdown.
+    // ss[related channel.backpressure-never-drop]
     fn new_tx() -> (Tx<u8>, Graph, futures::channel::oneshot::Sender<()>) {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = graph.channel_builder();
@@ -819,6 +916,7 @@ mod core_tx_rx_tests {
     }
 
     /// Helper function to create a new `Tx<u8>` and keep its associated `Rx<u8>` alive.
+    // ss[related channel.backpressure-never-drop]
     fn new_tx_with_rx() -> (Tx<u8>, Rx<u8>, Graph, futures::channel::oneshot::Sender<()>) {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = graph.channel_builder();
@@ -833,6 +931,7 @@ mod core_tx_rx_tests {
     /// Ensures that `done_one` consistently reports one item and that `shared_mark_closed`
     /// behaves correctly on first and subsequent calls.
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn done_one_and_shared_mark_closed() {
         let (mut tx, _graph, _sender) = new_tx();
         assert_eq!(tx.done_one(&42u8), TxDone::Normal(1));
@@ -844,6 +943,7 @@ mod core_tx_rx_tests {
     ///
     /// Verifies that sending after marking the channel closed triggers a warning and still
     /// processes the operation correctly.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn shared_send_iter_until_full_and_warn_after_close() {
         let (mut tx, _graph, _sender) = new_tx();
@@ -858,6 +958,7 @@ mod core_tx_rx_tests {
     ///
     /// Confirms that immediate sends succeed and that async methods complete successfully
     /// under normal conditions.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn shared_try_send_and_async_variants() {
         let (mut tx, _graph, _sender) = new_tx();
@@ -874,6 +975,7 @@ mod core_tx_rx_tests {
     }
 
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_core_state_boundaries() {
         let (mut tx, _graph, _sender) = new_tx();
         
@@ -899,6 +1001,7 @@ mod core_tx_rx_tests {
     }
 
     /// Tests saturation policies: WarnThenAwait and DebugWarnThenAwait on a full channel.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_send_async_saturation_policies() {
         let (mut tx, _graph, _sender) = new_tx();
@@ -941,6 +1044,7 @@ mod core_tx_rx_tests {
     }
 
     /// Tests ReturnBlockedMsg saturation on a full channel.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_send_async_saturation_returns_blocked() {
         let (mut tx, _graph, _sender) = new_tx();
@@ -962,6 +1066,7 @@ mod core_tx_rx_tests {
     }
 
     /// Tests that if the shutdown oneshot fires during the send wait, Closed is returned.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_send_async_saturation_closes_on_shutdown() {
         let (mut tx, _graph, sender) = new_tx();
@@ -985,6 +1090,7 @@ mod core_tx_rx_tests {
     }
 
     /// Tests that when room becomes available after a wait, AwaitForRoom succeeds.
+    // ss[verify channel.backpressure-never-drop]
     #[test]
     fn test_send_async_saturation_awaits_room_and_succeeds() {
         // Create a channel and keep its receiver so we can make room.
@@ -1016,6 +1122,7 @@ mod core_tx_rx_tests {
 
     /// Tests that telemetry_inc with MONITOR_NOT does not panic and logs an error.
     #[test]
+    // ss[verify channel.backpressure-never-drop]
     fn test_tx_telemetry_inc_monitor_not() {
         let (mut tx, _graph, _sender) = new_tx();
         // Set local_monitor_index to MONITOR_NOT to trigger the error branch

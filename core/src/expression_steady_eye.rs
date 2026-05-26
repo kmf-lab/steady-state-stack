@@ -13,10 +13,12 @@
 //! - **Destructive Read**: Reading the stored identifier clears it from storage, preparing it for the next use.
 //! - **Efficient String Handling**: Uses `'static` strings for identifiers to avoid runtime allocations.
 //!
+// ss[related telemetry.dot-export]
 use std::cell::RefCell;
 
 /// Internal structure holding expression location information in case it is necessary to debug unclean shutdowns.
 #[derive(Clone,Eq, PartialEq, Debug)]
+// ss[related telemetry.dot-export]
 pub struct Eye {
     /// the str expression in question
     pub expression: &'static str,
@@ -26,6 +28,7 @@ pub struct Eye {
     pub line: u32
 }
 
+// ss[related telemetry.dot-export]
 impl Eye {
 
     pub(crate) fn veto_reason(&self) -> String {
@@ -36,6 +39,7 @@ impl Eye {
 
 thread_local! {
     /// Thread-local storage for the last expression identifier that evaluated to `false`.
+    // ss[related telemetry.dot-export]
     pub static LAST_FALSE: RefCell<Option<Eye>> = const { RefCell::new(None) };
 }
 
@@ -46,6 +50,7 @@ thread_local! {
 /// be retrieved and cleared using `i_take_last_false`.
 ///
 #[macro_export]
+// ss[related telemetry.dot-export]
 macro_rules! i {
     ($e:expr) => {{
         let result = $e;
@@ -69,6 +74,7 @@ macro_rules! i {
 /// - `Some(&'static str)`: The identifier of the last expression that evaluated to `false`.
 /// - `None`: If no `false` expression has been recorded since the last read.
 ///
+// ss[related telemetry.dot-export]
 pub fn i_take_expression() -> Option<Eye> {
     LAST_FALSE.with(|cell| {
         let mut borrowed = cell.borrow_mut();
@@ -77,11 +83,13 @@ pub fn i_take_expression() -> Option<Eye> {
 }
 
 #[cfg(test)]
+// ss[related telemetry.dot-export]
 mod tests {
     use super::*;
 
     /// Tests that a `true` expression does not store anything.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_true_expression() {
         let result = i!(true);
         assert!(result, "Expression should evaluate to true");
@@ -94,6 +102,7 @@ mod tests {
 
     /// Tests that a `false` expression stores its identifier and clears it on read.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_false_expression() {
         let result = i!(false);
         assert!(!result, "Expression should evaluate to false");
@@ -112,6 +121,7 @@ mod tests {
 
     /// Tests a chain of all `true` expressions.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_all_true_expressions() {
         let result = i!(true) && i!(true) && i!(true);
         assert!(result, "Result should be true");
@@ -124,6 +134,7 @@ mod tests {
 
     /// Tests multiple `false` expressions, ensuring the last one is stored.
     #[test]
+    // ss[verify telemetry.dot-export]
     fn test_multiple_false_expressions() {
         let condition1 = false;
         let condition2 = false;
