@@ -15,6 +15,15 @@ specs (
                 )
             }
             {
+                name rust-core-tests
+                include (
+                    core/tests/**/*.rs
+                )
+                exclude (
+                    target/**
+                )
+            }
+            {
                 name rust-cli
                 include (
                     cargo-steady-state/src/**/*.rs

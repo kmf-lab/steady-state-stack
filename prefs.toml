@@ -1,0 +1,2 @@
+[keybindings]
+ctrl-y = "copy-unstyled-output"   # ← you can change ctrl-y to any key you like

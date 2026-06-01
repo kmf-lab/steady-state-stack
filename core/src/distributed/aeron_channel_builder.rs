@@ -22,7 +22,7 @@ pub type StreamId = i32;
 /// - `Aeron(Channel, StreamId)`: Configures Aeron communication.
 ///   - `Channel`: The Aeron channel configuration (e.g., point-to-point or multicast).
 ///   - `StreamId`: The unique identifier for the stream within the channel.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 // ss[related distributed.aeron-uri]
 pub enum AqueTech {
     /// No communication technology is configured. Primarily for testing purposes.
@@ -347,6 +347,7 @@ impl AeronConfig {
     /// - If no mode is selected (`AeronMode::None`).
     /// - If required fields are missing (e.g., `endpoint` for `PointToPoint`, or `control_endpoint` for `Multicast`).
     // ss[related distributed.aeron-uri]
+    // ss[impl distributed.aeron-uri]
     pub fn build(&self) -> Channel {
         let media_type = self.media_type.expect("media_type must be set before build()");
 

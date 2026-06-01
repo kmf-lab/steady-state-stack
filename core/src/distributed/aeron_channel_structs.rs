@@ -3,7 +3,14 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::net::{IpAddr};
 
-pub(crate) mod aeron_utils {
+// ss[related distributed.aeron-uri]
+pub use aeron_utils::{
+    media_driver_probe, media_driver_probe_default, media_driver_probe_with_reason,
+    MediaDriverProbeError,
+};
+
+/// Aeron media driver connectivity helpers (CNC probe, context retry).
+pub mod aeron_utils {
     // ss[related distributed.aeron-uri]
     use std::sync::Arc;
     use futures_util::lock::Mutex;
@@ -147,6 +154,115 @@ pub(crate) mod aeron_utils {
 
         // Check if the modification time has remained the same
         new_mtime == initial_mtime
+    }
+
+    // ss[related distributed.aeron-uri]
+    fn default_aeron_dir() -> String {
+        #[cfg(not(windows))]
+        {
+            "/dev/shm/aeron-default".to_string()
+        }
+        #[cfg(windows)]
+        {
+            "C:\\Temp\\aeron".to_string()
+        }
+    }
+
+    /// Detailed reason when the media driver is not reachable.
+    #[derive(Debug, Clone)]
+    // ss[related distributed.aeron-uri]
+    pub struct MediaDriverProbeError {
+        /// Last CNC or context creation failure observed during probing.
+        pub last_failure: String,
+        /// Wall time spent probing before giving up.
+        pub elapsed: Duration,
+        /// Aeron directory path used for the probe (e.g. `/dev/shm/aeron-default`).
+        pub aeron_dir: String,
+    }
+
+    // ss[related distributed.aeron-uri]
+    impl MediaDriverProbeError {
+        /// Operator-facing hint for starting or fixing the media driver.
+        pub fn hint(&self) -> String {
+            format!(
+                "Is aeronmd running? CNC/aeron dir: {}. Last error: {}. \
+                 Install: core/routing_service/aeron/README_linux.md. \
+                 Set SS_AERON_REQUIRED=1 to fail tests instead of skipping when the driver is down.",
+                self.aeron_dir, self.last_failure
+            )
+        }
+    }
+
+    // ss[related distributed.aeron-uri]
+    impl std::fmt::Display for MediaDriverProbeError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Aeron media driver not available after {:?}: {} (dir: {})",
+                self.elapsed, self.last_failure, self.aeron_dir
+            )
+        }
+    }
+
+    // ss[related distributed.aeron-uri]
+    impl std::error::Error for MediaDriverProbeError {}
+
+    /// Probes for a running media driver; returns a detailed error when unavailable.
+    // ss[impl distributed.media-driver-testing]
+    pub fn media_driver_probe_with_reason(max_wait: Duration) -> Result<(), MediaDriverProbeError> {
+        let aeron_dir = default_aeron_dir();
+        let mut aeron_context = Context::new();
+        aeron_context.set_error_handler(Box::new(error_handler));
+        aeron_context.set_pre_touch_mapped_memory(true);
+        #[cfg(not(windows))]
+        let _ = aeron_context.set_aeron_dir(aeron_dir.parse().unwrap());
+        #[cfg(windows)]
+        let _ = aeron_context.set_aeron_dir(aeron_dir.parse().unwrap());
+
+        let start = Instant::now();
+        let retry_interval = Duration::from_millis(100);
+        let mut last_failure = String::from("CNC did not become ready");
+
+        loop {
+            if start.elapsed() >= max_wait {
+                return Err(MediaDriverProbeError {
+                    last_failure,
+                    elapsed: start.elapsed(),
+                    aeron_dir,
+                });
+            }
+            match Aeron::new(aeron_context.clone()) {
+                Ok(aeron) => {
+                    let cnc_path = PathBuf::from(aeron.context().cnc_file_name());
+                    if is_cnc_stable(&aeron, Duration::from_millis(300)) {
+                        if is_cnc_version_marker_set(&cnc_path) {
+                            return Ok(());
+                        }
+                        last_failure =
+                            "CNC file version marker not set (driver still starting?)".to_string();
+                    } else {
+                        last_failure = "CNC file unstable (still changing)".to_string();
+                    }
+                    std::thread::sleep(retry_interval);
+                }
+                Err(e) => {
+                    last_failure = format!("{e:?}");
+                    std::thread::sleep(retry_interval);
+                }
+            }
+        }
+    }
+
+    /// Returns true when an Aeron media driver is reachable within `max_wait`.
+    // ss[related distributed.aeron-uri]
+    pub fn media_driver_probe(max_wait: Duration) -> bool {
+        media_driver_probe_with_reason(max_wait).is_ok()
+    }
+
+    /// Default probe budget (5 seconds) for local integration tests.
+    // ss[related distributed.aeron-uri]
+    pub fn media_driver_probe_default() -> bool {
+        media_driver_probe(Duration::from_secs(5))
     }
 }
 

@@ -464,7 +464,6 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         saturation_score: f64,
         tooltip: String,
         sub_totals: Vec<u128>,
-        sum_total_consumed: u128,
         ids: Vec<usize>,
         ctl_labels: Vec<&'static str>,
         pen_width: String,
@@ -721,7 +720,6 @@ if show_avg_filled_any {
             saturation_score: sum_saturation / edges.len() as f64,
             tooltip,
             sub_totals,
-            sum_total_consumed,
             ids,
             ctl_labels,
             pen_width: if is_partnered {

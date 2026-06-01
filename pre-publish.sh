@@ -48,7 +48,9 @@ fi
 # Run tests with cargo-nextest, optimizing threads automatically
 # RUST_TEST_THREADS is not needed as nextest manages parallelism itself
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
-RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --examples --tests | tee cargo_test.txt
+# Gate A: unit + examples; live Aeron binaries excluded (see .config/nextest.toml + SS_AERON_GATE_C guard).
+# Do NOT add SS_AERON_GATE_C=1 here — that runs the 15+ minute driver suite.
+RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --profile ci-unit --examples --tests | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
@@ -127,10 +129,9 @@ echo "--------------------------------------------------------------------------
 # - Aeron / aqueduct / media-driver paths stay thin unless CI runs with a real Aeron Media Driver;
 #   do not gate releases on those modules reaching high % without that setup (see CHANGELOG
 #   "Coverage (pre-release scope)").
-cargo llvm-cov --lcov --output-path cov_a.lcov --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
-cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F proactor_nuclei,telemetry_server_cdn
-lcov --add-tracefile cov_a.lcov --add-tracefile cov_b.lcov -o merged.lcov
-genhtml merged.lcov --output-directory coverage_html
+# Gate B guard: block accidental `cargo llvm-cov test --tests` (runs live Aeron Gate C binaries).
+bash scripts/guard-llvm-cov-scope.sh --tests
+bash scripts/run-llvm-cov-release.sh
 
 
 

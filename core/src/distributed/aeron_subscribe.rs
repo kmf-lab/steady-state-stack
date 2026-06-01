@@ -28,7 +28,7 @@ use crate::yield_now;
 // ss[related distributed.subscribe-publish]
 pub struct AeronSubscribeSteadyState {
     /// The registration ID of the single subscription, None if not yet registered.
-    sub_reg_id: Option<i64>,
+    pub(crate) sub_reg_id: Option<i64>,
 }
 
 /// Main entry point to run the single-channel Aeron subscriber actor.
@@ -69,7 +69,12 @@ pub async fn run(
         }
         let aeron_media_driver = actor.aeron_media_driver().expect("media driver");
         // Delegate to internal behavior with the media driver
-        internal_behavior(actor, tx, aeron_connect, stream_id, aeron_media_driver, state).await
+        let result =
+            internal_behavior(actor, tx, aeron_connect, stream_id, aeron_media_driver, state).await;
+        if let Err(ref e) = result {
+            eprintln!("AeronSubscribe actor exited with error: {e}");
+        }
+        result
     } else {
         // Run simulated behavior if internal behavior is not used
         actor.simulated_behavior(vec![&tx]).await
@@ -105,8 +110,10 @@ async fn internal_behavior<C: SteadyActor>(
     let mut sub: Option<Subscription> = None;
 
     // Register the subscription if not already done
+    // ss[depends distributed.subscribe-publish]
     if state.sub_reg_id.is_none() {
         let mut aeron_guard = aeron.lock().await;
+        // ss[impl distributed.subscribe-publish]
         let reg_id = aeron_guard.add_subscription(aeron_channel.cstring(), stream_id)?;
         warn!("new subscription registered: {}", reg_id);
         state.sub_reg_id = Some(reg_id);
@@ -131,9 +138,16 @@ async fn internal_behavior<C: SteadyActor>(
                 Err(e) => {
                     if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
                         Delay::new(Duration::from_millis(2)).await;
+                        // ss[depends distributed.subscribe-publish]
                         if actor.is_liveliness_stop_requested() {
-                            warn!("shutdown requested while waiting for subscription");
-                            return Ok(());
+                            if !actor.is_running(&mut || tx.mark_closed()) {
+                                warn!("shutdown requested while waiting for subscription (ingress closed)");
+                                return Ok(());
+                            }
+                            return Err(
+                                "shutdown during subscription registration (ingress not closed)"
+                                    .into(),
+                            );
                         }
                     } else {
                         return Err(format!("Error finding subscription: {:?}", e).into());
@@ -152,6 +166,7 @@ async fn internal_behavior<C: SteadyActor>(
     let mut next_poll_time = Instant::now();
 
     // Main polling loop with dynamic scheduling
+    // ss[impl distributed.subscribe-publish]
     while actor.is_running(&mut || tx.mark_closed()) {
         let now = Instant::now();
         if now < next_poll_time {
@@ -270,85 +285,117 @@ async fn poll_aeron_subscription<C: SteadyActor>(
     Duration::from_nanos(scheduler.compute_next_delay_ns(now_ns))
 }
 
-/// Unit tests for the single-channel Aeron subscriber.
 #[cfg(test)]
-pub(crate) mod aeron_media_driver_tests {
-    // ss[related distributed.subscribe-publish]
-    use log::info;
-    use super::*;
-    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    // ss[related distributed.subscribe-publish]
-    use crate::distributed::aqueduct_stream::StreamEgress;
-    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
-    use crate::distributed::aeron_publish::STREAM_ID;
-    // ss[related distributed.subscribe-publish]
-    use crate::distributed::aqueduct_builder::AqueductBuilder;
-    use crate::{GraphBuilder, SoloAct};
+mod aeron_subscribe_state_tests {
+    use super::AeronSubscribeSteadyState;
+    use crate::distributed::polling::PollScheduler;
 
-    /// Tests the processing of bytes through the single-channel Aeron subscriber.
+    /// Preflight wire probe stream id in integration tests (see `PREFLIGHT_PROBE_STREAM_ID`).
+    const PREFLIGHT_PROBE_STREAM_ID: i32 = 80_000;
+
     #[test]
     // ss[verify distributed.subscribe-publish]
-    fn test_bytes_process() -> Result<(), Box<dyn Error>> {
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return Ok(()); // Skip in CI environment
-        }
+    fn test_subscribe_state_default() {
+        let state = AeronSubscribeSteadyState::default();
+        assert!(state.sub_reg_id.is_none());
+    }
 
+    #[test]
+    // ss[verify distributed.subscribe-publish]
+    fn test_fresh_stream_ids_disjoint_from_preflight_probe() {
+        for salt in 0..u16::MAX {
+            let id = 10_000 + i32::from(salt);
+            assert_ne!(
+                id, PREFLIGHT_PROBE_STREAM_ID,
+                "salt {salt} collides with preflight probe stream id"
+            );
+        }
+    }
+
+    #[test]
+    // ss[verify distributed.media-driver-testing]
+    fn test_poll_scheduler_delay_within_bounds() {
+        let mut scheduler = PollScheduler::new();
+        let min = 10_000_000u64;
+        let max = 2_000_000_000u64;
+        scheduler.set_min_delay_ns(min);
+        scheduler.set_max_delay_ns(max);
+        scheduler.set_std_dev_ns(1_000_000_000);
+        scheduler.set_expected_moment_ns(5_000_000_000);
+        for now_ns in [0, 4_000_000_000, 5_000_000_000, 6_000_000_000, 20_000_000_000] {
+            let delay = scheduler.compute_next_delay_ns(now_ns);
+            assert!(delay >= min, "delay {delay} below min at now={now_ns}");
+            assert!(delay <= max, "delay {delay} above max at now={now_ns}");
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod aeron_subscribe_graph_tests {
+    use std::time::Duration;
+
+    use async_std::task;
+
+    use crate::distributed::aeron_channel_builder::AeronConfig;
+    use crate::distributed::aeron_channel_structs::MediaType;
+    use crate::distributed::aqueduct_builder::AqueductBuilder;
+    use crate::distributed::aqueduct_stream::StreamIngress;
+    use crate::{AqueTech, GraphBuilder, SoloAct};
+
+    /// Simulated Aeron subscribe actor: graph starts and stops without a live driver.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_simulated_graph_stops_cleanly() {
         let mut graph = GraphBuilder::for_testing().build(());
-        if let Some(md) = graph.aeron_media_driver() {
-            if let Some(md) = md.try_lock() {
-                info!("Found MediaDriver cnc:{:?}", md.context().cnc_file_name());
-            }
-        } else {
-            info!("aeron test skipped, no media driver present");
-            return Ok(());
-        }
-
-        let channel_builder = graph.channel_builder();
-
-        // Create single streams instead of a bundle
-        let (to_aeron_tx, to_aeron_rx) = channel_builder
-            .with_capacity(500)
-            .build_stream::<StreamEgress>(6);
-
-        let aeron_config = AeronConfig::new()
-            .with_media_type(MediaType::Ipc) // Use IPC for testing
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Invalid IP address"),
-                port: 40456,
-            })
+        let cb = graph.channel_builder().with_capacity(256);
+        let (tx, _rx) = cb.build_stream::<StreamIngress>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
             .build();
-
-        // Build the publisher aqueduct
-        to_aeron_rx.build_aqueduct(
-            AqueTech::Aeron(aeron_config.clone(), STREAM_ID),
-            &graph.actor_builder().with_name("SenderTest").never_simulate(true),
+        tx.build_aqueduct(
+            AqueTech::Aeron(channel, 42),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeSim")
+                .never_simulate(false),
             SoloAct,
         );
-
-        // Send test frames
-        for _i in 0..100 {
-            to_aeron_tx.testing_send_frame(&[1, 2, 3, 4, 5]);
-            to_aeron_tx.testing_send_frame(&[6, 7, 8, 9, 10]);
-        }
-        to_aeron_tx.testing_close();
-
-        // Create receiver stream
-        let (from_aeron_tx, _from_aeron_rx) = channel_builder
-            .with_capacity(500)
-            .build_stream::<StreamIngress>(6);
-
-        // Build the subscriber aqueduct
-        from_aeron_tx.build_aqueduct(
-            AqueTech::Aeron(aeron_config, STREAM_ID),
-            &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),
-            SoloAct,
-        );
-
-        // Run the graph and shut down
-        graph.start();
+        assert!(graph.start_with_timeout(Duration::from_secs(15)));
+        task::sleep(Duration::from_millis(100)).await;
         graph.request_shutdown();
-        let _unclean = graph.block_until_stopped(Duration::from_secs(2));
+        assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
+    }
 
-        Ok(())
+    /// Internal subscribe path: when no media driver is attached, shutdown during driver wait exits.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_stops_during_driver_wait_without_driver() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        if graph.aeron_media_driver().is_some() {
+            eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
+            return;
+        }
+        let cb = graph.channel_builder().with_capacity(256);
+        let (tx, _rx) = cb.build_stream::<StreamIngress>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        tx.build_aqueduct(
+            AqueTech::Aeron(channel, 43),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeStop")
+                .never_simulate(true),
+            SoloAct,
+        );
+        assert!(graph.start_with_timeout(Duration::from_secs(10)));
+        task::sleep(Duration::from_millis(100)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
     }
 }
+
+// Live Aeron pub/sub E2E tests live in `core/tests/aeron_integration_*.rs`.

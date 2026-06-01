@@ -38,6 +38,7 @@ impl SteadyActorCore {
     /// `accept_fn` is called only when `StopRequested` to determine the actor’s vote.
     #[inline]
     // ss[impl actor.run-dispatcher]
+    #[allow(dead_code)] // exercised in unit tests; integration builds omit cfg(test) on the lib
     pub fn is_running<F: FnMut() -> bool>(
         runtime_state: &parking_lot::RwLock<GraphLiveliness>,
         ident: ActorIdentity,
@@ -192,6 +193,7 @@ impl SteadyActorCore {
 
     /// Low-level async send (no telemetry wrappers).
     // ss[impl actor.run-dispatcher]
+    #[allow(dead_code)] // exercised in unit tests; integration builds omit cfg(test) on the lib
     pub async fn send_async<T: TxCore>(
         this: &mut T,
         msg: T::MsgIn<'_>,
@@ -216,7 +218,7 @@ impl SteadyActorCore {
         oneshot_shutdown: &Shared<oneshot::Receiver<()>>,
         duration: Duration,
     ) {
-        let mut shutdown_fused = oneshot_shutdown.clone().fuse();
+        let shutdown_fused = oneshot_shutdown.clone().fuse();
         futures::pin_mut!(shutdown_fused);
         let delay = Delay::new(duration).fuse();
         futures::pin_mut!(delay);
@@ -241,7 +243,7 @@ impl SteadyActorCore {
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync,
     {
-        let mut shutdown_fused = oneshot_shutdown.clone().fuse();
+        let shutdown_fused = oneshot_shutdown.clone().fuse();
         futures::pin_mut!(shutdown_fused);
         let mut pinned_fut = Box::pin(fut);
         select! {
@@ -263,7 +265,7 @@ impl SteadyActorCore {
         let operation = operation.fuse();
         futures::pin_mut!(operation);
 
-        let mut shutdown_fused = oneshot_shutdown.clone().fuse();
+        let shutdown_fused = oneshot_shutdown.clone().fuse();
         futures::pin_mut!(shutdown_fused);
 
         // Poll shutdown once to see if it's already ready.

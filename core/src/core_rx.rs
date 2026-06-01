@@ -13,7 +13,7 @@ use futures_timer::Delay;
 // ss[related philosophy.zero-copy-discipline]
 use ringbuf::consumer::Consumer;
 use crate::monitor_telemetry::SteadyTelemetrySend;
-use crate::{steady_config, Rx, MONITOR_NOT, MONITOR_UNKNOWN};
+use crate::{steady_config, Rx, MONITOR_NOT};
 // ss[related philosophy.zero-copy-discipline]
 use crate::distributed::aqueduct_stream::{StreamControlItem};
 use crate::steady_rx::RxDone;

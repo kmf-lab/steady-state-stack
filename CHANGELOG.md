@@ -24,6 +24,12 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- **Verification gates:** Gate A (`cargo nextest --profile ci-unit`), Gate B (`scripts/run-llvm-cov-release.sh`), Gate C (`scripts/run-aeron-integration.sh`); live `aeron_integration_suite` excluded from default nextest/llvm-cov.
+- **Aeron release:** full-matrix sign-off via `scripts/run-aeron-release-signoff.sh` (≥17 `PASS [` scenarios); flake gate `scripts/run-aeron-flake-check.sh`; self-hosted CI job in `.github/workflows/aeron-integration.yml` (labels `self-hosted`, `aeron`); runner setup in `docs/AERON_RUNNER.md`.
+- **Aeron Gate C reliability:** `suite_in_process_warmup` after script smoke (in-process wire proof); bundle lane wire retries + lane-0 warmup; `aeron_subscribe_bundle` connection bootstrap poll; harness contract tests.
+- **Bundle pub/sub unit tests:** simulated graph start/stop for `aeron_publish_bundle` and `aeron_subscribe_bundle` (`GraphBuilder::for_testing`).
+- **pre-publish:** `scripts/guard-llvm-cov-scope.sh` blocks accidental `cargo llvm-cov test --tests`.
+- Aeron driver restart: `SS_AERON_RESTART_VIA` (docker-first), reduced in-suite refresh cadence, IPC wire probe after restart and at suite preflight (soft-skip when pub/sub not ready).
 - Unit and integration tests for index-wait helpers, spotlight/shadow paths, bundle traits, and `wait_for_index!`; **`cargo-steady-state`** tests for multi-lane driver string emission (`wait_avail_bundle` / `wait_vacant_bundle`).
 - **`cargo-steady-state`:** `build_driver_block` coverage for **`AtMostEvery`**, **`Other`**, **`AtLeastEvery` + `EventDriven`**, bundle **percent** parsing on RX/TX, and **`extract_percent`** decimal edge cases.
 - **`graph_liveliness`:** clean shutdown path where the actor accepts stop (`is_running(|| true)`).

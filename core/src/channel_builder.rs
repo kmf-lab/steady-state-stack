@@ -48,7 +48,6 @@ use log::*;
 use async_ringbuf::traits::Split;
 use crate::{AlertColor, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
 // ss[related channel.lazy.defer-allocation]
-use crate::actor_builder::ActorBuilder;
 use crate::actor_builder_units::Percentile;
 use crate::channel_builder_lazy::{LazyChannel, LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
 // ss[related channel.lazy.defer-allocation]

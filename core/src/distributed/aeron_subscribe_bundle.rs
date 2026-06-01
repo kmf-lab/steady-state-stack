@@ -56,10 +56,9 @@ pub struct AeronSubscribeSteadyState {
 
 /// Default round-robin polling interval for Aeron subscriptions.
 ///
-/// Used as a fallback or fixed interval for scheduling polls. Currently set to 50 microseconds
-/// as a temporary testing value; may require tuning for production use.
+/// Perf tuning only; correctness does not depend on this value (bootstrap poll handles IPC connect).
 // ss[related distributed.subscribe-publish]
-const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(20)); //TODO: work in progress
+const ROUND_ROBIN: Option<Duration> = Some(Duration::from_micros(20));
 
 /// Entry point for running an Aeron subscriber actor.
 ///
@@ -101,7 +100,11 @@ pub async fn run<const GIRTH: usize>(
             }
         }
         // Delegate to internal behavior for subscription and polling management.
-        internal_behavior(actor, tx, aeron_connect, stream_id, state).await
+        let result = internal_behavior(actor, tx, aeron_connect, stream_id, state).await;
+        if let Err(ref e) = result {
+            eprintln!("AeronSubscribeBundle actor exited with error: {e}");
+        }
+        result
     } else {
         // Run simulated behavior for testing, using transmitter clones.
         let te: Vec<_> = tx.iter().cloned().collect();
@@ -267,11 +270,26 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 
             match lock.add_subscription(connection_string, stream_id) {
                 Ok(reg_id) => {
+                    // ss[impl distributed.subscribe-publish]
                     trace!("got this id {} for channel idx {}", reg_id, f);
                     state.sub_reg_id[f] = Some(reg_id);
                 }
                 Err(e) => {
-                    warn!("Unable to register subscription: {:?}", e);
+                    // ss[impl distributed.subscribe-publish]
+                    if actor.is_liveliness_stop_requested() {
+                        let mut tx_guards = tx_bundle.lock().await;
+                        if !actor.is_running(&mut || tx_guards.mark_closed()) {
+                            return Ok(());
+                        }
+                        return Err(format!(
+                            "shutdown during bundle subscription registration lane={f}"
+                        )
+                        .into());
+                    }
+                    return Err(format!(
+                        "Failed to add subscription lane={f} stream_id={stream_id}: {e:?}"
+                    )
+                    .into());
                 }
             };
         }
@@ -344,6 +362,34 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         }
     }
 
+    // Bootstrap: poll all lanes until connected or deadline (IPC needs poll to establish images).
+    const BOOTSTRAP_DEADLINE: Duration = Duration::from_secs(10);
+    let bootstrap_start = Instant::now();
+    while actor.is_running(&mut || tx_guards.mark_closed())
+        && bootstrap_start.elapsed() < BOOTSTRAP_DEADLINE
+    {
+        let mut all_connected = true;
+        for i in 0..GIRTH {
+            match &mut subs[i] {
+                Ok(subscription) => {
+                    if !subscription.is_connected() {
+                        all_connected = false;
+                        let tx_stream = &mut tx_guards[i];
+                        let _ =
+                            poll_aeron_subscription(tx_stream, subscription, &mut actor, Instant::now())
+                                .await;
+                        assume_connected[i] = subscription.is_connected();
+                    }
+                }
+                Err(_) => all_connected = false,
+            }
+        }
+        if all_connected {
+            break;
+        }
+        actor.wait(Duration::from_millis(5)).await;
+    }
+
     // Main polling loop: dynamically schedule and poll subscriptions.
     let mut now = Instant::now();
     let mut next_times = [now; GIRTH];
@@ -397,13 +443,18 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
                 }
             }
 
-            // Poll if connected, otherwise wait longer.
+            // Poll even when not yet connected so IPC images can establish when publication offers.
             let dynamic = match &mut subs[earliest_idx] {
                 Ok(subscription) => {
+                    let delay =
+                        poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await;
+                    if !assume_connected[earliest_idx] {
+                        assume_connected[earliest_idx] = subscription.is_connected();
+                    }
                     if assume_connected[earliest_idx] {
-                        poll_aeron_subscription(tx_stream, subscription, &mut actor, now).await
+                        delay
                     } else {
-                        Duration::from_millis(20) // Wait longer if not connected.
+                        Duration::from_millis(20)
                     }
                 }
                 Err(e) => {
@@ -442,5 +493,74 @@ mod aeron_subscribe_bundle_tests {
             state.sub_reg_id.push(None);
         }
         assert_eq!(state.sub_reg_id.len(), 5);
+    }
+}
+
+#[cfg(test)]
+mod aeron_subscribe_bundle_graph_tests {
+    use std::time::Duration;
+
+    use async_std::task;
+
+    use crate::distributed::aeron_channel_builder::AeronConfig;
+    use crate::distributed::aeron_channel_structs::MediaType;
+    use crate::distributed::aqueduct_builder::AqueductBuilder;
+    use crate::distributed::aqueduct_stream::StreamIngress;
+    use crate::{AqueTech, GraphBuilder, SoloAct};
+
+    /// Simulated Aeron subscribe bundle: graph starts and stops without a live driver.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_bundle_simulated_graph_stops_cleanly() {
+        const GIRTH: usize = 1;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(256);
+        let (lazy_tx, _rx) = cb.build_stream_bundle::<StreamIngress, GIRTH>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        lazy_tx.build_aqueduct(
+            AqueTech::Aeron(channel, 48),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeBundleSim")
+                .never_simulate(false),
+            SoloAct,
+        );
+        assert!(graph.start_with_timeout(Duration::from_secs(15)));
+        task::sleep(Duration::from_millis(100)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
+    }
+
+    /// Internal subscribe bundle path: shutdown during driver wait when no media driver is attached.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_bundle_stops_during_driver_wait_without_driver() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        if graph.aeron_media_driver().is_some() {
+            eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
+            return;
+        }
+        const GIRTH: usize = 1;
+        let cb = graph.channel_builder().with_capacity(256);
+        let (lazy_tx, _rx) = cb.build_stream_bundle::<StreamIngress, GIRTH>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        lazy_tx.build_aqueduct(
+            AqueTech::Aeron(channel, 49),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeBundleStop")
+                .never_simulate(true),
+            SoloAct,
+        );
+        assert!(graph.start_with_timeout(Duration::from_secs(10)));
+        task::sleep(Duration::from_millis(100)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
     }
 }

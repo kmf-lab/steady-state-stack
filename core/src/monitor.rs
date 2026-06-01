@@ -462,6 +462,7 @@ pub(crate) mod monitor_tests {
     // ss[related philosophy.single-wake-up]
     use parking_lot::RwLock;
     use futures::channel::oneshot;
+    use futures::FutureExt;
     use std::time::Instant;
     // ss[related philosophy.single-wake-up]
     use std::sync::atomic::AtomicUsize;

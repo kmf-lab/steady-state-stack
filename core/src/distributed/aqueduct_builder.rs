@@ -31,6 +31,8 @@ pub trait AqueductBuilder {
     );
 }
 
+// ss[depends distributed.aqueduct-stream]
+// ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamRx<StreamEgress> {
     fn build_aqueduct(
@@ -52,6 +54,8 @@ impl AqueductBuilder for LazyStreamRx<StreamEgress> {
                                          ,tech_string
                     );
                 let state = new_state();
+                // ss[impl distributed.subscribe-publish]
+                // ss[impl distributed.aqueduct-stream]
                 actor_builder.build(move |context|
                                aeron_publish::run(context
                                                   , self.clone()
@@ -71,6 +75,8 @@ impl AqueductBuilder for LazyStreamRx<StreamEgress> {
 
 }
 
+// ss[depends distributed.aqueduct-stream]
+// ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamTx<StreamIngress> {
     fn build_aqueduct(
@@ -93,6 +99,8 @@ impl AqueductBuilder for LazyStreamTx<StreamIngress> {
                                          ,tech_string
                     );
                 let state = new_state();
+                // ss[impl distributed.subscribe-publish]
+                // ss[impl distributed.aqueduct-stream]
                 actor_builder.build(move |context|
                                aeron_subscribe::run(context
                                                     , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>
@@ -131,6 +139,8 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgre
         let state = new_state();
         match tech {
             AqueTech::Aeron(channel, stream_id) => {
+                // ss[impl distributed.subscribe-publish]
+                // ss[impl distributed.aqueduct-stream]
                 actor_builder.build(move |context|
                                aeron_publish_bundle::run(context
                                                          , self.clone()
@@ -169,6 +179,8 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngr
         let state = new_state();
         match tech {
             AqueTech::Aeron(channel, stream_id) => {
+                    // ss[impl distributed.subscribe-publish]
+                    // ss[impl distributed.aqueduct-stream]
                     actor_builder.build(move |context|
                                    aeron_subscribe_bundle::run(context
                                                                , self.clone() //tx: SteadyStreamTxBundle<StreamFragment,GIRTH>

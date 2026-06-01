@@ -63,7 +63,11 @@ pub async fn run(
             }
         }
         let aeron_media_driver = actor.aeron_media_driver().expect("Media driver should be available");
-        internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await
+        let result = internal_behavior(actor, rx, aeron_connect, stream_id, aeron_media_driver, state).await;
+        if let Err(ref e) = result {
+            eprintln!("AeronPublish actor exited with error: {e}");
+        }
+        result
     } else {
         actor.simulated_behavior(vec![&rx]).await
     }
@@ -82,12 +86,29 @@ async fn internal_behavior<C: SteadyActor>(
     let mut rx = rx.lock().await;
     let mut state = state.lock(AeronPublishSteadyState::default).await;
 
+    // ss[depends distributed.subscribe-publish]
     if state.pub_reg_id.is_none() {
         let mut aeron = aeron.lock().await;
         warn!("Adding new publication: stream_id={}, channel={:?}", stream_id, aeron_channel.cstring());
         match aeron.add_exclusive_publication(aeron_channel.cstring(), stream_id) {
             Ok(reg_id) => state.pub_reg_id = Some(reg_id),
-            Err(e) => warn!("Failed to add publication: {:?}", e),
+            Err(e) => {
+                // ss[impl distributed.subscribe-publish]
+                if actor.is_liveliness_stop_requested() {
+                    if rx.is_closed_and_empty() {
+                        return Ok(());
+                    }
+                    return Err(
+                        "shutdown during exclusive publication registration (egress not drained)"
+                            .into(),
+                    );
+                }
+                return Err(format!(
+                    "Failed to add exclusive publication stream_id={stream_id} channel={:?}: {e:?}",
+                    aeron_channel.cstring()
+                )
+                .into());
+            }
         };
     }
     Delay::new(Duration::from_millis(2)).await;
@@ -105,6 +126,9 @@ async fn internal_behavior<C: SteadyActor>(
                     if e.to_string().contains("Awaiting") || e.to_string().contains("not ready") {
                         Delay::new(Duration::from_millis(4)).await;
                         if actor.is_liveliness_stop_requested() {
+                            if rx.is_closed_and_empty() {
+                                return Ok(());
+                            }
                             my_pub = Err(Box::new(std::io::Error::new(
                                 std::io::ErrorKind::Interrupted,
                                 "Shutdown requested while waiting for publication",
@@ -131,11 +155,29 @@ async fn internal_behavior<C: SteadyActor>(
                 }
             }
         }
+    } else if actor.is_liveliness_stop_requested() && rx.is_closed_and_empty() {
+        return Ok(());
     } else {
-        return Err("No publication registered. Check if Media Driver is running.".into());
+        // ss[impl distributed.subscribe-publish]
+        return Err(
+            "No publication registered after add_exclusive_publication (is the media driver running?)"
+                .into(),
+        );
+    }
+
+    if let Err(e) = &my_pub {
+        if e.to_string().contains("Shutdown requested") && rx.is_closed_and_empty() {
+            return Ok(());
+        }
+        // ss[impl distributed.subscribe-publish]
+        return Err(format!("Publication unavailable for stream_id={stream_id}: {e}").into());
     }
 
     info!("Running publish for actor '{:?}' with publication in place", actor.identity());
+
+    let mut disconnected_since: Option<std::time::Instant> = None;
+    // ss[related distributed.subscribe-publish]
+    const CONNECTED_WAIT: Duration = Duration::from_secs(5);
 
     let capacity: usize = rx.capacity();
     let wait_for = (512 * 1024).min(capacity);
@@ -150,11 +192,23 @@ async fn internal_behavior<C: SteadyActor>(
 
         match &mut my_pub {
             Ok(p) => {
+                if !p.is_connected() && !rx.is_closed_and_empty() {
+                    let since = disconnected_since.get_or_insert_with(std::time::Instant::now);
+                    if since.elapsed() >= CONNECTED_WAIT {
+                        warn!(
+                            "publication stream_id={stream_id} not connected after {:?} with pending egress data",
+                            CONNECTED_WAIT
+                        );
+                    }
+                } else {
+                    disconnected_since = None;
+                }
                 if rx.is_closed_and_empty() && p.position().unwrap_or(0) >= last_position && !p.is_connected() {
                     stream_flushed = true;
                 } else {
                     let vacant_aeron_bytes = p.available_window().unwrap_or(0);
                     if vacant_aeron_bytes > 0 {
+                        // ss[impl distributed.subscribe-publish]
                         rx.consume_messages(&mut actor, vacant_aeron_bytes as usize, |slice1: &mut [u8], slice2: &mut [u8]| {
                             let msg_len = slice1.len() + slice2.len();
                             assert!(msg_len > 0, "Message length must be positive");
@@ -199,190 +253,97 @@ async fn internal_behavior<C: SteadyActor>(
     Ok(())
 }
 
-/// Test module for validating Aeron publishing functionality for a single channel.
 #[cfg(test)]
-pub(crate) mod aeron_tests {
-    // ss[related distributed.subscribe-publish]
-    use log::info;
-    use super::*;
-    use crate::distributed::aeron_channel_structs::{Endpoint, MediaType};
-    // ss[related distributed.subscribe-publish]
-    use crate::distributed::aeron_channel_builder::{AeronConfig, AqueTech};
+// ss[related distributed.subscribe-publish]
+mod aeron_publish_state_tests {
+    use super::AeronPublishSteadyState;
+
+    #[test]
+    // ss[verify distributed.subscribe-publish]
+    fn test_publish_state_default() {
+        let state = AeronPublishSteadyState::default();
+        assert!(state.pub_reg_id.is_none());
+    }
+
+    #[test]
+    // ss[verify distributed.subscribe-publish]
+    fn test_publish_state_registration_cleared_on_default() {
+        let state = AeronPublishSteadyState::default();
+        assert_eq!(state.pub_reg_id, None);
+        assert_eq!(state._items_taken, 0);
+    }
+
+    #[test]
+    // ss[verify distributed.subscribe-publish]
+    fn test_publish_stream_id_constant_positive() {
+        assert!(super::STREAM_ID > 0);
+    }
+
+}
+
+#[cfg(test)]
+mod aeron_publish_graph_tests {
+    use std::time::Duration;
+
+    use async_std::task;
+
+    use crate::distributed::aeron_channel_builder::AeronConfig;
+    use crate::distributed::aeron_channel_structs::MediaType;
     use crate::distributed::aqueduct_builder::AqueductBuilder;
-    use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
-    // ss[related distributed.subscribe-publish]
-    use crate::{await_for_all, AlertColor, GraphBuilder, RxCore, ScheduleAs, Trigger};
-    use crate::actor_builder_units::Percentile;
-    use crate::channel_builder_units::Filled;
+    use crate::distributed::aqueduct_stream::StreamEgress;
+    use crate::{AqueTech, GraphBuilder, SoloAct};
 
-    /// Mock sender actor for testing message transmission to Aeron.
-    // ss[related distributed.subscribe-publish]
-    pub async fn mock_sender_run(
-        context: SteadyActorShadow,
-        tx: SteadyStreamTx<StreamEgress>,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut actor = context.into_spotlight([], [&tx]);
-        let mut tx = tx.lock().await;
-
-        let data1 = [1, 2, 3, 4, 5, 6, 7, 8];
-        let data2 = [9, 10, 11, 12, 13, 14, 15, 16];
-
-        // ss[related distributed.subscribe-publish]
-        const BATCH_SIZE: usize = 5000;
-        let items: [StreamEgress; BATCH_SIZE] = [StreamEgress::new(8); BATCH_SIZE];
-        let mut data: [[u8; 8]; BATCH_SIZE] = [data1; BATCH_SIZE];
-        for i in 0..BATCH_SIZE {
-            if i % 2 == 0 {
-                data[i] = data1;
-            } else {
-                data[i] = data2;
-            }
-        }
-        let all_bytes: Vec<u8> = data.iter().flatten().copied().collect();
-
-        let mut sent_count = 0;
-        while actor.is_running(&mut || tx.mark_closed()) {
-            let vacant_items = 200000;
-            let data_size = 8;
-            let vacant_bytes = vacant_items * data_size;
-
-            let _clean = await_for_all!(actor.wait_vacant(&mut tx, (vacant_items, vacant_bytes)));
-
-            let mut remaining = TEST_ITEMS;
-            while remaining > 0 && actor.vacant_units(&mut tx.control_channel) >= BATCH_SIZE {
-                actor.send_slice(&mut tx.payload_channel, all_bytes.as_ref());
-                actor.send_slice(&mut tx.control_channel, items.as_ref());
-
-                sent_count += BATCH_SIZE;
-                remaining -= BATCH_SIZE;
-            }
-
-            if sent_count >= TEST_ITEMS {
-                tx.mark_closed();
-                error!("sender is done");
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
-
-    /// Mock receiver actor for testing message consumption from Aeron.
-    // ss[related distributed.subscribe-publish]
-    pub async fn mock_receiver_run(
-        context: SteadyActorShadow,
-        rx: SteadyStreamRx<StreamIngress>,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut actor = context.into_spotlight([&rx], []);
-        let mut rx = rx.lock().await;
-
-        let _data1 = Box::new([1, 2, 3, 4, 5, 6, 7, 8]);
-        let _data2 = Box::new([9, 10, 11, 12, 13, 14, 15, 16]);
-
-        // ss[related distributed.subscribe-publish]
-        const LEN: usize = 100_000;
-
-        let mut received_count = 0;
-        while actor.is_running(&mut || rx.is_closed_and_empty()) {
-            let _clean = await_for_all!(actor.wait_avail(&mut rx, LEN));
-
-            let bytes = actor.avail_units(&mut rx.payload_channel);
-            actor.advance_take_index(&mut rx.payload_channel, bytes);
-            let taken = actor.avail_units(&mut rx.control_channel);
-            actor.advance_take_index(&mut rx.control_channel, taken);
-
-            received_count += taken;
-            if received_count >= (TEST_ITEMS - taken) {
-                error!("stop requested");
-                actor.request_shutdown().await;
-                return Ok(());
-            }
-        }
-        error!("receiver is done");
-        Ok(())
-    }
-
-    /// Tests the end-to-end byte processing through Aeron for a single channel.
+    /// Simulated Aeron publish actor: graph starts and stops without requiring registration.
     #[async_std::test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_bytes_process() -> Result<(), Box<dyn Error>> {
-        if true {
-            return Ok(()); // Skip test by default.
-        }
-        if std::env::var("GITHUB_ACTIONS").is_ok() {
-            return Ok(());
-        }
-
-        let mut graph = GraphBuilder::for_testing()
-            .with_telemetry_metric_features(true)
-            .build(());
-
-        let aeron_md = graph.aeron_media_driver();
-        if aeron_md.is_none() {
-            info!("aeron test skipped, no media driver present");
-            return Ok(());
-        }
-
-        let channel_builder = graph.channel_builder();
-
-        let (to_aeron_tx, to_aeron_rx) = channel_builder
-            .with_avg_rate()
-            .with_avg_filled()
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .with_capacity(4 * 1024 * 1024)
-            .build_stream::<StreamEgress>(8);
-
-        let (from_aeron_tx, from_aeron_rx) = channel_builder
-            .with_avg_rate()
-            .with_avg_filled()
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p50()), AlertColor::Yellow)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p70()), AlertColor::Orange)
-            .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
-            .with_capacity(4 * 1024 * 1024)
-            .build_stream::<StreamIngress>(8);
-
-        let aeron_config = AeronConfig::new()
-            .with_media_type(MediaType::Ipc) // IPC for maximum throughput.
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Invalid IP address"),
-                port: 40456,
-            })
+    async fn test_publish_simulated_graph_stops_cleanly() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(256);
+        let (_tx, rx) = cb.build_stream::<StreamEgress>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
             .build();
-
-        graph.actor_builder().with_name("MockSender")
-            .with_thread_info()
-            .with_mcpu_percentile(Percentile::p96())
-            .with_mcpu_percentile(Percentile::p25())
-            .build(
-                move |context| mock_sender_run(context, to_aeron_tx.clone()),
-                ScheduleAs::SoloAct,
-            );
-
-        let stream_id = 12;
-
-        to_aeron_rx.build_aqueduct(
-            AqueTech::Aeron(aeron_config.clone(), stream_id),
-            &graph.actor_builder().with_name("SenderTest").never_simulate(true),
-            ScheduleAs::SoloAct,
+        rx.build_aqueduct(
+            AqueTech::Aeron(channel, 44),
+            &graph
+                .actor_builder()
+                .with_name("AeronPublishSim")
+                .never_simulate(false),
+            SoloAct,
         );
+        assert!(graph.start_with_timeout(Duration::from_secs(15)));
+        task::sleep(Duration::from_millis(100)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
+    }
 
-        graph.actor_builder().with_name("MockReceiver")
-            .with_thread_info()
-            .with_mcpu_percentile(Percentile::p96())
-            .with_mcpu_percentile(Percentile::p25())
-            .build(
-                move |context| mock_receiver_run(context, from_aeron_rx.clone()),
-                ScheduleAs::SoloAct,
-            );
-
-        from_aeron_tx.build_aqueduct(
-            AqueTech::Aeron(aeron_config.clone(), stream_id),
-            &graph.actor_builder().with_name("ReceiverTest").never_simulate(true),
-            ScheduleAs::SoloAct,
+    /// Internal publish path: when no media driver is attached, shutdown during driver wait exits.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_publish_stops_during_driver_wait_without_driver() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        if graph.aeron_media_driver().is_some() {
+            eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
+            return;
+        }
+        let cb = graph.channel_builder().with_capacity(256);
+        let (_tx, rx) = cb.build_stream::<StreamEgress>(64);
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        rx.build_aqueduct(
+            AqueTech::Aeron(channel, 45),
+            &graph
+                .actor_builder()
+                .with_name("AeronPublishStop")
+                .never_simulate(true),
+            SoloAct,
         );
-
-        graph.start();
-        graph.block_until_stopped(Duration::from_secs(21))
+        assert!(graph.start_with_timeout(Duration::from_secs(10)));
+        task::sleep(Duration::from_millis(100)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
     }
 }

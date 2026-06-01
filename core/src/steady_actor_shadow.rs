@@ -71,6 +71,7 @@ pub struct SteadyActorShadow {
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     pub(crate) aeron_init_for_tests: bool,
     // ss[impl actor.internal-behavior-logic]
+    /// When true, run real actor logic (e.g. Aeron I/O); when false, use simulation.
     pub use_internal_behavior: bool,
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
     pub(crate) index_wait_last_avail: AtomicUsize,
@@ -119,6 +120,8 @@ impl SteadyActor for SteadyActorShadow {
     }
 
     // ss[related actor.shadow-spotlight]
+    // ss[related distributed.subscribe-publish]
+    // ss[related distributed.media-driver-testing]
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }

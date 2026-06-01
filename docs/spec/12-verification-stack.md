@@ -24,7 +24,7 @@ Coverage gates SHOULD use `cargo llvm-cov` with merged LCOV per `platform.covera
 
 ss[verify.process.proptest]
 
-Property tests SHOULD be added for channel/actor invariants described in lessons; **temporary waiver** until crates are wired.
+Property tests SHOULD be added for channel/actor invariants described in lessons; **temporary waiver** until crates are wired. Distributed URI/aqueduct proptests are tracked as a follow-on after the Tracey audit (see `docs/spec/08-streams-and-distributed.md`).
 
 **Tier:** 1 — process waiver
 

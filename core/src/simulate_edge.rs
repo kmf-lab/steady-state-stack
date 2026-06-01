@@ -297,7 +297,7 @@ impl<C: SteadyActor, T: StreamControlItem> SimRunner<C> for SimStreamTx<T> {
             if ctrl_vacant > 0 {
                 let dummy = T::testing_new(8);
                 let payload = vec![0u8; 8];
-                guard.control_channel.shared_try_send(dummy);
+                let _ = guard.control_channel.shared_try_send(dummy);
                 guard.payload_channel.shared_send_slice(&payload);
                 Ok(SimStepResult::DidWork)
             } else {
@@ -457,15 +457,18 @@ impl<C: SteadyActor, T: 'static + Send + Sync + Debug + Clone + Default, const N
     }
 }
 
-// Test actor used for simulation
+/// Minimal [`SteadyActor`] for simulation and unit tests.
 // ss[related testing.sim-producer-close]
 pub struct TestActor {
+    /// Optional side-channel responder for control-plane tests.
     pub sidechannel: Option<SideChannelResponder>,
+    /// When false, the actor reports shutdown to the graph liveliness layer.
     pub is_running: bool,
 }
 
 // ss[related testing.sim-producer-close]
 impl TestActor {
+    /// Creates a running test actor with no side channel attached.
     pub fn new() -> Self {
         TestActor {
             sidechannel: None,

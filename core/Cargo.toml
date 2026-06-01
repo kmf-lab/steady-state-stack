@@ -19,14 +19,6 @@ path = "src/lib.rs"
 
 # cargo build --release --features telemetry_history,telemetry_server_builtin
 
-[profile.release]
-opt-level = 'z' # optimize for size
-lto = true # link time optimization
-codegen-units = 1 # only one codegen unit to reduce binary size
-strip = 'symbols' # strip symbols
-
-#panic = 'abort' # no unwinding
-
 [lints.clippy]
 enum_glob_use = "deny" # forbid use of enum glob imports
 unwrap_used = "deny" # forbid use of unwrap
@@ -271,9 +263,18 @@ path = "examples/high_performance/main.rs"
 name = "high_durability"
 path = "examples/high_durability/main.rs"
 
+[[example]]
+name = "simple_aeron_publisher"
+path = "examples/simple_aeron_publisher/main.rs"
+
+[[example]]
+name = "simple_aeron_subscriber"
+path = "examples/simple_aeron_subscriber/main.rs"
+
 
 [dev-dependencies]
 async-std        = {  version = "1.13", features = ["attributes"] }  # for async unit testing only,
+proptest         = "1"
 rand_distr       = "0.5" # for random number generation
 rand             = "0.9" # for random number generation
 isahc            = "1.7"

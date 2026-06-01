@@ -1,0 +1,24 @@
+# Gate A (unit): excludes live Aeron driver suites — they require Gate C env (SS_AERON_GATE_C=1).
+# Gate C: `./scripts/run-aeron-integration.sh` or `cargo nextest run --profile aeron-live`.
+
+[store]
+dir = "target/nextest"
+
+[profile.default]
+filter = 'not (test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle))'
+
+[profile.ci-unit]
+filter = 'not (test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle))'
+
+[[profile.ci-unit.overrides]]
+filter = 'test(aeron_integration_serial_suite)'
+enabled = false
+
+[[profile.ci-unit.overrides]]
+filter = 'test(aeron_preflight_wire_settle)'
+enabled = false
+
+[profile.aeron-live]
+filter = 'test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle)'
+test-threads = 1
+slow-timeout = { period = "120s", terminate-after = 2 }

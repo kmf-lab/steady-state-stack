@@ -32,11 +32,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
            .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args
 
-    let aeron = graph.aeron_media_driver();
-    if aeron.is_none() {
-        info!("aeron test skipped, no media driver present");
+    if graph.aeron_media_driver().is_none() {
+        info!("aeron skipped, no media driver present");
         return Ok(())
     }
+    // IPC pub/sub pattern: core/tests/common/support/pub_sub_harness.rs
     let aeron_channel = AeronConfig::new()
             .with_media_type(MediaType::Ipc)
             .use_ipc()

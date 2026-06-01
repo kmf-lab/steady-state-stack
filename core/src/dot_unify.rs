@@ -20,7 +20,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ss[related telemetry.dot-export]
-use log::{debug, trace, warn};
+use log::{trace, warn};
+#[cfg(test)]
+use log::debug;
 
 use crate::ActorName;
 // ss[related telemetry.dot-export]

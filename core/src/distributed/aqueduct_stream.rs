@@ -281,6 +281,7 @@ pub trait StreamControlItem: Copy + Send + Sync + 'static {
 
 /// Represents an incoming stream fragment, typically part of a multi-part message, with metadata for session and timing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 pub struct StreamIngress {
     /// Length of the fragment in bytes.
@@ -373,6 +374,7 @@ impl StreamControlItem for StreamIngress {
 
 /// Represents an outgoing stream message, typically a single-part message with length metadata.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+// ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 pub struct StreamEgress {
     /// Length of the message in bytes.
@@ -620,6 +622,7 @@ impl<T: StreamControlItem> Defrag<T> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamTx<T> {
     /// Creates a new transmitter stream with the specified control and payload channels.
+    // ss[impl distributed.aqueduct-stream]
     pub fn new(control_channel: Tx<T>, payload_channel: Tx<u8>) -> Self {
         StreamTx {
             max_poll_latency: Duration::from_millis(1000),

@@ -66,7 +66,8 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 2. `python3 scripts/tracey_map_unmapped.py --all-core` — insert `ss[impl]` / `ss[related]` on unannotated items.
 3. `python3 scripts/annotate_tracey_tests.py` — insert `ss[verify]` before `#[test]`.
 4. `bash scripts/tracey-unmapped-gate.sh` — CI gate (default threshold 80%, env `TRACEY_MAPPED_PERCENT`).
-5. Per-file drill-down: `tracey query unmapped core/src/<file>.rs`
+5. `bash scripts/tracey-untested-gate.sh` — CI gate (0 untested for `distributed` and `stream.control-payload` prefixes).
+6. Per-file drill-down: `tracey query unmapped core/src/<file>.rs`
 
 ---
 

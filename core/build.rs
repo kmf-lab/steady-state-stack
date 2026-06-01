@@ -95,10 +95,12 @@ const TELEMETRY_SERVICE: bool = false;
 
 // ss[impl platform.ringbuf-pin]
 fn main() {
-    // Print sponsorship messages to encourage community support
-    println!("cargo:warning=########### Community support needed ###########################");
-    println!("cargo:warning=Please Sponsor Steady_State: https://github.com/sponsors/kmf-lab");
-    println!("cargo:warning=################################################################");
+    let quiet = env::var("SS_QUIET_BUILD").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    if !quiet {
+        println!("cargo:warning=########### Community support needed ###########################");
+        println!("cargo:warning=Please Sponsor Steady_State: https://github.com/sponsors/kmf-lab");
+        println!("cargo:warning=################################################################");
+    }
 
     // `OUT_DIR` is where embeddable build outputs **must** go so `include_bytes!(concat!(env!("OUT_DIR"), "/…"))`
     // in `metrics_server.rs` reads the same bytes this script just wrote. See module docs above.

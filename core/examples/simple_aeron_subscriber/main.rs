@@ -36,16 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
            .with_telemtry_production_rate_ms(200)
            .build(cli_args); //or pass () if no args
 
-    let aeron_channel: Channel = AeronConfig::new()
-        .with_media_type(MediaType::Ipc) // 10MMps
-
-        //   .with_media_type(MediaType::Udp)// 4MMps- std 4K page
-        //   .with_term_length((1024 * 1024 * TERM_MB) as usize)
-
-        .use_point_to_point(Endpoint {
-            ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,
-        })
+    // Must match publisher: IPC. See core/tests/common/support/pub_sub_harness.rs.
+    let aeron_channel = AeronConfig::new()
+        .with_media_type(MediaType::Ipc)
+        .use_ipc()
         .build();
 
     if graph.aeron_media_driver().is_none() {

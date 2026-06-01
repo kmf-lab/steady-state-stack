@@ -4,6 +4,10 @@ This guide will walk you through the steps to install, configure, and run the Ae
 
 ---
 
+## CI / self-hosted runner
+
+For GitHub Actions Gate C (full IPC + UDP + multicast matrix), see [docs/AERON_RUNNER.md](../../../docs/AERON_RUNNER.md).
+
 ## Prerequisites
 
 Before proceeding, ensure the following:
@@ -95,6 +99,11 @@ This will stop the Aeron Media Driver service and clean up any related files and
 
 3. **Docker Issues:**
     - Ensure the correct `Dockerfile` is used (`Dockerfile.aeronmd_debian` or `Dockerfile.aeronmd_alpine`) and the container user matches the application user.
+
+4. **Integration tests (`steady_state`):**
+    - Restart the driver with systemd (matches `install_aeronmd.sh`): `sudo systemctl restart aeronmd`
+    - Run the serial suite: `./scripts/run-aeron-integration.sh` from the repo root (auto-detects `aeronmd.service`)
+    - Do not rely on `export AERONMD=$(command -v aeronmd)` for the Docker install — there is no host binary; use `SS_AERON_DRIVER=systemd` if needed
 
 ---
 

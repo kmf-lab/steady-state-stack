@@ -1,0 +1,72 @@
+# Gate C — live Aeron integration (requires media driver on runner).
+# Full-matrix release sign-off runs on self-hosted runner with labels [self-hosted, aeron].
+name: Aeron integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: Full matrix IPC+UDP+multicast (release sign-off on self-hosted)
+        type: boolean
+        default: true
+      fresh_driver:
+        description: Restart driver before suite (SS_AERON_FRESH_DRIVER=1)
+        type: boolean
+        default: true
+
+jobs:
+  aeron-release-self-hosted:
+    runs-on: [self-hosted, aeron]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Gate C full-matrix release sign-off
+        env:
+          SS_AERON_RELEASE: "1"
+          SS_AERON_FRESH_DRIVER: ${{ inputs.fresh_driver && '1' || '0' }}
+          SS_AERON_MATRIX: ${{ inputs.full_matrix && 'full' || 'ipc' }}
+          SS_AERON_RESTART_VIA: docker
+          SS_AERON_LOG_FILE: /tmp/aeron-integration.log
+        run: |
+          if [[ "${{ inputs.full_matrix }}" == "true" ]]; then
+            ./scripts/run-aeron-release-signoff.sh
+          else
+            SS_AERON_RELEASE=1 SS_AERON_MATRIX=ipc ./scripts/run-aeron-integration.sh
+          fi
+      - name: Examples smoke (optional)
+        if: inputs.full_matrix
+        env:
+          SS_AERON_REQUIRED: "1"
+        run: ./scripts/smoke-aeron-examples.sh
+      - name: Upload Gate C log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aeron-integration-log
+          path: /tmp/aeron-integration.log
+          if-no-files-found: ignore
+
+  # GitHub-hosted: verify script fails when driver is absent (not a Gate C pass).
+  aeron-script-sanity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Script sanity (no driver — must not false-pass as release)
+        env:
+          SS_AERON_FRESH_DRIVER: "0"
+          SS_AERON_REQUIRED: "1"
+          SS_AERON_ALLOW_SOFT_SKIP: "0"
+          SS_AERON_GATE_C: "1"
+        run: |
+          set +e
+          ./scripts/run-aeron-integration.sh
+          status=$?
+          set -e
+          if [[ "${status}" -eq 0 ]]; then
+            echo "ERROR: expected non-zero exit without aeronmd on ubuntu-latest" >&2
+            exit 1
+          fi
+          echo "PASS: script correctly failed without media driver (exit ${status})"

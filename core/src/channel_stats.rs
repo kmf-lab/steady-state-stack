@@ -151,8 +151,8 @@ impl ChannelStatsComputer {
 
         // Channel rollups are per-frame (server already quantizes to frames).
         // Total window duration = frame_rate_ms * 2^(refresh_bits + window_bits).
-        let total_ms = (self.frame_rate_ms as u128
-            * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits)));
+        let total_ms = self.frame_rate_ms as u128
+            * (1u128 << (meta.refresh_rate_in_bits + meta.window_bucket_in_bits));
         self.time_label = actor_stats::time_label(total_ms);
 
         self.display_labels = if meta.display_labels {

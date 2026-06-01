@@ -232,6 +232,7 @@ impl<T> Tx<T> {
     /// - `done`: The transmission operation result containing the count of items sent.
     /// - `tel`: The telemetry send structure to record the event in.
     // ss[related channel.backpressure-never-drop]
+    #[allow(dead_code)] // used by Rx path; Tx keeps symmetric API for future monitor wiring
     pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         // CRITICAL FIX: Resolve lazy index if not yet established
         if self.local_monitor_index == MONITOR_UNKNOWN {

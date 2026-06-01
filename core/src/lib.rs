@@ -346,7 +346,10 @@ pub use steady_tx::TxDone;
 pub use crate::distributed::aqueduct_builder::AqueductBuilder;
 // ss[related philosophy.structural-hierarchy]
 pub use steady_actor::SteadyActor;
-pub use distributed::aeron_channel_structs::{Channel, Endpoint, MediaType};
+pub use distributed::aeron_channel_structs::{
+    media_driver_probe, media_driver_probe_default, media_driver_probe_with_reason,
+    Channel, Endpoint, MediaType, MediaDriverProbeError,
+};
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 // ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{StreamEgress, StreamIngress};
@@ -366,7 +369,6 @@ pub use std::error::Error;
 
 // Dependencies and internal utilities
 // ss[related philosophy.structural-hierarchy]
-use futures_util::FutureExt;
 use futures::select;
 use std::fmt::Debug;
 // ss[related philosophy.structural-hierarchy]
