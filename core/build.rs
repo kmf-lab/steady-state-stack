@@ -185,18 +185,20 @@ fn main() {
             webworker_needs_gzip,
         );
 
-        // Encode static files; only (re)compress when the `OUT_DIR` artifact is missing.
+        // Encode static files; recompress when source is newer than the OUT_DIR artifact.
+        let dot_viewer_js = Path::new("static/telemetry/dot-viewer.js");
         gzip_source_to_out_dir(
             &out_dir,
-            Path::new("static/telemetry/dot-viewer.js"),
+            dot_viewer_js,
             OUT_DOT_VIEWER_JS_GZ,
-            !out_dir.join(OUT_DOT_VIEWER_JS_GZ).exists(),
+            source_newer_than_gz(dot_viewer_js, &out_dir.join(OUT_DOT_VIEWER_JS_GZ)),
         );
+        let dot_viewer_css = Path::new("static/telemetry/dot-viewer.css");
         gzip_source_to_out_dir(
             &out_dir,
-            Path::new("static/telemetry/dot-viewer.css"),
+            dot_viewer_css,
             OUT_DOT_VIEWER_CSS_GZ,
-            !out_dir.join(OUT_DOT_VIEWER_CSS_GZ).exists(),
+            source_newer_than_gz(dot_viewer_css, &out_dir.join(OUT_DOT_VIEWER_CSS_GZ)),
         );
 
         // Copy spinner.gif into `OUT_DIR` under a flat name — this path is what `include_bytes!` uses.
@@ -259,6 +261,24 @@ fn gzip_source_to_out_dir(out_dir: &Path, source_file: &Path, out_gz_name: &str,
     encoder.finish().expect("Failed to finalize gzip under OUT_DIR");
 
     println!("cargo:trace=Compressed {:?} -> {:?}", source_file, dest_gz);
+}
+
+/// Returns true when `source_file` should be re-gzipped into `dest_gz` (missing dest or source newer).
+// ss[impl platform.ringbuf-pin]
+fn source_newer_than_gz(source_file: &Path, dest_gz: &Path) -> bool {
+    if !dest_gz.exists() {
+        return true;
+    }
+    let source_mtime = fs::metadata(source_file)
+        .and_then(|m| m.modified())
+        .ok();
+    let dest_mtime = fs::metadata(dest_gz)
+        .and_then(|m| m.modified())
+        .ok();
+    match (source_mtime, dest_mtime) {
+        (Some(s), Some(d)) => s > d,
+        _ => true,
+    }
 }
 
 /// Copies the repo’s spinner GIF into `OUT_DIR` for `include_bytes!`.
