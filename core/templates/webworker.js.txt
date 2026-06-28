@@ -2,18 +2,39 @@
 
 this.importScripts('{{ script_source }}');
 
-this.onmessage = async (message) => {
+let busy = false;
+let pendingUrl = null;
+
+async function processQueue() {
+  if (busy) return;
+  busy = true;
+
+  while (pendingUrl) {
+    const dotUrl = pendingUrl;
+    pendingUrl = null;
+
+    try {
+      const response = await fetch(dotUrl);
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
+      const dot = await response.text();
+      const svg = Viz(dot, {format: 'svg', engine: 'dot'});
+      this.postMessage({ok: true, svg: svg});
+    } catch (e) {
+      console.log('dotUrl', dotUrl);
+      console.error('Error:', e);
+      this.postMessage({ok: false});
+    }
+  }
+
+  busy = false;
+}
+
+this.onmessage = (message) => {
   const dotUrl = message.data;
   if (!dotUrl) return;
 
-  try {
-    const response = await fetch(dotUrl);
-    const dot = await response.text();
-    const svg = Viz(dot, {format: 'svg', engine: 'dot'});
-    this.postMessage(svg);
-
-  } catch (e) {
-    console.log('dotUrl',dotUrl);
-    console.error('Error:', e);
-  }
+  pendingUrl = dotUrl;
+  processQueue.call(this);
 };

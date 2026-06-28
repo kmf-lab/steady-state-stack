@@ -12,7 +12,7 @@
     <nav id="nav">
       <div id="nav1">
         <div class="left">
-          <div class="title">Live Telemetry</div>
+          <div id="telemetryTitle" class="title">Loading…</div>
         </div>
         <div class="right">
           <div id="speedArea">

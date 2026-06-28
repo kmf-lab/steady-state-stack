@@ -930,13 +930,31 @@ mod http_telemetry_tests {
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("setTelemetryTitle"), "dot-viewer.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("Old Telemetry"), "dot-viewer.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("refresh_rate_ms"), "config");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("pendingUrl"), "webworker.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("ok: true"), "webworker.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("<title>Telemetry</title>"), "index.html");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("id=\"telemetryTitle\""), "index.html");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, Some("Loading…"), "index.html");
                 print!(".");
                 // Regression: HTTP 200 with an empty or corrupt embedded gzip once broke browser
                 // `importScripts` for viz-lite — `validate_path(..., None)` did not catch it.

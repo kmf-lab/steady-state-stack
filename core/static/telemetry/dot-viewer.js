@@ -42,6 +42,11 @@ const hide = element => setStyle(element, 'visibility', 'hidden');
 
 const isVisible = element => element.style.visibility === 'visible';
 
+function setTelemetryTitle(text) {
+  const el = getById('telemetryTitle');
+  if (el) el.textContent = text;
+}
+
 function onDrag(event) {
   const previewRect = preview.getBoundingClientRect();
   const viewportRect = viewport.getBoundingClientRect();
@@ -65,7 +70,15 @@ function onDrag(event) {
 }
 
 function onMessage(message) {
-  const svgText = typeof message.data === 'string' ? message.data : message.data.svg;
+  const data = message.data;
+  const ok = typeof data === 'object' && data !== null ? data.ok : true;
+  const svgText = typeof data === 'string' ? data : data.svg;
+
+  if (!ok) {
+    setTelemetryTitle('Old Telemetry');
+    return;
+  }
+  setTelemetryTitle('Live Telemetry');
 
   // Use requestAnimationFrame to avoid blocking the UI thread
   window.requestAnimationFrame(() => {
