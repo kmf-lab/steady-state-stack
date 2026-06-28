@@ -974,32 +974,6 @@ mod core_tx_rx_tests {
         assert!(matches!(outcome3, SendOutcome::Success));
     }
 
-    #[test]
-    // ss[verify channel.backpressure-never-drop]
-    fn test_tx_core_state_boundaries() {
-        let (mut tx, _graph, _sender) = new_tx();
-        
-        // Test shared_advance_index overflow
-        let done = tx.shared_advance_index(100);
-        assert_eq!(done, TxDone::Normal(tx.shared_capacity()));
-
-        // Test shared_vacant_units wrap-around
-        let (mut tx, _graph, _sender) = new_tx();
-        let cap = tx.shared_capacity();
-        assert_eq!(tx.shared_vacant_units(), cap);
-        tx.shared_send_iter_until_full((0..cap as u8).into_iter());
-        assert_eq!(tx.shared_vacant_units(), 0);
-        
-        // Test redundant mark_closed
-        tx.shared_mark_closed();
-        tx.shared_mark_closed();
-
-        // Test shared_send_slice empty
-        let done_slice = tx.shared_send_slice(&[]);
-        assert_eq!(done_slice, TxDone::Normal(0));
-
-    }
-
     /// Tests saturation policies: WarnThenAwait and DebugWarnThenAwait on a full channel.
     // ss[verify channel.backpressure-never-drop]
     #[test]
@@ -1132,5 +1106,112 @@ mod core_tx_rx_tests {
         let mut tel = SteadyTelemetrySend::new(dummy_tx, [0; 4], [0; 4], Instant::now());
         tx.telemetry_inc(TxDone::Normal(5), &mut tel);
         // The error is logged but no panic
+    }
+
+    use proptest::prelude::*;
+    use crate::proptest_support::{capacity, message_vec};
+
+    ss_proptest! {
+
+        /// Property: vacant slots plus in-flight items never exceed capacity.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_vacant_plus_inflight_le_capacity(
+            cap in capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (mut tx, mut rx) = builder.eager_build_internal::<u8>();
+            let channel_capacity = tx.shared_capacity();
+            let to_send: Vec<u8> = messages.into_iter().take(channel_capacity).collect();
+            let mut sent = 0usize;
+            for &msg in &to_send {
+                if tx.shared_try_send(msg).is_ok() {
+                    sent += 1;
+                } else {
+                    break;
+                }
+            }
+            let vacant = tx.shared_vacant_units();
+            let avail = rx.shared_avail_units();
+            prop_assert_eq!(sent, avail);
+            prop_assert!(vacant + avail <= channel_capacity);
+        }
+
+        /// Property: shared_send_slice never sends more than vacant_units.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_send_slice_never_exceeds_vacant(
+            cap in 2usize..64,
+            extra in 1usize..32,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (mut tx, _rx) = builder.eager_build_internal::<u8>();
+            let vacant = tx.shared_vacant_units();
+            let slice = vec![0u8; vacant + extra];
+            let done = tx.shared_send_slice(&slice);
+            prop_assert!(done.item_count() <= vacant);
+        }
+
+        /// Property: every item accepted by the transmitter is received (no silent drop).
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_no_silent_drop(
+            cap in capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (mut tx, mut rx) = builder.eager_build_internal::<u8>();
+            let channel_capacity = tx.shared_capacity();
+            let to_send: Vec<u8> = messages.into_iter().take(channel_capacity).collect();
+            let sent = tx.shared_send_iter_until_full(to_send.iter().copied());
+            prop_assert_eq!(sent, to_send.len());
+            let mut taken = 0usize;
+            while rx.shared_try_take().is_some() {
+                taken += 1;
+            }
+            prop_assert_eq!(taken, sent);
+        }
+
+        /// Property: mark_closed is idempotent and does not change vacant count.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_mark_closed_idempotent_vacant_unchanged(
+            cap in capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (mut tx, _rx) = builder.eager_build_internal::<u8>();
+            let to_send: Vec<u8> = messages.into_iter().take(cap.saturating_sub(1)).collect();
+            let _ = tx.shared_send_iter_until_full(to_send.iter().copied());
+            let vacant_before = tx.shared_vacant_units();
+            tx.shared_mark_closed();
+            tx.shared_mark_closed();
+            prop_assert_eq!(tx.shared_vacant_units(), vacant_before);
+        }
+
+        /// Property: send_iter_until_full never sends more than channel capacity.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_send_iter_respects_capacity(
+            cap in capacity(),
+            extra in 1usize..64,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (mut tx, mut rx) = builder.eager_build_internal::<u8>();
+            let msgs = vec![0u8; cap + extra];
+            let sent = tx.shared_send_iter_until_full(msgs.iter().copied());
+            prop_assert!(sent <= cap);
+            let mut taken = 0usize;
+            while rx.shared_try_take().is_some() {
+                taken += 1;
+            }
+            prop_assert_eq!(sent, taken);
+        }
     }
 }

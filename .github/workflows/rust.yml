@@ -31,3 +31,5 @@ jobs:
       run: bash scripts/tracey-unmapped-gate.sh
     - name: Tracey untested gate (distributed + stream.control-payload)
       run: bash scripts/tracey-untested-gate.sh
+    - name: File size gate (core/src line caps)
+      run: bash scripts/check-file-size.sh

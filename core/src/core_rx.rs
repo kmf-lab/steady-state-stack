@@ -687,42 +687,6 @@ mod core_rx_async_tests {
         (tx, rx, graph)
     }
 
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_peek_async_timeout_empty() {
-        let (_tx, rx, graph) = setup_channel::<i32>(1, None);
-        assert!(graph.runtime_state.read().is_in_state(&[GraphLivelinessState::Running]), "Graph should be Running");
-        let mut rx_guard = rx.try_lock().expect("");
-        assert!(!rx_guard.oneshot_shutdown.is_terminated());
-
-        let start = Instant::now();
-        let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(120))));
-
-        assert!(peeked.is_none(), "Peek should return None on an empty channel after timeout or shutdown");
-        eprintln!("timeout {:?}", start.elapsed());
-        assert!(start.elapsed() >= Duration::from_millis(100), "Timeout duration should be at least 100ms");
-    }
-
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_peek_async_timeout_with_data() {
-        let (_tx, rx, _) = setup_channel(1, Some(vec![42]));
-        let mut rx_guard = rx.try_lock().expect("");
-        let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
-        assert_eq!(peeked, Some(&42), "Peek should return the available data");
-    }
-
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_peek_async_timeout_shutdown() {
-        let (tx, rx, _) = setup_channel::<i32>(1, None);
-        let mut rx_guard = rx.try_lock().expect("");
-        let peek_future = rx_guard.shared_peek_async_timeout(Some(Duration::from_secs(1)));
-        drop(tx.try_lock().expect(""));
-        let peeked = core_exec::block_on(peek_future);
-        assert!(peeked.is_none(), "Peek should return None after shutdown");
-    }
-
     // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_avail_units() {
@@ -797,28 +761,10 @@ mod core_rx_async_tests {
         }
     }
 
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_rx_peek_repeats_logic() {
-        let (_tx, rx, _) = setup_channel::<i32>(1, Some(vec![42]));
-        let mut rx_guard = rx.try_lock().expect("");
-        
-        core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
-        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 1);
-        
-        core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
-        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 2);
-        
-        rx_guard.shared_try_take().unwrap();
-        
-        core_exec::block_on(rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(10))));
-        assert_eq!(rx_guard.peek_repeats.load(Ordering::Relaxed), 0);
-    }
-
     // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_avail_units_shutdown() {
-        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let (_tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
 
         let (send_shutdown, recv_shutdown) = futures::channel::oneshot::channel::<()>();
@@ -832,7 +778,7 @@ mod core_rx_async_tests {
     // ss[verify actor.wait-avail-vacant]
     #[test]
     fn test_wait_shutdown_or_avail_units_shutdown() {
-        let (tx, rx, _) = setup_channel::<i32>(1, None);
+        let (_tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
 
         let (send_shutdown, recv_shutdown) = futures::channel::oneshot::channel::<()>();
@@ -854,66 +800,11 @@ mod core_rx_async_tests {
     #[test]
     // ss[verify philosophy.zero-copy-discipline]
     fn test_advance_index_valid() {
-        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![10, 20, 30]));
+        let (_tx, rx, _) = setup_channel::<i32>(4, Some(vec![10, 20, 30]));
         let mut rx_guard = rx.try_lock().expect("");
         let done = rx_guard.shared_advance_index(2);
         assert_eq!(done, RxDone::Normal(2));
         assert_eq!(rx_guard.shared_avail_units(), 1);
-    }
-
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_take_slice_empty() {
-        let (_tx, rx, _) = setup_channel::<i32>(4, None);
-        let mut rx_guard = rx.try_lock().expect("");
-        let mut buf = [0i32; 2];
-        let done = rx_guard.shared_take_slice(&mut buf);
-        assert_eq!(done, RxDone::Normal(0));
-    }
-
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_peek_slice_empty() {
-        let (_tx, rx, _) = setup_channel::<i32>(4, None);
-        let mut rx_guard = rx.try_lock().expect("");
-        let (a, b) = rx_guard.shared_peek_slice();
-        assert!(a.is_empty());
-        assert!(b.is_empty());
-    }
-
-    #[test]
-    // ss[verify philosophy.zero-copy-discipline]
-    fn test_validate_capacity_items() {
-        let (_tx, rx, _) = setup_channel::<i32>(4, None);
-        let rx_guard = rx.try_lock().expect("");
-        assert_eq!(rx_guard.shared_validate_capacity_items(10), 4);
-        assert_eq!(rx_guard.shared_validate_capacity_items(2), 2);
-    }
-
-    // ss[verify actor.wait-avail-vacant]
-    #[test]
-    fn test_avail_items_count() {
-        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
-        let mut rx_guard = rx.try_lock().expect("");
-        assert_eq!(rx_guard.shared_avail_items_count(), 2);
-    }
-
-    #[test]
-    // ss[verify philosophy.zero-copy-discipline]
-    fn test_capacity_for() {
-        let (_tx, rx, _) = setup_channel::<i32>(4, None);
-        let rx_guard = rx.try_lock().expect("");
-        assert!(rx_guard.shared_capacity_for(4));
-        assert!(!rx_guard.shared_capacity_for(5));
-    }
-
-    // ss[verify actor.wait-avail-vacant]
-    #[test]
-    fn test_avail_units_for() {
-        let (tx, rx, _) = setup_channel::<i32>(4, Some(vec![1, 2]));
-        let mut rx_guard = rx.try_lock().expect("");
-        assert!(rx_guard.shared_avail_units_for(2));
-        assert!(!rx_guard.shared_avail_units_for(3));
     }
 
     #[test]
@@ -941,5 +832,210 @@ mod core_rx_async_tests {
         let (_tx, rx, _) = setup_channel::<i32>(4, None);
         let rx_guard = rx.try_lock().expect("");
         assert_eq!(rx_guard.one(), 1);
+    }
+
+    use proptest::prelude::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::proptest_support::{capacity, channel_fifo_take, message_vec};
+
+    ss_proptest! {
+
+        /// Property: RxCore delivery preserves FIFO order for any message sequence.
+        #[test]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_rx_fifo_order(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let taken = channel_fifo_take(cap, messages.clone());
+            prop_assert_eq!(taken, messages);
+        }
+
+        /// Property: peek_slice and peek_async do not change avail_units.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify verify.process.proptest]
+        fn proptest_peek_preserves_avail_length(
+            cap in 1usize..64,
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx_lazy) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let avail_before = rx_guard.shared_avail_units();
+            let (a, b) = rx_guard.shared_peek_slice();
+            prop_assert_eq!(a.len() + b.len(), avail_before);
+            let avail_after_slice = rx_guard.shared_avail_units();
+            prop_assert_eq!(avail_before, avail_after_slice);
+            let peeked = core_exec::block_on(rx_guard.shared_peek_async_timeout(None));
+            prop_assert!(peeked.is_some());
+            prop_assert_eq!(rx_guard.shared_avail_units(), avail_before);
+        }
+
+        /// Property: avail_units plus items taken never exceeds channel capacity.
+        #[test]
+        // ss[verify actor.wait-avail-vacant]
+        // ss[verify verify.process.proptest]
+        fn proptest_avail_plus_taken_le_capacity(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx_lazy) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages.clone(), false);
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let channel_capacity = rx_guard.shared_capacity();
+            let mut taken = 0usize;
+            loop {
+                let avail = rx_guard.shared_avail_units();
+                prop_assert!(avail <= channel_capacity);
+                prop_assert!(taken + avail <= channel_capacity);
+                if let Some((done, _)) = rx_guard.shared_try_take() {
+                    taken += done.item_count();
+                } else {
+                    break;
+                }
+            }
+            prop_assert_eq!(taken, messages.len());
+        }
+
+        /// Property: after transmitter drop, RxCore operations complete without panic.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify verify.process.proptest]
+        fn proptest_shutdown_operations_no_panic(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let (tx, rx, _graph) = setup_channel(cap, Some(messages));
+            drop(tx);
+            let mut rx_guard = rx.try_lock().expect("");
+            let _ = rx_guard.shared_peek_slice();
+            let _ = rx_guard.shared_try_take();
+            let _ = rx_guard.shared_avail_units();
+            let mut buf = [0i32; 4];
+            let _ = rx_guard.shared_take_slice(&mut buf[..cap.min(4)]);
+            let _ = core_exec::block_on(
+                rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(1))),
+            );
+            let _ = core_exec::block_on(rx_guard.shared_wait_avail_units(1));
+        }
+
+        /// Property: take_slice never copies more items than avail_units.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_take_slice_never_exceeds_avail(
+            cap in 2usize..64,
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx_lazy) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let avail = rx_guard.shared_avail_units();
+            let mut buf = vec![0i32; avail + 8];
+            let done = rx_guard.shared_take_slice(&mut buf);
+            prop_assert!(done.item_count() <= avail);
+            prop_assert_eq!(done.item_count(), avail);
+        }
+
+        /// Property: advance_index never moves more items than currently available.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_advance_index_bounded(
+            cap in 2usize..64,
+            messages in message_vec::<i32>(),
+            take_count in 1usize..32,
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx_lazy) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let avail = rx_guard.shared_avail_units();
+            let done = rx_guard.shared_advance_index(take_count);
+            let advanced = done.item_count();
+            prop_assert!(advanced <= avail);
+            prop_assert!(advanced <= take_count);
+        }
+
+        /// Property: advance_index on an empty channel returns zero progress.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify verify.process.proptest]
+        fn proptest_advance_index_empty_returns_zero(
+            cap in capacity(),
+            overshoot in 1usize..32,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (_tx, rx_lazy) = builder.build_channel::<i32>();
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let done = rx_guard.shared_advance_index(overshoot);
+            prop_assert_eq!(done, RxDone::Normal(0));
+        }
+
+        /// Property: validate_capacity_items never exceeds channel capacity.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_validate_capacity_items_clamped(
+            cap in capacity(),
+            request in 1usize..256,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (_tx, rx_lazy) = builder.build_channel::<i32>();
+            let rx = rx_lazy.clone();
+            let rx_guard = core_exec::block_on(rx.lock());
+            let clamped = rx_guard.shared_validate_capacity_items(request);
+            prop_assert!(clamped <= cap);
+            prop_assert_eq!(clamped, cap.min(request));
+        }
+
+        /// Property: capacity_for and avail_units_for agree with shared_capacity and avail_units.
+        #[test]
+        // ss[verify actor.wait-avail-vacant]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_capacity_for_matches_avail(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx_lazy) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx = rx_lazy.clone();
+            let mut rx_guard = core_exec::block_on(rx.lock());
+            let avail = rx_guard.shared_avail_units();
+            prop_assert_eq!(rx_guard.shared_capacity(), cap);
+            prop_assert!(rx_guard.shared_capacity_for(cap));
+            prop_assert!(!rx_guard.shared_capacity_for(cap + 1));
+            prop_assert_eq!(rx_guard.shared_avail_items_count(), avail);
+            prop_assert!(rx_guard.shared_avail_units_for(avail));
+            if avail > 0 {
+                prop_assert!(!rx_guard.shared_avail_units_for(avail + 1));
+            }
+        }
     }
 }

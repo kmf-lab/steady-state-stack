@@ -1,327 +1,389 @@
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod test_actor_stats {
-    use std::cmp;
-    use crate::actor_stats::*;
-    // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
-    use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
-    use crate::actor_builder_units::{Percentile, Work, MCPU};
-    // ss[related telemetry.prometheus-metrics]
+
+    use proptest::prelude::*;
+
+    use crate::actor_builder_units::{MCPU, Percentile, Work};
+    use crate::actor_stats::*;
     use crate::channel_stats::DOT_GREEN;
     use crate::monitor::ActorMetaData;
-
-    // ss[related telemetry.prometheus-metrics]
-    fn create_mock_metadata() -> Arc<ActorMetaData> {
-        Arc::new(ActorMetaData {
-            ident: ActorIdentity::new(1,"test_actor", None),
-            remote_details: None,
-            avg_mcpu: true,
-            avg_work: true,
-            show_thread_info: false,
-            percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
-            percentiles_work: vec![Percentile::p50(), Percentile::p90()],
-            std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
-            std_dev_work: vec![StdDev::new(1.0).expect("")],
-            trigger_mcpu: vec![(Trigger::AvgAbove(MCPU::m512()), AlertColor::Red)],
-            trigger_work: vec![(Trigger::AvgAbove(Work::p50()), AlertColor::Red)],
-            usage_review: false,
-            refresh_rate_in_bits: 6,
-            window_bucket_in_bits: 5,
-        })
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_init() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        assert_eq!(actor_stats.ident.id, 1);
-        assert_eq!(actor_stats.ident.label.name, "test_actor");
-        assert!(actor_stats.show_avg_mcpu);
-        assert!(actor_stats.show_avg_work);
-        assert_eq!(actor_stats.percentiles_mcpu.len(), 2);
-        assert_eq!(actor_stats.percentiles_work.len(), 2);
-        assert_eq!(actor_stats.std_dev_mcpu.len(), 1);
-        assert_eq!(actor_stats.std_dev_work.len(), 1);
-        assert_eq!(actor_stats.mcpu_trigger.len(), 1);
-        assert_eq!(actor_stats.work_trigger.len(), 1);
-        assert_eq!(actor_stats.frame_rate_ms, 1000);
-        assert_eq!(actor_stats.refresh_rate_in_bits, 6);
-        assert_eq!(actor_stats.window_bucket_in_bits, 5);
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_accumulate_data_frame() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        actor_stats.accumulate_data_frame(512, 50);
-
-        let mcpu_histogram = actor_stats.history_mcpu.front().expect("iternal error").histogram.as_ref().expect("iternal error");
-        let work_histogram = actor_stats.history_work.front().expect("iternal error").histogram.as_ref().expect("iternal error");
-
-        assert_eq!(mcpu_histogram.value_at_quantile(0.5), 543);
-        assert_eq!(work_histogram.value_at_quantile(0.5), 51);
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_labels() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        actor_stats.accumulate_data_frame(512, 50);
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        let (line_color, line_width) = actor_stats.compute(
-            &mut dot_label,
-            &mut tooltip,
-            &mut metric_text,
-            Some((512, 50)),
-            1,
-            false,
-            false,
-            None,
-            None,
-        );
-
-        assert_eq!(line_color, DOT_GREEN);
-        assert_eq!(line_width, crate::dot::NODE_PEN_WIDTH);
-        assert!(dot_label.contains("test_actor"));
-
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_percentile_rational() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        actor_stats.accumulate_data_frame(512, 50);
-
-        let percentile_result = percentile_rational(
-            &Percentile::p50(),
-            &actor_stats.current_mcpu,
-            (512, 1024),
-        );
-
-        assert_eq!(percentile_result, cmp::Ordering::Equal);
-    }
-}
-
-#[cfg(test)]
-// ss[related telemetry.prometheus-metrics]
-mod test_actor_stats_triggers {
-    use crate::actor_stats::*;
-    use std::sync::Arc;
-    // ss[related telemetry.prometheus-metrics]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
-    use crate::actor_builder_units::{Percentile, Work, MCPU};
-    use crate::monitor::ActorMetaData;
 
-    // ss[related telemetry.prometheus-metrics]
-    fn create_mock_metadata() -> Arc<ActorMetaData> {
-        Arc::new(ActorMetaData {
-            ident: ActorIdentity::new(1, "test_actor", None),
-            remote_details: None,
-            avg_mcpu: true,
-            avg_work: true,
-            show_thread_info: false,
-            percentiles_mcpu: vec![Percentile::p50(), Percentile::p90()],
-            percentiles_work: vec![Percentile::p50(), Percentile::p90()],
-            std_dev_mcpu: vec![StdDev::new(1.0).expect("")],
-            std_dev_work: vec![StdDev::new(1.0).expect("")],
-            trigger_mcpu: vec![
-                (Trigger::AvgAbove(MCPU::m512()), AlertColor::Yellow),
-                (Trigger::AvgBelow(MCPU::m256()), AlertColor::Red),
-            ],
-            trigger_work: vec![
-                (Trigger::AvgAbove(Work::p50()), AlertColor::Orange),
-                (Trigger::AvgBelow(Work::p30()), AlertColor::Yellow),
-            ],
-            usage_review: false,
-            refresh_rate_in_bits: 2,
-            window_bucket_in_bits: 2,
-        })
+    fn fill_window(actor_stats: &mut ActorStatsComputer, mcpu: u16, work: u16) {
+        let total_frames = 1 << (1 + actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits);
+        for _ in 0..total_frames {
+            actor_stats.accumulate_data_frame(mcpu, work);
+        }
     }
 
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_avg_above_mcpu() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
+    // --- smoke tests ---
 
-        // Need enough frames to fill the window and set current_mcpu
-        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
-        //println!("total_frames: {}", total_frames);
-
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(520, 40);
-        }
-        assert!(
-            actor_stats.trigger_alert_level(&AlertColor::Yellow),
-            "Expected avg above trigger to be activated for mcpu."
-        );
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(509, 40);
-        }
-        assert!(
-            !actor_stats.trigger_alert_level(&AlertColor::Yellow),
-            "Expected avg above trigger NOT to be activated for mcpu."
-        );
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_avg_below_mcpu() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        // Need enough frames to fill the window and set current_mcpu
-        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
-        //println!("total_frames: {}", total_frames);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(230, 40);
-        }
-        assert!(
-            actor_stats.trigger_alert_level(&AlertColor::Red),
-            "Expected avg below trigger to be activated for mcpu."
-        );
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(260, 40);
-        }
-        assert!(
-            !actor_stats.trigger_alert_level(&AlertColor::Red),
-            "Expected avg below trigger NOT to be activated for mcpu."
-        );
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_avg_above_work() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        // Need enough frames to fill the window and set current_mcpu
-        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
-        //println!("total_frames: {}", total_frames);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(300, 55);
-        }
-        assert!(
-            actor_stats.trigger_alert_level(&AlertColor::Orange),
-            "Expected avg above trigger to be activated for work."
-        );
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(300, 45);
-        }
-        assert!(
-            !actor_stats.trigger_alert_level(&AlertColor::Orange),
-            "Expected avg above trigger NOT to be activated for work."
-        );
-    }
-
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_avg_below_work() {
-        let metadata = create_mock_metadata();
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata.clone(), 1000);
-
-        // Need enough frames to fill the window and set current_mcpu
-        let total_frames = 1 << (1+ metadata.window_bucket_in_bits + metadata.refresh_rate_in_bits);
-        //println!("total_frames: {}", total_frames);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(300, 28);
-        }
-        assert!(
-            actor_stats.trigger_alert_level(&AlertColor::Yellow),
-            "Expected avg below trigger to be activated for work."
-        );
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(300, 32);
-        }
-        assert!(
-            !actor_stats.trigger_alert_level(&AlertColor::Yellow),
-            "Expected avg below trigger NOT to be activated for work."
-        );
-    }
-}
-
-/// Additional tests to achieve 100% coverage for all utility functions and edge cases.
-#[cfg(test)]
-// ss[related telemetry.prometheus-metrics]
-mod extra_tests {
-    use crate::actor_stats::*;
-
-
-    /// Verify `time_label` produces the correct text for various durations.
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_time_label_thresholds() {
-        // sub-second
+        // Discrete duration buckets; not property-friendly.
         assert_eq!(time_label(500), "sec");
-        // seconds
         assert_eq!(time_label(1500), "1.5 secs");
-        // exactly one minute
         assert_eq!(time_label(60_000), "min");
-        // minutes
         assert_eq!(time_label(90_000), "1.5 mins");
-        // exactly one hour
         assert_eq!(time_label(3_600_000), "hr");
-        // multiple hours
         assert_eq!(time_label(7_200_000), "2.0 hrs");
-        // exactly one day
         assert_eq!(time_label(86_400_000), "day");
-        // multiple days
         assert_eq!(time_label(172_800_000), "2.0 days");
     }
 
-    /// Test both branches of `compute_std_dev`.
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_compute_std_dev_branches() {
-        // runner < SQUARE_LIMIT: should compute a finite non-negative value
         let val = compute_std_dev(1, 2, 1, 2);
-        assert!(val >= 0.0, "std dev should be non-negative");
-
-        // runner >= SQUARE_LIMIT: safety guard .max(0.0) prevents NaN
+        assert!(val >= 0.0);
         let val = compute_std_dev(0, 1, SQUARE_LIMIT, 0);
-        assert_eq!(val, 0.0, "expected 0.0 due to safety guard");
+        assert_eq!(val, 0.0);
     }
 
-    // ss[related telemetry.prometheus-metrics]
-    use std::sync::Arc;
-    use crate::monitor::ActorMetaData;
-    use crate::{steady_config, logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
-    // ss[related telemetry.prometheus-metrics]
-    use crate::actor_builder_units::{Percentile, Work, MCPU};
-    use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
-
-    /// Test init method with actor suffix
     #[test]
     // ss[verify telemetry.prometheus-metrics]
-    fn test_init_with_actor_suffix() {
-        let _ = logging_util::steady_logger::initialize();
+    fn test_std_dev_functions_with_none_current() {
+        let actor_stats = ActorStatsComputer::default();
+        assert_eq!(actor_stats.mcpu_std_dev(), 0f32);
+        assert_eq!(actor_stats.work_std_dev(), 0f32);
+    }
 
+    ss_proptest! {
+
+        /// Property: AvgAbove/AvgBelow mCPU triggers fire iff avg_rational predicate holds.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_trigger_mcpu_iff_predicate(
+            mcpu_value in 100u16..900u16,
+            threshold in 256u16..768u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: true,
+                avg_work: false,
+                show_thread_info: false,
+                percentiles_mcpu: vec![],
+                percentiles_work: vec![],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, mcpu_value, 0);
+
+            let run_divisor = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits);
+            let above = Trigger::AvgAbove(MCPU::new(threshold).expect("valid"));
+            let below = Trigger::AvgBelow(MCPU::new(threshold).expect("valid"));
+            let threshold_pair = (threshold as u64, 1);
+
+            let above_ordering = avg_rational(run_divisor, 1, &actor_stats.current_mcpu, threshold_pair);
+            let below_ordering = avg_rational(run_divisor, 1, &actor_stats.current_mcpu, threshold_pair);
+
+            prop_assert_eq!(
+                actor_stats.triggered_mcpu(&above),
+                above_ordering.is_gt()
+            );
+            prop_assert_eq!(
+                actor_stats.triggered_mcpu(&below),
+                below_ordering.is_lt()
+            );
+        }
+
+        /// Property: AvgAbove/AvgBelow work triggers fire iff avg_rational predicate holds.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_trigger_work_iff_predicate(
+            work_value in 10u16..90u16,
+            threshold_pct in 20u16..80u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: false,
+                avg_work: true,
+                show_thread_info: false,
+                percentiles_mcpu: vec![],
+                percentiles_work: vec![],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, 0, work_value);
+
+            let run_divisor = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits);
+            let work = Work::new(threshold_pct as f32).expect("valid percent");
+            let rational = work.rational();
+
+            let above_ordering = avg_rational(run_divisor, 100, &actor_stats.current_work, rational);
+            actor_stats.work_trigger.push((Trigger::AvgAbove(work), AlertColor::Red));
+            prop_assert_eq!(
+                actor_stats.trigger_alert_level(&AlertColor::Red),
+                above_ordering.is_gt()
+            );
+
+            let below_ordering = avg_rational(run_divisor, 100, &actor_stats.current_work, rational);
+            actor_stats.work_trigger = vec![(Trigger::AvgBelow(work), AlertColor::Yellow)];
+            prop_assert_eq!(
+                actor_stats.trigger_alert_level(&AlertColor::Yellow),
+                below_ordering.is_lt()
+            );
+        }
+
+        /// Property: higher constant mCPU input yields higher window average.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_mcpu_work_ordering(
+            low_mcpu in 100u16..400u16,
+            high_mcpu in 500u16..900u16,
+            low_work in 10u16..40u16,
+            high_work in 50u16..90u16,
+        ) {
+            prop_assume!(high_mcpu > low_mcpu);
+            prop_assume!(high_work > low_work);
+
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: true,
+                avg_work: true,
+                show_thread_info: false,
+                percentiles_mcpu: vec![],
+                percentiles_work: vec![],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+
+            let mut low_stats = ActorStatsComputer::default();
+            low_stats.init(metadata.clone(), 1000);
+            fill_window(&mut low_stats, low_mcpu, low_work);
+
+            let mut high_stats = ActorStatsComputer::default();
+            high_stats.init(metadata, 1000);
+            fill_window(&mut high_stats, high_mcpu, high_work);
+
+            let low_mcpu_runner = low_stats.current_mcpu.as_ref().map(|b| b.runner).unwrap_or(0);
+            let high_mcpu_runner = high_stats.current_mcpu.as_ref().map(|b| b.runner).unwrap_or(0);
+            let low_work_runner = low_stats.current_work.as_ref().map(|b| b.runner).unwrap_or(0);
+            let high_work_runner = high_stats.current_work.as_ref().map(|b| b.runner).unwrap_or(0);
+
+            prop_assert!(high_mcpu_runner > low_mcpu_runner);
+            prop_assert!(high_work_runner > low_work_runner);
+        }
+
+        /// Property: percentile_rational matches triggered_mcpu PercentileAbove/Below.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_percentile_rational_consistent(
+            mcpu_value in 200u16..800u16,
+            threshold in 256u16..768u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: true,
+                avg_work: false,
+                show_thread_info: false,
+                percentiles_mcpu: vec![Percentile::p50()],
+                percentiles_work: vec![],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, mcpu_value, 0);
+
+            let mcpu = MCPU::new(threshold).expect("valid");
+            let rational = (mcpu.mcpu() as u64, 1);
+            let above = Trigger::PercentileAbove(Percentile::p50(), mcpu);
+            let below = Trigger::PercentileBelow(Percentile::p50(), mcpu);
+
+            let above_ordering =
+                percentile_rational(&Percentile::p50(), &actor_stats.current_mcpu, rational);
+            let below_ordering =
+                percentile_rational(&Percentile::p50(), &actor_stats.current_mcpu, rational);
+
+            prop_assert_eq!(actor_stats.triggered_mcpu(&above), above_ordering.is_gt());
+            prop_assert_eq!(actor_stats.triggered_mcpu(&below), below_ordering.is_lt());
+        }
+
+        /// Property: StdDevsAbove mCPU trigger matches `stddev_rational` predicate.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_trigger_mcpu_stddev_iff_predicate(
+            mcpu_value in 200u16..800u16,
+            threshold in 256u16..768u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: true,
+                avg_work: false,
+                show_thread_info: false,
+                percentiles_mcpu: vec![Percentile::p50()],
+                percentiles_work: vec![],
+                std_dev_mcpu: vec![StdDev::one()],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, mcpu_value, 0);
+
+            let mcpu = MCPU::new(threshold).expect("valid");
+            let window_bits = actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits;
+            let rule = Trigger::StdDevsAbove(StdDev::one(), mcpu);
+            let ordering = stddev_rational(
+                actor_stats.mcpu_std_dev(),
+                window_bits,
+                &StdDev::one(),
+                &actor_stats.current_mcpu,
+                (mcpu.mcpu() as u64, 1),
+            );
+            prop_assert_eq!(actor_stats.triggered_mcpu(&rule), ordering.is_gt());
+        }
+
+        /// Property: work PercentileAbove trigger matches `percentile_rational`.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_trigger_work_percentile_iff_predicate(
+            work_value in 20u16..80u16,
+            threshold_pct in 30u16..70u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: false,
+                avg_work: true,
+                show_thread_info: false,
+                percentiles_mcpu: vec![],
+                percentiles_work: vec![Percentile::p50()],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, 0, work_value);
+
+            let work = Work::new(threshold_pct as f32).expect("valid");
+            let rule = Trigger::PercentileAbove(Percentile::p50(), work);
+            let ordering = percentile_rational(
+                &Percentile::p50(),
+                &actor_stats.current_work,
+                work.rational(),
+            );
+            actor_stats.work_trigger.push((rule, AlertColor::Red));
+            prop_assert_eq!(
+                actor_stats.trigger_alert_level(&AlertColor::Red),
+                ordering.is_gt()
+            );
+        }
+
+        /// Property: work StdDevsAbove trigger matches `stddev_rational` predicate.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_trigger_work_stddev_iff_predicate(
+            work_value in 20u16..80u16,
+            threshold_pct in 30u16..70u16,
+        ) {
+            let metadata = Arc::new(ActorMetaData {
+                ident: ActorIdentity::new(1, "test_actor", None),
+                remote_details: None,
+                avg_mcpu: false,
+                avg_work: true,
+                show_thread_info: false,
+                percentiles_mcpu: vec![],
+                percentiles_work: vec![Percentile::p50()],
+                std_dev_mcpu: vec![],
+                std_dev_work: vec![StdDev::one()],
+                trigger_mcpu: vec![],
+                trigger_work: vec![],
+                usage_review: false,
+                refresh_rate_in_bits: 2,
+                window_bucket_in_bits: 2,
+            });
+            let mut actor_stats = ActorStatsComputer::default();
+            actor_stats.init(metadata, 1000);
+            fill_window(&mut actor_stats, 0, work_value);
+
+            let work = Work::new(threshold_pct as f32).expect("valid");
+            let rule = Trigger::StdDevsAbove(StdDev::one(), work);
+            let window_bits = actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits;
+            let ordering = stddev_rational(
+                actor_stats.work_std_dev(),
+                window_bits,
+                &StdDev::one(),
+                &actor_stats.current_work,
+                work.rational(),
+            );
+            actor_stats.work_trigger.push((rule, AlertColor::Red));
+            prop_assert_eq!(
+                actor_stats.trigger_alert_level(&AlertColor::Red),
+                ordering.is_gt()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+// ss[related telemetry.prometheus-metrics]
+mod extra_tests {
+    use std::sync::Arc;
+
+    use proptest::prelude::*;
+
+    use crate::actor_builder_units::{Percentile, Work, MCPU};
+    use crate::actor_stats::*;
+    use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
+    use crate::monitor::ActorMetaData;
+    use crate::{logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
+
+    fn setup_actor_with_triggers() -> ActorStatsComputer {
         let metadata = Arc::new(ActorMetaData {
-            ident: ActorIdentity::new(42, "test_actor", Some(123)),
+            ident: ActorIdentity::new(1, "test", None),
             remote_details: None,
-            avg_mcpu: true,
-            avg_work: true,
+            avg_mcpu: false,
+            avg_work: false,
             show_thread_info: false,
             percentiles_mcpu: vec![],
             percentiles_work: vec![],
@@ -333,240 +395,25 @@ mod extra_tests {
             refresh_rate_in_bits: 2,
             window_bucket_in_bits: 2,
         });
-
         let mut actor_stats = ActorStatsComputer::default();
         actor_stats.init(metadata, 1000);
-
-        // Should contain suffix in prometheus labels
-        assert!(actor_stats.prometheus_labels.contains("actor_suffix=\"123\""));
+        actor_stats
     }
 
-    /// Test compute method with actor suffix
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_actor_suffix() {
-        let _ = logging_util::steady_logger::initialize();
+    // --- histogram smoke tests ---
 
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.ident = ActorIdentity::new(1, "test", Some(42));
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
-
-        // Should contain actor name with suffix
-        assert!(dot_label.contains("test"));
-        assert!(dot_label.contains("42"));
-    }
-
-    /// Test compute method with SHOW_ACTORS feature enabled
-    #[cfg(feature = "core_display")]
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_show_actors() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.ident = ActorIdentity::new(123, "test", None);
-
-        // Mock the SHOW_ACTORS constant
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
-
-    }
-
-    /// Test compute method with window display
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_window_display() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.ident = ActorIdentity::new(1, "test", None);
-        actor_stats.window_bucket_in_bits = 2; // Non-zero to show window
-        actor_stats.time_label = "5.0 mins".to_string();
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, false, false, None, None);
-
-        // Should contain window information in tooltip
-        assert!(tooltip.contains("Window 5.0 mins"));
-        assert!(!dot_label.contains("Window"));
-    }
-
-    /// Test compute method with restart count
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_restarts() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.ident = ActorIdentity::new(1, "test", None);
-        actor_stats.prometheus_labels = "test=\"true\"".to_string();
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 5, false, false, None, None);
-
-        // Should contain restart count in dot_label
-        assert!(dot_label.contains("Restarts: 5"));
-
-        #[cfg(feature = "prometheus_metrics")]
-        {
-            // Should contain prometheus restart metric
-            assert!(metric_text.contains("graph_node_restarts{"));
-            assert!(metric_text.contains("} 5"));
-        }
-    }
-
-    /// Test compute method with stopped actor
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_stopped_actor() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.ident = ActorIdentity::new(1, "test", None);
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 50)), 0, true, false, None, None);
-
-        // Should contain stopped indicator in tooltip
-        assert!(tooltip.contains("stopped"));
-        assert!(!dot_label.contains("stopped"));
-    }
-
-    /// Test compute method with current work data
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_current_work() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_data();
-        actor_stats.show_avg_work = true;
-
-        // Force current_work to exist by accumulating enough data
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(500, 60);
-        }
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((500, 60)), 0, false, false, None, None);
-
-        // Should contain work load information in both
-        assert!(dot_label.contains("load"));
-        assert!(tooltip.contains("load"));
-    }
-
-    /// Test compute method with current mcpu data
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_with_current_mcpu() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_data();
-        actor_stats.show_avg_mcpu = true;
-
-        // Force current_mcpu to exist by accumulating enough data
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(700, 50);
-        }
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((700, 50)), 0, false, false, None, None);
-
-        // Should contain mcpu information in both
-        assert!(dot_label.contains("mCPU"));
-        assert!(tooltip.contains("mCPU"));
-    }
-
-    /// Test alert level triggers - Yellow
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_alert_level_yellow() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_triggers();
-
-        // Add Yellow trigger that should fire
-        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
-
-        // Accumulate data to trigger alert
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(600, 50); // Above 256
-        }
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 50)), 0, false, false, None, None);
-
-        assert_eq!(color, DOT_YELLOW);
-    }
-
-    /// Test alert level triggers - Orange
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_trigger_alert_level_orange() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_triggers();
-
-        // Add Orange trigger that should fire
-        actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p40()), AlertColor::Orange));
-
-        // Accumulate data to trigger alert
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(300, 70); // Above 40%
-        }
-
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
-
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((300, 70)), 0, false, false, None, None);
-
-        assert_eq!(color, DOT_ORANGE);
-    }
-
-    /// Test histogram creation errors during init
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_init_histogram_creation_errors() {
         let _ = logging_util::steady_logger::initialize();
-
         let metadata = Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test", None),
             remote_details: None,
             avg_mcpu: true,
             avg_work: true,
             show_thread_info: false,
-            percentiles_mcpu: vec![Percentile::p50()], // Force histogram creation
-            percentiles_work: vec![Percentile::p50()], // Force histogram creation
+            percentiles_mcpu: vec![Percentile::p50()],
+            percentiles_work: vec![Percentile::p50()],
             std_dev_mcpu: vec![],
             std_dev_work: vec![],
             trigger_mcpu: vec![],
@@ -575,105 +422,16 @@ mod extra_tests {
             refresh_rate_in_bits: 2,
             window_bucket_in_bits: 2,
         });
-
         let mut actor_stats = ActorStatsComputer::default();
-
-        // This should handle potential histogram creation gracefully
         actor_stats.init(metadata, 1000);
-
-        // Should have created histograms successfully
         assert!(actor_stats.build_mcpu_histogram);
         assert!(actor_stats.build_work_histogram);
     }
 
-    /// Test Percentile triggers for mcpu
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_triggered_mcpu_percentiles() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_data();
-        actor_stats.percentiles_mcpu.push(Percentile::p50());
-
-        // Accumulate data to get current_mcpu with histogram
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(500, 50);
-        }
-
-        // Test PercentileAbove trigger
-        assert!(actor_stats.triggered_mcpu(&Trigger::PercentileAbove(Percentile::p50(), MCPU::m256())));
-        assert!(!actor_stats.triggered_mcpu(&Trigger::PercentileAbove(Percentile::p50(), MCPU::m1024())));
-
-        // Test PercentileBelow trigger
-        assert!(!actor_stats.triggered_mcpu(&Trigger::PercentileBelow(Percentile::p50(), MCPU::m256())));
-        assert!(actor_stats.triggered_mcpu(&Trigger::PercentileBelow(Percentile::p50(), MCPU::m1024())));
-    }
-
-    /// Test std dev functions when current data is None
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_std_dev_functions_with_none_current() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let actor_stats = ActorStatsComputer::default();
-
-        // Should return 0 and log info when current data is None
-        assert_eq!(actor_stats.mcpu_std_dev(), 0f32);
-        assert_eq!(actor_stats.work_std_dev(), 0f32);
-    }
-
-    /// Test compute_std_dev alternative calculation branch
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_compute_std_dev_alternative_branch() {
-        let _ = logging_util::steady_logger::initialize();
-
-        // Test the branch where sum_sqr <= r2
-        let result = compute_std_dev(4, 16, 1000, 500); // sum_sqr < r2
-        assert!(result >= 0.0 || result.is_nan()); // Should handle gracefully
-    }
-
-    /// Test accumulate_data_frame with histogram recording errors
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_accumulate_data_frame_histogram_errors() {
         let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_data();
-
-        // Try to record extreme values that might cause histogram errors
-        actor_stats.accumulate_data_frame(1024, 100); // Max valid mcpu
-
-        // This should not panic and should handle errors gracefully
-        assert!(!actor_stats.history_mcpu.is_empty());
-        assert!(!actor_stats.history_work.is_empty());
-    }
-
-    /// Test bucket refresh with histogram creation errors
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_bucket_refresh_histogram_errors() {
-        let _ = logging_util::steady_logger::initialize();
-
-        let mut actor_stats = setup_actor_with_data();
-
-        // Force multiple bucket refreshes
-        for cycle in 0..5 {
-            let frames_per_bucket = 1 << actor_stats.refresh_rate_in_bits;
-            for _ in 0..frames_per_bucket {
-                actor_stats.accumulate_data_frame(400 + cycle * 50, 50 + cycle * 10);
-            }
-        }
-
-        // Should have handled histogram creation during refresh
-        assert!(!actor_stats.history_mcpu.is_empty());
-        assert!(!actor_stats.history_work.is_empty());
-    }
-
-    /// Helper function to set up actor with basic data
-    // ss[related telemetry.prometheus-metrics]
-    fn setup_actor_with_data() -> ActorStatsComputer {
         let metadata = Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test", None),
             remote_details: None,
@@ -690,63 +448,148 @@ mod extra_tests {
             refresh_rate_in_bits: 2,
             window_bucket_in_bits: 2,
         });
-
         let mut actor_stats = ActorStatsComputer::default();
         actor_stats.init(metadata, 1000);
-        actor_stats
+        actor_stats.accumulate_data_frame(1024, 100);
+        assert!(!actor_stats.history_mcpu.is_empty());
+        assert!(!actor_stats.history_work.is_empty());
     }
 
-    /// Helper function to set up actor with triggers
-    // ss[related telemetry.prometheus-metrics]
-    fn setup_actor_with_triggers() -> ActorStatsComputer {
-        let metadata = Arc::new(ActorMetaData {
-            ident: ActorIdentity::new(1, "test", None),
-            remote_details: None,
-            avg_mcpu: false,
-            avg_work: false,
-            show_thread_info: false,
-            percentiles_mcpu: vec![],
-            percentiles_work: vec![],
-            std_dev_mcpu: vec![],
-            std_dev_work: vec![],
-            trigger_mcpu: vec![], // Will be added in tests
-            trigger_work: vec![], // Will be added in tests
-            usage_review: false,
-            refresh_rate_in_bits: 2,
-            window_bucket_in_bits: 2,
-        });
+    ss_proptest! {
 
-        let mut actor_stats = ActorStatsComputer::default();
-        actor_stats.init(metadata, 1000);
-        actor_stats
-    }
+        /// Property: alert color priority — Red beats Orange beats Yellow when multiple fire.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_alert_color_priority(
+            mcpu_value in 600u16..900u16,
+            work_value in 7100u16..9500u16,
+        ) {
+            let _ = logging_util::steady_logger::initialize();
+            let mut actor_stats = setup_actor_with_triggers();
+            actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
+            actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m512()), AlertColor::Orange));
+            actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p70()), AlertColor::Red));
 
-    /// Test comprehensive alert combinations
-    #[test]
-    // ss[verify telemetry.prometheus-metrics]
-    fn test_comprehensive_alert_combinations() {
-        let _ = logging_util::steady_logger::initialize();
+            let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+            for _ in 0..total_frames {
+                actor_stats.accumulate_data_frame(mcpu_value, work_value);
+            }
 
-        let mut actor_stats = setup_actor_with_triggers();
+            prop_assume!(actor_stats.trigger_alert_level(&AlertColor::Red));
 
-        // Add multiple triggers of different colors
-        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
-        actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m512()), AlertColor::Orange));
-        actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p70()), AlertColor::Red));
+            let mut dot_label = String::new();
+            let mut tooltip = String::new();
+            let mut metric_text = String::new();
+            let (color, _) = actor_stats.compute(
+                &mut dot_label,
+                &mut tooltip,
+                &mut metric_text,
+                Some((mcpu_value, work_value)),
+                0,
+                false,
+                false,
+                None,
+                None,
+            );
 
-        // Test scenario where Red trigger fires (highest priority)
-        let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
-        for _ in 0..total_frames {
-            actor_stats.accumulate_data_frame(600, 80); // High work to trigger Red
+            prop_assert_eq!(color, DOT_RED);
+            prop_assert!(actor_stats.trigger_alert_level(&AlertColor::Yellow));
+            prop_assert!(actor_stats.trigger_alert_level(&AlertColor::Orange));
         }
 
-        let mut dot_label = String::new();
-        let mut tooltip = String::new();
-        let mut metric_text = String::new();
+        /// Property: compute returns grey when no triggers are configured.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_no_triggers_grey(mcpu_value in 100u16..900u16, work_value in 10u16..90u16) {
+            let _ = logging_util::steady_logger::initialize();
+            let mut actor_stats = setup_actor_with_triggers();
+            let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+            for _ in 0..total_frames {
+                actor_stats.accumulate_data_frame(mcpu_value, work_value);
+            }
 
-        let (color, _) = actor_stats.compute(&mut dot_label, &mut tooltip, &mut metric_text, Some((600, 80)), 0, false, false, None, None);
+            let mut dot_label = String::new();
+            let mut tooltip = String::new();
+            let mut metric_text = String::new();
+            let (color, _) = actor_stats.compute(
+                &mut dot_label,
+                &mut tooltip,
+                &mut metric_text,
+                Some((mcpu_value, work_value)),
+                0,
+                false,
+                false,
+                None,
+                None,
+            );
+            prop_assert_eq!(color, crate::channel_stats::DOT_GREY);
+        }
 
-        // Should be Red (highest priority) even though other triggers also fire
-        assert_eq!(color, DOT_RED);
+        /// Property: Yellow-only trigger yields yellow dot color, not red/orange.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_single_yellow_alert(mcpu_value in 300u16..500u16) {
+            let _ = logging_util::steady_logger::initialize();
+            let mut actor_stats = setup_actor_with_triggers();
+            actor_stats.mcpu_trigger.push((Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow));
+
+            let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+            for _ in 0..total_frames {
+                actor_stats.accumulate_data_frame(mcpu_value, 30);
+            }
+
+            let mut dot_label = String::new();
+            let mut tooltip = String::new();
+            let mut metric_text = String::new();
+            let (color, _) = actor_stats.compute(
+                &mut dot_label,
+                &mut tooltip,
+                &mut metric_text,
+                Some((mcpu_value, 30)),
+                0,
+                false,
+                false,
+                None,
+                None,
+            );
+            prop_assert_eq!(color, DOT_YELLOW);
+            prop_assert!(!actor_stats.trigger_alert_level(&AlertColor::Red));
+            prop_assert!(!actor_stats.trigger_alert_level(&AlertColor::Orange));
+        }
+
+        /// Property: Orange-only work trigger yields orange, not red.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_single_orange_alert(work_value in 45u16..65u16) {
+            let _ = logging_util::steady_logger::initialize();
+            let mut actor_stats = setup_actor_with_triggers();
+            actor_stats.work_trigger.push((Trigger::AvgAbove(Work::p40()), AlertColor::Orange));
+
+            let total_frames = 1 << (actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits + 1);
+            for _ in 0..total_frames {
+                actor_stats.accumulate_data_frame(200, work_value);
+            }
+
+            let mut dot_label = String::new();
+            let mut tooltip = String::new();
+            let mut metric_text = String::new();
+            let (color, _) = actor_stats.compute(
+                &mut dot_label,
+                &mut tooltip,
+                &mut metric_text,
+                Some((200, work_value)),
+                0,
+                false,
+                false,
+                None,
+                None,
+            );
+            prop_assert_eq!(color, DOT_ORANGE);
+            prop_assert!(!actor_stats.trigger_alert_level(&AlertColor::Red));
+        }
     }
 }

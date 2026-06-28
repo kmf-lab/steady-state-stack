@@ -10,6 +10,7 @@ use log::*;
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem, StreamRx, StreamTx};
 use crate::graph_testing::SideChannelResponder;
 use crate::steady_actor::{BlockingCallFuture, SendOutcome};
+use crate::steady_actor_core::SteadyActorCore;
 // ss[related testing.sim-producer-close]
 use crate::core_rx::RxCore;
 use crate::core_tx::TxCore;
@@ -541,8 +542,12 @@ impl SteadyActor for TestActor {
     async fn peek_async<'a, T: RxCore>(&'a self, _this: &'a mut T) -> Option<T::MsgPeek<'a>> { None }
     // ss[related testing.sim-producer-close]
     fn send_iter_until_full<T, I: Iterator<Item = T>>(&mut self, _this: &mut Tx<T>, _iter: I) -> usize { 0 }
-    fn try_send<T: TxCore>(&mut self, _this: &mut T, _msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
-    fn try_take<T: RxCore>(&mut self, _this: &mut T) -> Option<T::MsgOut> { None }
+    fn try_send<T: TxCore>(&mut self, this: &mut T, msg: T::MsgIn<'_>) -> SendOutcome<T::MsgOut> {
+        SteadyActorCore::try_send(this, msg)
+    }
+    fn try_take<T: RxCore>(&mut self, this: &mut T) -> Option<T::MsgOut> {
+        SteadyActorCore::try_take(this)
+    }
     // ss[related testing.sim-producer-close]
     fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }
     fn vacant_units<T: TxCore>(&self, _this: &mut T) -> T::MsgSize { unimplemented!() }
@@ -569,6 +574,11 @@ impl SteadyActor for TestActor {
     fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
     fn set_dot_display_text(&mut self, _text: Option<&str>) {}
 }
+
+#[cfg(test)]
+// ss[related testing.sim-producer-close]
+#[path = "simulate_edge_proptest.rs"]
+mod simulate_edge_proptest;
 
 #[cfg(test)]
 // ss[related testing.sim-producer-close]

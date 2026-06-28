@@ -1267,4 +1267,56 @@ mod handle_request_logic_tests {
             let _ = futures::executor::block_on(handle_request(stream, state.clone()));
         }
     }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn test_handle_request_graph_dot_with_payload() {
+        let state = Arc::new(RwLock::new(MetricState {
+            doc: Bytes::from_static(b"digraph G { a -> b }"),
+            metric: Bytes::new(),
+            config: Bytes::new(),
+            last_disk_write: Arc::new(AtomicU64::new(0)),
+            start_time: Instant::now(),
+        }));
+        let stream = MockStream::new("GET /graph.dot HTTP/1.1\r\n\r\n");
+        futures::executor::block_on(handle_request(stream, state)).expect("graph.dot response");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn test_bind_to_port_invalid_address_returns_none() {
+        let listener = bind_to_port("not-a-valid-host:0");
+        assert!(listener.as_ref().is_none());
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(feature = "prometheus_metrics")]
+    fn test_handle_request_metrics_with_payload() {
+        let state = Arc::new(RwLock::new(MetricState {
+            doc: Bytes::from_static(b"digraph {}"),
+            metric: Bytes::from_static(b"steady_up 1\n"),
+            config: Bytes::from_static(b"{\"refresh_rate_ms\":40}"),
+            last_disk_write: Arc::new(AtomicU64::new(0)),
+            start_time: Instant::now(),
+        }));
+        let stream = MockStream::new("GET /metrics HTTP/1.1\r\n\r\n");
+        futures::executor::block_on(handle_request(stream, state)).expect("metrics response");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn test_async_write_all_writes_bytes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("graph.dot");
+        let file = std::fs::File::create(&path).expect("create file");
+        futures::executor::block_on(async_write_all(
+            BytesMut::from(&b"graph contents"[..]),
+            true,
+            file,
+        ))
+        .expect("write");
+        let written = std::fs::read_to_string(path).expect("read back");
+        assert_eq!(written, "graph contents");
+    }
 }

@@ -396,6 +396,32 @@ mod aeron_subscribe_graph_tests {
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
     }
+
+    /// Internal subscribe path with closed ingress: shutdown during driver wait exits promptly.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_internal_closed_ingress_stops_without_driver() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(256);
+        let (tx, _rx) = cb.build_stream::<StreamIngress>(64);
+        tx.testing_close();
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        tx.build_aqueduct(
+            AqueTech::Aeron(channel, 51),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeClosedIngress")
+                .never_simulate(true),
+            SoloAct,
+        );
+        assert!(graph.start_with_timeout(Duration::from_secs(10)));
+        task::sleep(Duration::from_millis(50)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
+    }
 }
 
 // Live Aeron pub/sub E2E tests live in `core/tests/aeron_integration_*.rs`.

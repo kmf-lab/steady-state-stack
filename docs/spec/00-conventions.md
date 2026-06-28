@@ -57,7 +57,7 @@ Document waivers in this file or in the requirement’s **Acceptance** section:
 
 **Active Tier-2 integration waivers (rust-core):** `distributed.aeron-uri`, `distributed.aqueduct-stream`, `distributed.subscribe-publish`, `distributed.media-driver-testing` — verified by Gate C (`scripts/run-aeron-release-signoff.sh`, full matrix on self-hosted runner with `aeronmd`) plus unit/contract tests; soft-skip only when driver absent and `SS_AERON_REQUIRED` unset. **`platform.aeron-out-of-scope-coverage`** remains waived for llvm-cov line % on live driver paths (Gate B excludes live suite). `stream.control-payload` is Tier 1 and verified in channel/serialize unit tests.
 
-**Active Tier-1 process waivers:** `verify.process.proptest`, `verify.process.fuzz`, `verify.process.mutants`, `verify.process.llvm-cov`, `verify.process.tracey-gate` — documented in `12-verification-stack.md`; `verify.process.nextest` covered by CI workflow.
+**Active Tier-1 process waivers:** `verify.process.fuzz`, `verify.process.mutants`, `verify.process.llvm-cov`, `verify.process.tracey-gate` — documented in `12-verification-stack.md`; `verify.process.nextest` and `verify.process.proptest` covered by CI workflow.
 | **temporary** | Tier 1 not yet testable | Issue URL, target release |
 | **process** | `12-verification-stack` (proptest/fuzz) | Spec defines target; impl follow-on |
 

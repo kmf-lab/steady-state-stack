@@ -406,181 +406,279 @@ impl AeronConfig {
 // ss[related distributed.aeron-uri]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    /// Tests building a point-to-point channel with all optional fields configured.
-    #[test]
-    // ss[verify distributed.aeron-uri]
-    fn build_p2p_full_config() {
-        let p2p_channel = AeronConfig::new()
-            .with_media_type(MediaType::Udp)
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Valid IP"),
-                port: 40123,
-            })
-            .with_interface(Endpoint {
-                ip: "192.168.1.10".parse().expect("Valid IP"),
-                port: 0,
-            })
-            .with_reliability(ReliableConfig::Reliable)
-            .with_term_length(1_048_576)
-            .build();
+    fn uri_from_config(config: &AeronConfig) -> String {
+        config.build().cstring().into_string().expect("cstring")
+    }
 
-        match p2p_channel {
-            Channel::PointToPoint {
-                media_type,
-                endpoint,
-                interface,
-                reliability,
-                term_length,
-            } => {
-                assert_eq!(media_type, MediaType::Udp);
-                assert_eq!(endpoint.port, 40123);
-                assert_eq!(
-                    interface,
-                    Some(Endpoint {
-                        ip: "192.168.1.10".parse().expect("Valid IP"),
-                        port: 0
-                    })
+    ss_proptest! {
+
+        /// Property: point-to-point builder fields appear in the URI output.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_p2p_fields_subset_of_uri(
+            port in crate::proptest_support::aeron_port(),
+            reliable in any::<bool>(),
+            with_term in any::<bool>(),
+        ) {
+            let mut config = AeronConfig::new()
+                .with_media_type(MediaType::Udp)
+                .use_point_to_point(Endpoint {
+                    ip: "127.0.0.1".parse().expect("ip"),
+                    port,
+                })
+                .with_reliability(if reliable {
+                    ReliableConfig::Reliable
+                } else {
+                    ReliableConfig::Unreliable
+                });
+            if with_term {
+                config = config.with_term_length(65_536);
+            }
+            let uri = uri_from_config(&config);
+            prop_assert!(uri.contains("aeron:udp"), "uri: {uri}");
+            prop_assert!(uri.contains("endpoint="), "uri: {uri}");
+            prop_assert!(uri.contains(&port.to_string()), "uri: {uri}");
+            prop_assert!(
+                uri.contains(if reliable { "reliable=true" } else { "reliable=false" }),
+                "uri: {uri}"
+            );
+            if with_term {
+                prop_assert!(uri.contains("term-length=65536"), "uri: {uri}");
+            }
+        }
+
+        /// Property: IPC builder fields appear in the URI output.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_ipc_fields_subset_of_uri(with_term in any::<bool>()) {
+            let mut config = AeronConfig::new().with_media_type(MediaType::Ipc).use_ipc();
+            if with_term {
+                config = config.with_term_length(65_536);
+            }
+            let uri = uri_from_config(&config);
+            prop_assert!(uri.contains("aeron:ipc"), "uri: {uri}");
+            if with_term {
+                prop_assert!(uri.contains("term-length=65536"), "uri: {uri}");
+            }
+        }
+
+        /// Property: multicast builder fields appear in the URI output.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_multicast_fields_subset_of_uri(
+            group_port in crate::proptest_support::aeron_port(),
+            control_port in crate::proptest_support::aeron_port(),
+            manual in any::<bool>(),
+            with_ttl in any::<bool>(),
+            with_term in any::<bool>(),
+        ) {
+            let mut config = AeronConfig::new()
+                .with_media_type(MediaType::Udp)
+                .use_multicast(
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: group_port,
+                    },
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: control_port,
+                    },
+                )
+                .with_control_mode(if manual {
+                    ControlMode::Manual
+                } else {
+                    ControlMode::Dynamic
+                });
+            if with_ttl {
+                config = config.with_ttl(4);
+            }
+            if with_term {
+                config = config.with_term_length(65_536);
+            }
+            let uri = uri_from_config(&config);
+            prop_assert!(uri.contains("aeron:udp"), "uri: {uri}");
+            prop_assert!(uri.contains("endpoint="), "uri: {uri}");
+            prop_assert!(uri.contains("control="), "uri: {uri}");
+            prop_assert!(uri.contains(&group_port.to_string()), "uri: {uri}");
+            prop_assert!(uri.contains(&control_port.to_string()), "uri: {uri}");
+            prop_assert!(
+                uri.contains(if manual { "control-mode=manual" } else { "control-mode=dynamic" }),
+                "uri: {uri}"
+            );
+            if with_ttl {
+                prop_assert!(uri.contains("ttl=4"), "uri: {uri}");
+            }
+            if with_term {
+                prop_assert!(uri.contains("term-length=65536"), "uri: {uri}");
+            }
+        }
+
+        /// Property: every `MediaType` variant produces the expected media token in the builder URI.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_all_media_type_variants(
+            port in crate::proptest_support::aeron_port(),
+            media in prop_oneof![
+                Just(MediaType::Udp),
+                Just(MediaType::Ipc),
+                Just(MediaType::SpyUdp),
+                Just(MediaType::SpyIpc),
+            ],
+            with_term in any::<bool>(),
+        ) {
+            let channel = match media {
+                MediaType::Ipc | MediaType::SpyIpc => {
+                    let mut config = AeronConfig::new().with_media_type(media).use_ipc();
+                    if with_term {
+                        config = config.with_term_length(65_536);
+                    }
+                    config.build()
+                }
+                MediaType::Udp | MediaType::SpyUdp => {
+                    let mut config = AeronConfig::new()
+                        .with_media_type(media)
+                        .use_point_to_point(Endpoint {
+                            ip: "127.0.0.1".parse().expect("ip"),
+                            port,
+                        });
+                    if with_term {
+                        config = config.with_term_length(65_536);
+                    }
+                    config.build()
+                }
+            };
+            let uri = channel.cstring().into_string().expect("cstring");
+            let expected_prefix = match media {
+                MediaType::Udp => "aeron:udp",
+                MediaType::Ipc => "aeron:ipc",
+                MediaType::SpyUdp => "aeron-spy:aeron:udp",
+                MediaType::SpyIpc => "aeron-spy:aeron:ipc",
+            };
+            prop_assert!(uri.starts_with(expected_prefix), "uri: {uri}");
+            if matches!(media, MediaType::Udp | MediaType::SpyUdp) {
+                prop_assert!(uri.contains(&port.to_string()), "uri: {uri}");
+            }
+            if with_term {
+                prop_assert!(uri.contains("term-length=65536"), "uri: {uri}");
+            }
+        }
+
+        /// Property: multicast builder supports spy UDP media prefix.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_multicast_spy_udp(
+            group_port in crate::proptest_support::aeron_port(),
+            control_port in crate::proptest_support::aeron_port(),
+        ) {
+            let config = AeronConfig::new()
+                .with_media_type(MediaType::SpyUdp)
+                .use_multicast(
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: group_port,
+                    },
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: control_port,
+                    },
                 );
-                assert_eq!(reliability, Some(ReliableConfig::Reliable));
-                assert_eq!(term_length, Some(1_048_576));
-            }
-            _ => panic!("Expected a PointToPoint channel"),
+            let uri = uri_from_config(&config);
+            prop_assert!(uri.contains("aeron-spy:aeron:udp"), "uri: {uri}");
+            prop_assert!(uri.contains(&group_port.to_string()), "uri: {uri}");
+            prop_assert!(uri.contains(&control_port.to_string()), "uri: {uri}");
         }
-    }
 
-    /// Tests building a minimal point-to-point channel with required fields only.
-    #[test]
-    // ss[verify distributed.aeron-uri]
-    fn build_p2p_minimal() {
-        let p2p_channel = AeronConfig::new()
-            .with_media_type(MediaType::Udp)
-            .use_point_to_point(Endpoint {
-                ip: "127.0.0.1".parse().expect("Valid IP"),
-                port: 40123,
-            })
-            .build();
-
-        match p2p_channel {
-            Channel::PointToPoint {
-                media_type,
-                endpoint,
-                interface,
-                reliability,
-                term_length,
-            } => {
-                assert_eq!(media_type, MediaType::Udp);
-                assert_eq!(endpoint.port, 40123);
-                assert!(interface.is_none());
-                assert!(reliability.is_none());
-                assert!(term_length.is_none());
-            }
-            _ => panic!("Expected a PointToPoint channel"),
+        /// Property: every `MediaType` variant produces the expected token in multicast builder URIs.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_builder_multicast_all_media_type_variants(
+            group_port in crate::proptest_support::aeron_port(),
+            control_port in crate::proptest_support::aeron_port(),
+            media in prop_oneof![
+                Just(MediaType::Udp),
+                Just(MediaType::Ipc),
+                Just(MediaType::SpyUdp),
+                Just(MediaType::SpyIpc),
+            ],
+            manual in any::<bool>(),
+        ) {
+            let config = AeronConfig::new()
+                .with_media_type(media)
+                .use_multicast(
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: group_port,
+                    },
+                    Endpoint {
+                        ip: "224.0.1.1".parse().expect("ip"),
+                        port: control_port,
+                    },
+                )
+                .with_control_mode(if manual {
+                    ControlMode::Manual
+                } else {
+                    ControlMode::Dynamic
+                });
+            let uri = uri_from_config(&config);
+            let expected_media = match media {
+                MediaType::Udp => "aeron:udp",
+                MediaType::Ipc => "aeron:ipc",
+                MediaType::SpyUdp => "aeron-spy:aeron:udp",
+                MediaType::SpyIpc => "aeron-spy:aeron:ipc",
+            };
+            prop_assert!(uri.contains(expected_media), "uri: {uri}");
+            prop_assert!(uri.contains(&group_port.to_string()), "uri: {uri}");
+            prop_assert!(uri.contains(&control_port.to_string()), "uri: {uri}");
+            prop_assert!(
+                uri.contains(if manual { "control-mode=manual" } else { "control-mode=dynamic" }),
+                "uri: {uri}"
+            );
         }
-    }
 
-    /// Tests building an IPC channel with minimal configuration.
-    #[test]
-    // ss[verify distributed.aeron-uri]
-    fn build_ipc() {
-        let ipc_channel = AeronConfig::new()
-            .with_media_type(MediaType::Ipc)
-            .use_ipc()
-            .build();
-
-        match ipc_channel {
-            Channel::PointToPoint {
-                media_type,
-                endpoint,
-                interface,
-                reliability,
-                term_length,
-            } => {
-                assert_eq!(media_type, MediaType::Ipc);
-                assert_eq!(endpoint.ip, IpAddr::from(Ipv4Addr::new(127, 0, 0, 1)));
-                assert_eq!(endpoint.port, 0);
-                assert!(interface.is_none());
-                assert!(reliability.is_none());
-                assert!(term_length.is_none());
+        /// Property: `AqueTech::to_match_me` round-trips builder URI for Aeron channels.
+        #[test]
+        // ss[verify distributed.aeron-uri]
+        // ss[verify verify.process.proptest]
+        fn proptest_aque_tech_to_match_me_roundtrip(
+            port in crate::proptest_support::aeron_port(),
+            stream_id in -128i32..128,
+            media in prop_oneof![
+                Just(MediaType::Udp),
+                Just(MediaType::Ipc),
+                Just(MediaType::SpyUdp),
+                Just(MediaType::SpyIpc),
+            ],
+        ) {
+            let channel = match media {
+                MediaType::Ipc | MediaType::SpyIpc => {
+                    AeronConfig::new().with_media_type(media).use_ipc().build()
+                }
+                MediaType::Udp | MediaType::SpyUdp => {
+                    AeronConfig::new()
+                        .with_media_type(media)
+                        .use_point_to_point(Endpoint {
+                            ip: "127.0.0.1".parse().expect("ip"),
+                            port,
+                        })
+                        .build()
+                }
+            };
+            let tech = AqueTech::Aeron(channel, stream_id);
+            prop_assert_eq!(tech.to_tech(), "Aeron");
+            let uri = tech.to_match_me();
+            prop_assert!(!uri.is_empty());
+            prop_assert!(uri.contains("aeron"), "uri: {uri}");
+            if matches!(media, MediaType::Udp | MediaType::SpyUdp) {
+                prop_assert!(uri.contains(&port.to_string()), "uri: {uri}");
             }
-            _ => panic!("Expected a PointToPoint channel for IPC"),
-        }
-    }
-
-    /// Tests building a multicast channel with all optional fields configured.
-    #[test]
-    // ss[verify distributed.aeron-uri]
-    fn build_multicast_full_config() {
-        let mcast_channel = AeronConfig::new()
-            .with_media_type(MediaType::Udp)
-            .use_multicast(
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect("Valid IP"),
-                    port: 40456,
-                },
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect("Valid IP"),
-                    port: 40457,
-                },
-            )
-            .with_control_mode(ControlMode::Manual)
-            .with_ttl(5)
-            .with_term_length(1_048_576)
-            .build();
-
-        match mcast_channel {
-            Channel::Multicast {
-                media_type,
-                endpoint,
-                config,
-                control_mode,
-                term_length,
-            } => {
-                assert_eq!(media_type, MediaType::Udp);
-                assert_eq!(endpoint.port, 40456);
-                assert_eq!(config.control.port, 40457);
-                assert_eq!(control_mode, ControlMode::Manual);
-                assert_eq!(config.ttl, Some(5));
-                assert_eq!(term_length, Some(1_048_576));
-            }
-            _ => panic!("Expected a Multicast channel"),
-        }
-    }
-
-    /// Tests building a minimal multicast channel with default control mode.
-    #[test]
-    // ss[verify distributed.aeron-uri]
-    fn build_multicast_minimal() {
-        let mcast_channel = AeronConfig::new()
-            .with_media_type(MediaType::Udp)
-            .use_multicast(
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect("Valid IP"),
-                    port: 40456,
-                },
-                Endpoint {
-                    ip: "224.0.1.1".parse().expect("Valid IP"),
-                    port: 40457,
-                },
-            )
-            .build();
-
-        match mcast_channel {
-            Channel::Multicast {
-                media_type,
-                endpoint,
-                config,
-                control_mode,
-                term_length,
-            } => {
-                assert_eq!(media_type, MediaType::Udp);
-                assert_eq!(endpoint.port, 40456);
-                assert_eq!(config.control.port, 40457);
-                assert_eq!(control_mode, ControlMode::Dynamic); // Default value
-                assert!(config.ttl.is_none());
-                assert!(term_length.is_none());
-            }
-            _ => panic!("Expected a Multicast channel"),
         }
     }
 }

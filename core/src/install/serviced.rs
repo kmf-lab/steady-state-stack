@@ -596,5 +596,69 @@ mod tests {
         assert_eq!(manager.service_file_name, "/etc/systemd/system/test_service.service");
         assert_eq!(manager.service_executable, "/usr/local/bin/test_service");
     }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn process_systemd_commands_none_returns_false() {
+        assert!(!SystemdBuilder::process_systemd_commands(
+            SystemdCommand::None,
+            "steady_test",
+            "nobody",
+        ));
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn create_service_file_writes_unit_with_secrets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let manager = SystemdBuilder::new("phase7_svc".into(), "phase7_user".into())
+            .with_service_file_default_folder(dir.path().to_string_lossy().into_owned())
+            .with_secret("api_key".into(), "/etc/phase7/secret".into())
+            .build();
+        manager
+            .create_service_file("/usr/local/bin/phase7_svc --beats 3".into())
+            .expect("write unit file");
+        let content = std::fs::read_to_string(&manager.service_file_name).expect("read unit");
+        assert!(content.contains("LoadCredential=api_key://etc/phase7/secret"));
+        assert!(content.contains("ExecStart=/usr/local/bin/phase7_svc --beats 3"));
+        assert!(content.contains("User=phase7_user"));
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn process_systemd_commands_install_and_uninstall_return_true() {
+        assert!(SystemdBuilder::process_systemd_commands(
+            SystemdCommand::Install,
+            "steady_test_nonexistent",
+            "nobody",
+        ));
+        assert!(SystemdBuilder::process_systemd_commands(
+            SystemdCommand::Uninstall,
+            "steady_test_nonexistent",
+            "nobody",
+        ));
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn create_service_file_without_secrets_includes_directives() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let manager = SystemdBuilder::new("plain_svc".into(), "plain_user".into())
+            .with_service_file_default_folder(dir.path().to_string_lossy().into_owned())
+            .with_description("Plain service".into())
+            .with_after("network-online.target".into())
+            .with_restart("on-failure".into())
+            .with_wanted_by("default.target".into())
+            .build();
+        manager
+            .create_service_file("/usr/local/bin/plain_svc".into())
+            .expect("write unit file");
+        let content = std::fs::read_to_string(&manager.service_file_name).expect("read unit");
+        assert!(!content.contains("LoadCredential="));
+        assert!(content.contains("Description=Plain service"));
+        assert!(content.contains("After=network-online.target"));
+        assert!(content.contains("Restart=on-failure"));
+        assert!(content.contains("WantedBy=default.target"));
+    }
 }
 

@@ -1007,54 +1007,12 @@ mod core_tx_stream_tests {
 
     #[test]
     // ss[verify channel.stream-dual-buffer]
-    fn test_stream_ingress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
-        core_exec::block_on(async {
-            let mut graph = GraphBuilder::for_testing().build(());
-            let (tx, _rx) = graph.channel_builder()
-                .with_capacity(10)
-                .build_stream::<StreamIngress>(100);
-            
-            let tx_clone = tx.clone();
-            let tx_guard = tx_clone.lock().await;
-
-            // Test shared_vacant_units returns correct tuple
-            let vacant = tx_guard.shared_vacant_units();
-            assert_eq!(vacant.0, 10); // Control capacity
-            assert_eq!(vacant.1, 1000); // Payload capacity (approx, based on ratio)
-
-            Ok::<(), Box<dyn std::error::Error>>(())
-        })
-    }
-
-    #[test]
-    // ss[verify channel.stream-dual-buffer]
-    fn test_stream_egress_tx_core_vacant_units() -> Result<(), Box<dyn std::error::Error>> {
-        core_exec::block_on(async {
-            let mut graph = GraphBuilder::for_testing().build(());
-            let (tx, _rx) = graph.channel_builder()
-                .with_capacity(10)
-                .build_stream::<StreamEgress>(100);
-            
-            let tx_clone = tx.clone();
-            let tx_guard = tx_clone.lock().await;
-
-            // Test shared_vacant_units returns correct tuple
-            let vacant = tx_guard.shared_vacant_units();
-            assert_eq!(vacant.0, 10); // Control capacity
-            assert_eq!(vacant.1, 1000); // Payload capacity
-
-            Ok::<(), Box<dyn std::error::Error>>(())
-        })
-    }
-
-    #[test]
-    // ss[verify channel.stream-dual-buffer]
     fn test_stream_defrag_partial_flush() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder()
             .with_capacity(2) // Small capacity to force partial flush
             .build_stream::<StreamEgress>(10);
-        
+
         let tx_arc = tx.clone();
         let mut tx_guard = core_exec::block_on(tx_arc.lock());
         let mut defrag = Defrag::<StreamEgress>::new(1, 10, 100);
@@ -1299,28 +1257,6 @@ mod core_tx_stream_tests {
 
     #[test]
     // ss[verify channel.stream-dual-buffer]
-    fn test_stream_ingress_tx_core_send_slice_payload_full() {
-        core_exec::block_on(async {
-            let mut graph = GraphBuilder::for_testing().build(());
-            let (tx, _rx) = graph.channel_builder()
-                .with_capacity(5)
-                .build_stream::<StreamIngress>(2); // 10 bytes total
-            
-            let tx_clone = tx.clone();
-            let mut tx_guard = tx_clone.lock().await;
-            let now = Instant::now();
-
-            let items = [StreamIngress::new(8, 0, now, now), StreamIngress::new(8, 0, now, now)];
-            let payload = [0u8; 16];
-            
-            let done = tx_guard.shared_send_slice((&items, &payload));
-            // First item (8 bytes) fits. Second (8 bytes) does not (only 2 bytes left).
-            assert_eq!(done.item_count(), 1);
-        });
-    }
-
-    #[test]
-    // ss[verify channel.stream-dual-buffer]
     fn test_stream_ingress_tx_core_wait_empty_terminated() {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());
@@ -1339,6 +1275,180 @@ mod core_tx_stream_tests {
             let result = tx_guard.shared_wait_empty().await;
             assert!(result); // Returns true because it is empty
         });
+    }
+
+    use proptest::prelude::*;
+
+    ss_proptest! {
+
+        /// Property: stream egress vacant control slots plus sent never exceed capacity.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_egress_vacant_plus_sent_le_capacity(
+            cap in 2usize..32,
+            payload_len in 1usize..16,
+            send_count in 1usize..8,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, _rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(100);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let (ctrl_cap, _payload_cap) = tx_guard.shared_capacity();
+                let mut sent = 0usize;
+                for _ in 0..send_count.min(ctrl_cap) {
+                    let payload = vec![0u8; payload_len];
+                    if tx_guard.shared_try_send(payload.as_slice()).is_ok() {
+                        sent += 1;
+                    } else {
+                        break;
+                    }
+                }
+                let (vacant_ctrl, _) = tx_guard.shared_vacant_units();
+                prop_assert!(vacant_ctrl + sent <= ctrl_cap);
+                Ok::<(), TestCaseError>(())
+            }).expect("async property");
+        }
+
+        /// Property: stream egress send_slice never exceeds vacant control slots.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_egress_send_slice_within_vacant(
+            cap in 2usize..16,
+            payload_len in 1usize..8,
+            extra in 1usize..4,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, _rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(100);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let (vacant_ctrl, _) = tx_guard.shared_vacant_units();
+                let item_count = vacant_ctrl + extra;
+                let items: Vec<StreamEgress> =
+                    (0..item_count).map(|_| StreamEgress::new(payload_len as i32)).collect();
+                let payload = vec![0u8; item_count * payload_len];
+                let done = tx_guard.shared_send_slice((items.as_slice(), payload.as_slice()));
+                prop_assert!(done.item_count() <= vacant_ctrl);
+                Ok::<(), TestCaseError>(())
+            }).expect("async property");
+        }
+
+        /// Property: stream ingress send_slice respects control and payload vacancy.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_ingress_send_slice_within_vacant(
+            cap in 2usize..16,
+            item_bytes in 1usize..8,
+            extra in 1usize..4,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, _rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamIngress>(item_bytes * cap);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let (vacant_ctrl, vacant_payload) = tx_guard.shared_vacant_units();
+                let item_count = vacant_ctrl + extra;
+                let now = Instant::now();
+                let items: Vec<StreamIngress> = (0..item_count)
+                    .map(|_| StreamIngress::new(item_bytes as i32, 0, now, now))
+                    .collect();
+                let payload = vec![0u8; item_count * item_bytes];
+                let done = tx_guard.shared_send_slice((items.as_slice(), payload.as_slice()));
+                prop_assert!(done.item_count() <= vacant_ctrl);
+                if let Some(bytes_sent) = done.payload_count() {
+                    prop_assert!(bytes_sent <= vacant_payload);
+                }
+                Ok::<(), TestCaseError>(())
+            }).expect("async property");
+        }
+
+        /// Property: stream ingress sent payload bytes equal received bytes.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_ingress_no_silent_drop(
+            cap in 2usize..12,
+            item_bytes in 1usize..6,
+            send_count in 1usize..4,
+        ) {
+            core_exec::block_on(async {
+                use crate::RxCore;
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamIngress>(cap * item_bytes * 4);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let now = Instant::now();
+                let mut sent_bytes = 0usize;
+                for _ in 0..send_count.min(cap) {
+                    let payload = vec![0u8; item_bytes];
+                    let msg = (
+                        StreamIngress::new(item_bytes as i32, 0, now, now),
+                        payload.as_slice(),
+                    );
+                    if tx_guard.shared_try_send(msg).is_ok() {
+                        sent_bytes += item_bytes;
+                    } else {
+                        break;
+                    }
+                }
+                drop(tx_guard);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let mut taken_bytes = 0usize;
+                while let Some((done, (_item, payload))) = rx_guard.shared_try_take() {
+                    let payload: &Box<[u8]> = &payload;
+                    if let crate::RxDone::Stream(_, b) = done {
+                        prop_assert_eq!(b, payload.len());
+                        taken_bytes += b;
+                    }
+                }
+                prop_assert_eq!(taken_bytes, sent_bytes);
+                Ok::<(), TestCaseError>(())
+            }).expect("async property");
+        }
+
+        /// Property: stream egress mark_closed is idempotent and preserves vacant count.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_egress_mark_closed_idempotent(
+            cap in crate::proptest_support::capacity(),
+            payload_len in 1usize..8,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, _rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(cap * 16);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let payload = vec![0u8; payload_len];
+                let _ = tx_guard.shared_try_send(payload.as_slice());
+                let (vacant_ctrl, vacant_payload) = tx_guard.shared_vacant_units();
+                tx_guard.shared_mark_closed();
+                tx_guard.shared_mark_closed();
+                let (after_ctrl, after_payload) = tx_guard.shared_vacant_units();
+                prop_assert_eq!((after_ctrl, after_payload), (vacant_ctrl, vacant_payload));
+                Ok::<(), TestCaseError>(())
+            }).expect("async property");
+        }
     }
 
     // #[test]

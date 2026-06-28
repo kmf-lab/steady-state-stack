@@ -1308,9 +1308,11 @@ impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
 // ss[related distributed.aqueduct-stream]
 mod extra_stream_tests {
     use super::*;
+    use proptest::prelude::*;
     use std::sync::Arc;
     // ss[related distributed.aqueduct-stream]
     use std::time::{Duration, Instant};
+    use crate::GraphBuilder;
 
     /// Tests the behavior of extracting payload slices from receiver buffers, covering both first and second slice cases.
     #[test]
@@ -1466,4 +1468,134 @@ mod extra_stream_tests {
         assert!(defrag.ringbuffer_items.0.vacant_len() >= 5);
         assert!(defrag.ringbuffer_bytes.0.vacant_len() >= 10);
     }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    fn test_stream_ingress_egress_build_helpers() {
+        let now = Instant::now();
+        let (ingress, payload) = StreamIngress::by_box(7, now, now + Duration::from_millis(1), b"abc");
+        assert_eq!(StreamControlItem::length(&ingress), 3);
+        assert_eq!(payload.as_ref(), b"abc");
+        let (ingress2, _) = StreamIngress::build(8, now, now, b"xy");
+        assert_eq!(ingress2.session_id, 8);
+
+        let (egress, box_payload) = StreamEgress::build(b"payload");
+        assert_eq!(egress.length(), 7);
+        assert_eq!(box_payload.as_ref(), b"payload");
+        let (egress2, slice) = StreamEgress::by_ref(b"z");
+        assert_eq!(egress2.length(), 1);
+        assert_eq!(slice, b"z");
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    fn test_stream_tx_rate_and_poll_helpers() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(32);
+        let (lazy_tx, _lazy_rx) = cb.build_stream::<StreamIngress>(16);
+        let steady = lazy_tx.clone();
+        let mut tx = core_exec::block_on(steady.lock());
+
+        tx.store_input_data_rate(Duration::from_millis(10), 2, 16);
+        tx.store_output_data_rate(Duration::from_millis(20), 1, 8);
+        tx.set_stored_vacant_values(4, 32);
+        let (msgs, bytes) = tx.get_stored_vacant_values();
+        assert_eq!(msgs, 4);
+        assert_eq!(bytes, 32);
+
+        let fastest = tx.fastest_byte_processing_duration();
+        assert!(fastest.is_some());
+        let (min, max) = tx.next_poll_bounds();
+        assert!(max >= min);
+
+        let (avg, std) = tx.guess_duration_between_arrivals();
+        assert!(avg <= Duration::from_secs(1));
+        assert!(std <= Duration::from_secs(1));
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    fn test_stream_tx_fragment_consume_and_defrag_room() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(32);
+        let (lazy_tx, _lazy_rx) = cb.build_stream::<StreamIngress>(32);
+        let steady_tx = lazy_tx.clone();
+        let room = core_exec::block_on(async {
+            let mut tx = steady_tx.lock().await;
+            let now = Instant::now();
+            tx.fragment_consume(42, b"frag", true, true, now);
+            assert!(!tx.ready_msg_session.is_empty());
+            tx.defrag_has_room_for()
+        });
+        assert!(room > 0);
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    fn test_lazy_stream_testing_send_and_take_roundtrip() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(64);
+        let (lazy_tx, lazy_rx) = cb.build_stream::<StreamEgress>(32);
+        lazy_tx.testing_send_frame(b"frame-bytes");
+        lazy_tx.testing_close();
+        assert!(lazy_rx.testing_avail_wait(1, Duration::from_secs(1)));
+        let taken = lazy_rx.testing_take_all();
+        assert_eq!(taken.len(), 1);
+        assert_eq!(taken[0].1.as_ref(), b"frame-bytes");
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    // ss[verify bundle.girth-const-generic]
+    fn test_lazy_bundle_clone_girth_2() {
+        const GIRTH: usize = 2;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(32);
+        let (lazy_tx, lazy_rx) = cb.build_stream_bundle::<StreamEgress, GIRTH>(16);
+        let tx_bundle = LazySteadyStreamTxBundleClone::clone(&lazy_tx);
+        let rx_bundle = LazySteadyStreamRxBundleClone::clone(&lazy_rx);
+        assert_eq!(tx_bundle.len(), GIRTH);
+        assert_eq!(rx_bundle.len(), GIRTH);
+        assert_eq!(tx_bundle.control_meta_data().len(), GIRTH);
+        assert_eq!(tx_bundle.payload_meta_data().len(), GIRTH);
+        assert_eq!(rx_bundle.control_meta_data().len(), GIRTH);
+        assert_eq!(rx_bundle.payload_meta_data().len(), GIRTH);
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    // ss[verify bundle.girth-const-generic]
+    fn test_lazy_bundle_clone_girth_3() {
+        const GIRTH: usize = 3;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(32);
+        let (lazy_tx, lazy_rx) = cb.build_stream_bundle::<StreamEgress, GIRTH>(16);
+        let tx_bundle = LazySteadyStreamTxBundleClone::clone(&lazy_tx);
+        let rx_bundle = LazySteadyStreamRxBundleClone::clone(&lazy_rx);
+        assert_eq!(tx_bundle.len(), GIRTH);
+        assert_eq!(rx_bundle.len(), GIRTH);
+        assert_eq!(tx_bundle.control_meta_data().len(), GIRTH);
+        assert_eq!(rx_bundle.payload_meta_data().len(), GIRTH);
+    }
+
+    #[test]
+    // ss[verify distributed.aqueduct-stream]
+    // ss[verify bundle.girth-const-generic]
+    fn test_lazy_bundle_clone_girth_4() {
+        const GIRTH: usize = 4;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(32);
+        let (lazy_tx, lazy_rx) = cb.build_stream_bundle::<StreamEgress, GIRTH>(16);
+        let tx_bundle = LazySteadyStreamTxBundleClone::clone(&lazy_tx);
+        let rx_bundle = LazySteadyStreamRxBundleClone::clone(&lazy_rx);
+        assert_eq!(tx_bundle.len(), GIRTH);
+        assert_eq!(rx_bundle.len(), GIRTH);
+        assert_eq!(tx_bundle.control_meta_data().len(), GIRTH);
+        assert_eq!(rx_bundle.payload_meta_data().len(), GIRTH);
+    }
+
 }
+
+#[cfg(test)]
+#[path = "aqueduct_stream_proptest.rs"]
+mod aqueduct_stream_proptest;

@@ -2,7 +2,7 @@
 
 **Who should read this:** Graph builders, integration tests, and shutdown debugging.
 
-**See also:** `graph_liveliness.rs`, [Actor lifecycle](../actor_lifecycle.md).
+**See also:** `core/src/graph/` (`builder.rs`, `liveliness.rs`, `shutdown.rs`; shim `graph_liveliness.rs`), [Actor lifecycle](../actor_lifecycle.md).
 
 ---
 

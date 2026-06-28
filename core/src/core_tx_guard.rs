@@ -191,3 +191,134 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
         <T as TxCore>::done_one(self, one)
     }
 }
+
+#[cfg(test)]
+mod core_tx_guard_tests {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::core_rx::RxCore;
+    use crate::core_tx::TxCore;
+    use crate::core_exec;
+    use proptest::prelude::*;
+    use crate::proptest_support::{capacity, message_vec};
+
+    ss_proptest! {
+
+        /// Property: MutexGuard vacant_units matches direct channel accounting.
+        #[test]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_vacant_matches_direct(
+            cap in capacity(),
+            n in 0usize..64,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u8>();
+            let send_n = n.min(cap);
+            if send_n > 0 {
+                tx_lazy.testing_send_all(vec![0u8; send_n], false);
+            }
+            let tx_est = tx_lazy.clone();
+            core_exec::block_on(async {
+                let guard = tx_est.lock().await;
+                let expected_vacant = cap.saturating_sub(send_n);
+                prop_assert_eq!(guard.shared_vacant_units(), expected_vacant);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: MutexGuard try_send never exceeds channel capacity.
+        #[test]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_try_send_bounded(
+            cap in 2usize..32,
+            extra in 1usize..16,
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u8>();
+            let tx_est = tx_lazy.clone();
+            core_exec::block_on(async {
+                let mut guard = tx_est.lock().await;
+                let mut sent = 0usize;
+                for i in 0..(cap + extra) {
+                    if guard.shared_try_send(i as u8).is_ok() {
+                        sent += 1;
+                    } else {
+                        break;
+                    }
+                }
+                prop_assert_eq!(sent, cap);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: MutexGuard mark_closed is idempotent and preserves vacant count.
+        #[test]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_mark_closed_idempotent(
+            cap in capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u8>();
+            let to_send: Vec<u8> = messages.into_iter().take(cap.saturating_sub(1)).collect();
+            if !to_send.is_empty() {
+                tx_lazy.testing_send_all(to_send, false);
+            }
+            let tx_est = tx_lazy.clone();
+            core_exec::block_on(async {
+                let mut guard = tx_est.lock().await;
+                let vacant_before = guard.shared_vacant_units();
+                guard.shared_mark_closed();
+                guard.shared_mark_closed();
+                prop_assert_eq!(guard.shared_vacant_units(), vacant_before);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: MutexGuard send then drain preserves FIFO (no silent drop).
+        #[test]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_no_silent_drop(
+            cap in capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
+            let to_send: Vec<u8> = messages.into_iter().take(cap).collect();
+            let tx_est = tx_lazy.clone();
+            let rx_est = rx_lazy.clone();
+            core_exec::block_on(async {
+                let mut guard = tx_est.lock().await;
+                let mut sent = 0usize;
+                for &msg in &to_send {
+                    if guard.shared_try_send(msg).is_ok() {
+                        sent += 1;
+                    } else {
+                        break;
+                    }
+                }
+                drop(guard);
+                let mut rx_guard = rx_est.lock().await;
+                let mut taken = Vec::new();
+                while let Some((_, v)) = rx_guard.shared_try_take() {
+                    taken.push(v);
+                }
+                prop_assert_eq!(taken, to_send.into_iter().take(sent).collect::<Vec<_>>());
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+    }
+}

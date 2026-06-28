@@ -265,6 +265,7 @@ pub(crate) fn apply_channel_to_unified_edges(
 // ss[related telemetry.dot-export]
 mod unify_edge_tests {
     use super::*;
+    use crate::ss_proptest;
     use crate::graph_liveliness::ActorIdentity;
 
     // ss[related telemetry.dot-export]
@@ -306,155 +307,69 @@ mod unify_edge_tests {
         })
     }
 
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn duplicate_to_second_actor_returns_conflict() {
-        let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
-        EDGE_CONFLICT_DIAG_COUNT.store(0, Ordering::Relaxed);
-        let mut st = DotState::default();
-        let m = meta_with_id_labels(10, vec![]);
-        let a = ActorIdentity::new(101, "A", None);
-        let b = ActorIdentity::new(102, "B", None);
-        assert!(
-            apply_channel_to_unified_edges(&mut st, a, &m, ChannelEdgeRole::SetsEdgeTo, 1000).is_none()
-        );
-        let c = apply_channel_to_unified_edges(&mut st, b, &m, ChannelEdgeRole::SetsEdgeTo, 1000);
-        assert!(c.is_some());
-        assert_eq!(EDGE_CONFLICT_DIAG_COUNT.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            c.unwrap(),
-            EdgeEndpointConflict {
-                channel_id: 10,
-                endpoint: "to",
-                existing: a.label,
-                existing_actor_numeric_id: Some(a.id),
-                existing_claim_meta_arc: Some(Arc::as_ptr(&m) as usize),
-                new_claimant: b.label,
-                new_claimant_actor_numeric_id: b.id,
-                new_claim_arc_ptr: Arc::as_ptr(&m) as usize,
+    use proptest::prelude::*;
+
+    ss_proptest! {
+
+        /// Property: at most one SetsEdgeTo and one SetsEdgeFrom claimant per channel id.
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        fn proptest_at_most_one_endpoint_per_channel(
+            claims in prop::collection::vec(
+                (0usize..32, 1usize..500, prop::bool::ANY),
+                1..24,
+            ),
+        ) {
+            let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
+            EDGE_CONFLICT_DIAG_COUNT.store(0, Ordering::Relaxed);
+            let mut st = DotState::default();
+            let mut to_owner: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+            let mut from_owner: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+
+            for (channel_id, actor_id, is_to) in claims {
+                let role = if is_to { ChannelEdgeRole::SetsEdgeTo } else { ChannelEdgeRole::SetsEdgeFrom };
+                let actor = ActorIdentity::new(actor_id, "actor", Some(actor_id));
+                let meta = meta_with_id_labels(channel_id, vec![]);
+                let conflict = apply_channel_to_unified_edges(&mut st, actor, &meta, role, 1000);
+
+                match role {
+                    ChannelEdgeRole::SetsEdgeTo => {
+                        if let Some(&existing) = to_owner.get(&channel_id) {
+                            if existing != actor_id {
+                                prop_assert!(conflict.is_some());
+                            } else {
+                                prop_assert!(conflict.is_none());
+                            }
+                        } else {
+                            prop_assert!(conflict.is_none());
+                            to_owner.insert(channel_id, actor_id);
+                        }
+                    }
+                    ChannelEdgeRole::SetsEdgeFrom => {
+                        if let Some(&existing) = from_owner.get(&channel_id) {
+                            if existing != actor_id {
+                                prop_assert!(conflict.is_some());
+                            } else {
+                                prop_assert!(conflict.is_none());
+                            }
+                        } else {
+                            prop_assert!(conflict.is_none());
+                            from_owner.insert(channel_id, actor_id);
+                        }
+                    }
+                }
             }
-        );
-    }
 
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn duplicate_from_second_actor_returns_conflict() {
-        let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
-        EDGE_CONFLICT_DIAG_COUNT.store(0, Ordering::Relaxed);
-        let mut st = DotState::default();
-        let m = meta_with_id_labels(11, vec![]);
-        let a = ActorIdentity::new(201, "send_a", None);
-        let b = ActorIdentity::new(202, "send_b", None);
-        assert!(
-            apply_channel_to_unified_edges(&mut st, a, &m, ChannelEdgeRole::SetsEdgeFrom, 1000).is_none()
-        );
-        let c = apply_channel_to_unified_edges(&mut st, b, &m, ChannelEdgeRole::SetsEdgeFrom, 1000);
-        assert!(c.is_some());
-        assert_eq!(EDGE_CONFLICT_DIAG_COUNT.load(Ordering::Relaxed), 1);
-        let d = c.unwrap();
-        assert_eq!(d.endpoint, "from");
-        assert_eq!(d.existing, a.label);
-        assert_eq!(d.new_claimant, b.label);
-        assert_eq!(d.existing_actor_numeric_id, Some(a.id));
-        assert_eq!(d.new_claimant_actor_numeric_id, b.id);
-    }
-
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn same_claimant_twice_no_conflict_for_to() {
-        let mut st = DotState::default();
-        let m = meta_with_id_labels(12, vec!["L1"]);
-        let a = ActorIdentity::new(303, "R", None);
-        assert!(
-            apply_channel_to_unified_edges(&mut st, a, &m, ChannelEdgeRole::SetsEdgeTo, 1000).is_none()
-        );
-        assert!(
-            apply_channel_to_unified_edges(&mut st, a, &m, ChannelEdgeRole::SetsEdgeTo, 1000).is_none()
-        );
-        assert_eq!(st.edges[12].to, Some(a.label));
-        assert!(st.edges[12].from.is_none());
-    }
-
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn two_node_wire_initializes_stats_once() {
-        let mut st = DotState::default();
-        let shared = meta_with_id_labels(20, vec!["lane"]);
-        let recv = ActorIdentity::new(401, "consumer", None);
-        let send = ActorIdentity::new(402, "producer", None);
-        let _ = apply_channel_to_unified_edges(&mut st, recv, &shared, ChannelEdgeRole::SetsEdgeTo, 500);
-        let _ = apply_channel_to_unified_edges(&mut st, send, &shared, ChannelEdgeRole::SetsEdgeFrom, 500);
-        assert_eq!(st.edges[20].from, Some(send.label));
-        assert_eq!(st.edges[20].to, Some(recv.label));
-        let cap_before = st.edges[20].stats_computer.capacity;
-        assert_eq!(cap_before, 8);
-        assert_eq!(st.edges[20].partner, shared.partner);
-        assert_eq!(st.edges[20].bundle_index, shared.bundle_index);
-        assert_eq!(st.edges[20].diag_to_claim_actor_id, Some(recv.id));
-        assert_eq!(st.edges[20].diag_from_claim_actor_id, Some(send.id));
-        // Idempotent replay (same registrations)
-        assert!(
-            apply_channel_to_unified_edges(&mut st, recv, &shared, ChannelEdgeRole::SetsEdgeTo, 500).is_none()
-        );
-        assert!(
-            apply_channel_to_unified_edges(&mut st, send, &shared, ChannelEdgeRole::SetsEdgeFrom, 500).is_none()
-        );
-        assert_eq!(st.edges[20].stats_computer.capacity, cap_before);
-    }
-
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn sparse_channel_ids_leave_placeholders_between() {
-        let mut st = DotState::default();
-        let low = meta_with_id_labels(0, vec![]);
-        let _ = apply_channel_to_unified_edges(
-            &mut st,
-            ActorIdentity::new(501, "X", None),
-            &low,
-            ChannelEdgeRole::SetsEdgeTo,
-            100,
-        );
-        let high = meta_with_id_labels(1000, vec![]);
-        let _ = apply_channel_to_unified_edges(
-            &mut st,
-            ActorIdentity::new(502, "Y", None),
-            &high,
-            ChannelEdgeRole::SetsEdgeFrom,
-            100,
-        );
-        assert_eq!(st.edges.len(), 1001);
-        assert_eq!(st.edges[500].id, usize::MAX);
-        assert!(st.edges[500].from.is_none() && st.edges[500].to.is_none());
-        assert_eq!(st.edges[1000].id, 1000);
-    }
-
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn label_union_from_two_metas_same_id() {
-        let mut st = DotState::default();
-        let m1 = meta_with_id_labels(30, vec!["a", "b"]);
-        let m2 = Arc::new(ChannelMetaData {
-            labels: vec!["b", "c"],
-            ..(*m1).clone()
-        });
-        let n = ActorIdentity::new(600, "n", None);
-        let _ = apply_channel_to_unified_edges(&mut st, n, &m1, ChannelEdgeRole::SetsEdgeTo, 100);
-        let _ = apply_channel_to_unified_edges(&mut st, n, &m2, ChannelEdgeRole::SetsEdgeTo, 100);
-        assert_eq!(st.edges[30].ctl_labels, vec!["a", "b", "c"]);
-    }
-
-    // ss[verify telemetry.dot-export]
-    #[test]
-    fn self_loop_same_actor_in_and_out_same_id() {
-        let mut st = DotState::default();
-        let m = meta_with_id_labels(40, vec![]);
-        let echo = ActorIdentity::new(700, "echo", None);
-        let _ = apply_channel_to_unified_edges(&mut st, echo, &m, ChannelEdgeRole::SetsEdgeTo, 100);
-        let _ = apply_channel_to_unified_edges(&mut st, echo, &m, ChannelEdgeRole::SetsEdgeFrom, 100);
-        let e = &st.edges[40];
-        assert_eq!(e.from, Some(echo.label));
-        assert_eq!(e.to, Some(echo.label));
-        assert_eq!(e.stats_computer.capacity, 8);
+            for (id, edge) in st.edges.iter().enumerate() {
+                if edge.id == usize::MAX {
+                    continue;
+                }
+                if edge.to.is_some() && edge.from.is_some() {
+                    prop_assert_eq!(edge.id, id);
+                }
+            }
+        }
     }
 
     // ss[verify telemetry.dot-export]

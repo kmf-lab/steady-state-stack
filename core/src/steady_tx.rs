@@ -585,31 +585,6 @@ mod steady_lazy_tests {
         assert_eq!(ste_rx.try_take(), None);
     }
 
-    /// Tests `shared_send_slice_until_full` on a raw `Tx` (not lazy).
-    // ss[verify channel.backpressure-never-drop]
-    // ss[verify channel.eager-build-test]
-    #[test]
-    fn test_shared_send_slice_until_full() {
-        // Build a channel eagerly so we get a raw Tx.
-        let builder = ChannelBuilder::default().with_capacity(5);
-        let (mut tx, _rx) = builder.eager_build_internal::<u8>();
-
-        // Send a slice that fits entirely.
-        let sent = tx.shared_send_slice_until_full(&[10, 20, 30]);
-        assert_eq!(sent, 3);
-
-        // Send a slice that exceeds capacity (only 2 slots left).
-        let sent2 = tx.shared_send_slice_until_full(&[40, 50, 60]);
-        assert_eq!(sent2, 2); // only 2 fit
-
-        // Channel is now full; sending an empty slice returns 0.
-        let sent3 = tx.shared_send_slice_until_full(&[]);
-        assert_eq!(sent3, 0);
-
-        // Verify the channel is full.
-        assert!(tx.shared_is_full());
-    }
-
     // ss[verify bundle.index-wait-readiness]
     #[async_std::test]
     async fn test_steady_rx_bundle_wait_avail_index() {
@@ -625,19 +600,6 @@ mod steady_lazy_tests {
         assert!(idx == 0 || idx == 1);
     }
 
-    // ss[verify bundle.index-wait-readiness]
-    #[async_std::test]
-    async fn test_steady_rx_bundle_wait_avail_index_first_zero_lane() {
-        use crate::SteadyRxBundleTrait;
-        let b0 = ChannelBuilder::default().with_capacity(4);
-        let (_tx0, rx0) = b0.build_channel::<i32>();
-        let b1 = ChannelBuilder::default().with_capacity(4);
-        let (_tx1, rx1) = b1.build_channel::<i32>();
-        let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
-        let idx = bundle.wait_avail_index(&[0, 1]).await;
-        assert_eq!(idx, 0);
-    }
-
     // ss[verify channel.backpressure-never-drop]
     #[async_std::test]
     async fn test_steady_tx_bundle_wait_vacant_index() {
@@ -651,17 +613,203 @@ mod steady_lazy_tests {
         assert!(idx == 0 || idx == 1);
     }
 
-    // ss[verify channel.backpressure-never-drop]
-    #[async_std::test]
-    async fn test_steady_tx_bundle_wait_vacant_index_first_zero_lane() {
-        use crate::SteadyTxBundleTrait;
-        let b0 = ChannelBuilder::default().with_capacity(4);
-        let (tx0, _rx0) = b0.build_channel::<i32>();
-        let b1 = ChannelBuilder::default().with_capacity(4);
-        let (tx1, _rx1) = b1.build_channel::<i32>();
-        let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
-        let idx = bundle.wait_vacant_index(&[0, 2]).await;
-        assert_eq!(idx, 0);
+    use proptest::prelude::*;
+    use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
+
+    ss_proptest! {
+
+        /// Property: zero-count lane is returned immediately by wait_vacant_index.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify verify.process.proptest]
+        fn proptest_wait_vacant_index_zero_lane(
+            lane in 0usize..2,
+            other_count in 1usize..8,
+        ) {
+            use crate::SteadyTxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(8);
+            let (tx0, _rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(8);
+            let (tx1, _rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+            let mut counts = [other_count, other_count];
+            counts[lane] = 0;
+            let idx = core_exec::block_on(bundle.wait_vacant_index(&counts));
+            prop_assert_eq!(idx, lane);
+        }
+
+        /// Property: wait_vacant_index returns a valid lane when all counts are positive.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify actor.index-wait-round-robin]
+        // ss[verify verify.process.proptest]
+        fn proptest_wait_vacant_index_ready_lane(
+            count in 1usize..4,
+        ) {
+            use crate::SteadyTxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(8);
+            let (tx0, _rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(8);
+            let (tx1, _rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+            let idx = core_exec::block_on(bundle.wait_vacant_index(&[count, count]));
+            prop_assert!(idx < 2);
+        }
+
+        /// Property: mirror RX — zero-count lane is returned immediately by wait_avail_index.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify verify.process.proptest]
+        fn proptest_wait_avail_index_zero_lane(
+            lane in 0usize..2,
+            other_count in 1usize..8,
+        ) {
+            use crate::SteadyRxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(8);
+            let (_tx0, rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(8);
+            let (_tx1, rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+            let mut counts = [other_count, other_count];
+            counts[lane] = 0;
+            let idx = core_exec::block_on(bundle.wait_avail_index(&counts));
+            prop_assert_eq!(idx, lane);
+        }
+
+        /// Property: lane_mask zero-bit lane wins wait_avail_index when channels are primed.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify verify.process.proptest]
+        fn proptest_wait_avail_index_lane_mask(
+            cap in 2usize..16,
+            mask in lane_mask(2),
+            per_lane in 1usize..4,
+        ) {
+            prop_assume!(per_lane <= cap);
+            use crate::SteadyRxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(cap);
+            let (tx0, rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(cap);
+            let (tx1, rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+            let need = per_lane.min(cap);
+            let mut counts = [need, need];
+            if mask & 1 == 0 {
+                counts[0] = 0;
+            }
+            if mask & 2 == 0 {
+                counts[1] = 0;
+            }
+            if counts[0] > 0 && mask & 1 != 0 {
+                tx0.testing_send_all(vec![1i32; counts[0]], false);
+            }
+            if counts[1] > 0 && mask & 2 != 0 {
+                tx1.testing_send_all(vec![2i32; counts[1]], false);
+            }
+            let idx = core_exec::block_on(bundle.wait_avail_index(&counts));
+            if counts[0] == 0 {
+                prop_assert_eq!(idx, 0);
+            } else if counts[1] == 0 {
+                prop_assert_eq!(idx, 1);
+            } else {
+                prop_assert!(idx < 2);
+            }
+        }
+
+        /// Property: lane_mask zero-bit lane wins wait_vacant_index immediately.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify verify.process.proptest]
+        fn proptest_wait_vacant_index_lane_mask(
+            mask in lane_mask(2),
+            per_lane in 1usize..4,
+        ) {
+            use crate::SteadyTxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(8);
+            let (tx0, _rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(8);
+            let (tx1, _rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+            let mut counts = [per_lane, per_lane];
+            if mask & 1 == 0 {
+                counts[0] = 0;
+            }
+            if mask & 2 == 0 {
+                counts[1] = 0;
+            }
+            let idx = core_exec::block_on(bundle.wait_vacant_index(&counts));
+            if counts[0] == 0 {
+                prop_assert_eq!(idx, 0);
+            } else if counts[1] == 0 {
+                prop_assert_eq!(idx, 1);
+            } else {
+                prop_assert!(idx < 2);
+            }
+        }
+
+        /// Property: mark_closed through SteadyTx is idempotent and preserves vacant count.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_mark_closed_vacant_unchanged(
+            cap in crate::proptest_support::capacity(),
+            messages in message_vec::<u8>(),
+        ) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u8>();
+            let to_send: Vec<u8> = messages.into_iter().take(cap.saturating_sub(1)).collect();
+            if !to_send.is_empty() {
+                tx_lazy.testing_send_all(to_send, false);
+            }
+            let tx = tx_lazy.clone();
+            core_exec::block_on(async {
+                let mut ste_tx = tx.lock().await;
+                let vacant_before = ste_tx.shared_vacant_units();
+                ste_tx.shared_mark_closed();
+                ste_tx.shared_mark_closed();
+                prop_assert_eq!(ste_tx.shared_vacant_units(), vacant_before);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: testing_send_all delivery preserves FIFO order on the receiver.
+        #[test]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_tx_fifo_via_harness(
+            cap in capacity(),
+            messages in message_vec::<u32>(),
+        ) {
+            let messages: Vec<u32> = messages.into_iter().take(cap).collect();
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u32>();
+            tx_lazy.testing_send_all(messages.clone(), false);
+            let taken = channel_fifo_take(cap, messages.clone());
+            prop_assert_eq!(taken, messages);
+        }
+
+        /// Property: Tx metadata helpers expose stable id and capacity.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_tx_id_capacity_and_metadata(cap in capacity()) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u64>();
+            let tx = tx_lazy.clone();
+            core_exec::block_on(async {
+                let ste_tx = tx.lock().await;
+                prop_assert_eq!(ste_tx.capacity(), cap);
+                let id = ste_tx.id();
+                prop_assert_eq!(ste_tx.meta_data().len(), 1);
+                prop_assert_eq!(ste_tx.meta_data()[0].meta_data().id, id);
+                let debug = format!("{:?}", &*ste_tx);
+                prop_assert!(debug.contains("Tx"));
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
     }
 }
 

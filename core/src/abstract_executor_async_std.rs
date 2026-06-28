@@ -215,6 +215,8 @@ use std::error::Error;
 mod async_std_exec_tests {
     use std::{thread, time::Duration};
     use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    use proptest::prelude::*;
+    use crate::ss_proptest;
     // ss[related platform.executor-features]
     use crate::abstract_executor_async_std::core_exec::*;
 
@@ -240,5 +242,47 @@ mod async_std_exec_tests {
     fn test_spawn_more_threads_async_std() {
         let result = block_on(async { spawn_more_threads(3).await.expect("internal error") });
         assert_eq!(result, 0);
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn test_init_without_driver_is_noop() {
+        use crate::ProactorConfig;
+        init(false, ProactorConfig::InterruptDriven, 1024);
+        init(false, ProactorConfig::InterruptDriven, 1024);
+        let value = block_on(async { 11 });
+        assert_eq!(value, 11);
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn test_init_driver_once_and_block_on_future() {
+        use crate::ProactorConfig;
+        init(true, ProactorConfig::InterruptDriven, 1024);
+        init(true, ProactorConfig::InterruptDriven, 1024);
+        let doubled = block_on(async { spawn_blocking(|| 21).await + spawn_blocking(|| 21).await });
+        assert_eq!(doubled, 42);
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn test_spawn_blocking_panic_propagates() {
+        let result = std::panic::catch_unwind(|| {
+            block_on(async {
+                spawn_blocking(|| panic!("blocking panic test")).await
+            })
+        });
+        assert!(result.is_err());
+    }
+
+    ss_proptest! {
+        /// Property: `spawn_blocking` returns the closure value for simple workloads.
+        #[test]
+        // ss[verify platform.executor-features]
+        // ss[verify verify.process.proptest]
+        fn proptest_spawn_blocking_returns_value(n in 0i32..10_000) {
+            let got = block_on(async { spawn_blocking(move || n * 2).await });
+            prop_assert_eq!(got, n * 2);
+        }
     }
 }

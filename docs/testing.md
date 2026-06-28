@@ -268,6 +268,24 @@ Merges that only run `cargo test` in **this** workspace can still break external
 
 ---
 
+## Property-based testing (proptest)
+
+Steady State uses [proptest](https://docs.rs/proptest) as the primary verification layer for Tier-0 invariants. Shared strategies and case counts live in `core/src/proptest_support/`.
+
+### Conventions
+
+- **Tag every property** with `// ss[verify verify.process.proptest]` plus a domain tag (`channel.*`, `actor.*`, `graph.*`, etc.).
+- **Co-locate** `proptest!` blocks in `#[cfg(test)]` next to the code under test (same module or `tests/` sibling).
+- **Case counts:** **2048** for all properties via `ss_proptest!` / `proptest_support::default_config()` (`SS_PROPCASES`).
+- **On failure:** commit the shrunk input to `core/proptest-regressions/<module>.txt`.
+- **Deletion rule:** remove a narrow `#[test]` when a property fully subsumes it. Keep at most one `#[test]` per module only when proptest cannot express the scenario (document why in a one-line comment).
+
+### Harness pattern
+
+Use `GraphBuilder::for_testing()` and call `internal_behavior` directly — **never `run()`** in unit or property tests. See `lesson_on_proptest.md` for full-graph shutdown properties.
+
+---
+
 ## Next Steps
 
 - Read the **[Telemetry Guide](telemetry.md)** (see also [spec/09-telemetry](spec/09-telemetry-and-observability.md)).

@@ -195,6 +195,128 @@ macro_rules! sim_runners {
 
 /////////////////////////////////////////////////////////////////////////////////
 
+/// Macro for creating a LocalMonitor from channels.
+///
+/// Takes a `SteadyContext` and lists of Rx and Tx channels, returning a `LocalMonitor` for telemetry and Prometheus metrics.
+#[macro_export]
+// ss[related philosophy.structural-hierarchy]
+macro_rules! into_monitor {
+    ($self:expr, [$($rx:expr),*], [$($tx:expr),*]) => {{
+        #[allow(unused_imports)]
+        // ss[related philosophy.structural-hierarchy]
+        use $crate::steady_rx::RxMetaDataProvider;
+        #[allow(unused_imports)]
+        use $crate::steady_tx::TxMetaDataProvider;
+        let rx_meta = [$($rx.meta_data(),)*];
+        let tx_meta = [$($tx.meta_data(),)*];
+        $self.into_monitor_internal(rx_meta, tx_meta)
+    }};
+    ($self:expr, [$($rx:expr),*], $tx_bundle:expr) => {{
+        #[allow(unused_imports)]
+        // ss[related philosophy.structural-hierarchy]
+        use $crate::steady_rx::RxMetaDataProvider;
+        #[allow(unused_imports)]
+        use $crate::steady_tx::TxMetaDataProvider;
+        let rx_meta = [$($rx.meta_data(),)*];
+        $self.into_monitor_internal(rx_meta, $tx_bundle.meta_data())
+    }};
+    ($self:expr, $rx_bundle:expr, [$($tx:expr),*]) => {{
+        #[allow(unused_imports)]
+        // ss[related philosophy.structural-hierarchy]
+        use $crate::steady_rx::RxMetaDataProvider;
+        #[allow(unused_imports)]
+        use $crate::steady_tx::TxMetaDataProvider;
+        let tx_meta = [$($tx.meta_data(),)*];
+        $self.into_monitor_internal($rx_bundle.meta_data(), tx_meta)
+    }};
+    ($self:expr, $rx_bundle:expr, $tx_bundle:expr) => {{
+        $self.into_monitor_internal($rx_bundle.meta_data(), $tx_bundle.meta_data())
+    }};
+    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*], $($rx_bundle:expr),* ), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        #[allow(unused_imports)]
+        // ss[related philosophy.structural-hierarchy]
+        use $crate::steady_rx::RxMetaDataProvider;
+        #[allow(unused_imports)]
+        use $crate::steady_tx::TxMetaDataProvider;
+        let mut rx_count = [$( { $rx; 1 } ),*].len();
+        $(
+            rx_count += $rx_bundle.meta_data().len();
+        )*
+        assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
+
+        let mut tx_count = [$( { $tx; 1 } ),*].len();
+        $(
+            tx_count += $tx_bundle.meta_data().len();
+        )*
+        assert_eq!(tx_count, $tx_channels_to_monitor, "Mismatch in TX channel count");
+
+        let mut rx_mon = [$crate::monitor::RxMetaData::default(); $rx_channels_to_monitor];
+        let mut rx_index = 0;
+        $(
+            rx_mon[rx_index] = $rx.meta_data();
+            rx_index += 1;
+        )*
+        $(
+            for meta in $rx_bundle.meta_data() {
+                rx_mon[rx_index] = meta;
+                rx_index += 1;
+            }
+        )*
+
+        let mut tx_mon = [$crate::monitor::TxMetaData::default(); $tx_channels_to_monitor];
+        let mut tx_index = 0;
+        $(
+            tx_mon[tx_index] = $tx.meta_data();
+            tx_index += 1;
+        )*
+        $(
+            for meta in $tx_bundle.meta_data() {
+                tx_mon[tx_index] = meta;
+                tx_index += 1;
+            }
+        )*
+
+        $self.into_monitor_internal(rx_mon, tx_mon)
+    }};
+    ($self:expr, ($rx_channels_to_monitor:expr, [$($rx:expr),*]), ($tx_channels_to_monitor:expr, [$($tx:expr),*], $($tx_bundle:expr),* )) => {{
+        #[allow(unused_imports)]
+        // ss[related philosophy.structural-hierarchy]
+        use $crate::steady_rx::RxMetaDataProvider;
+        #[allow(unused_imports)]
+        use $crate::steady_tx::TxMetaDataProvider;
+        let mut rx_count = [$( { $rx; 1 } ),*].len();
+        assert_eq!(rx_count, $rx_channels_to_monitor, "Mismatch in RX channel count");
+
+        let mut tx_count = [$( { $tx; 1 } ),*].len();
+        $(
+            tx_count += $tx_bundle.meta_data().len();
+        )*
+        assert_eq!(tx_count, $tx_channels_to_monitor, "Mismatch in TX channel count");
+
+        let mut rx_mon = [$crate::monitor::RxMetaData::default(); $rx_channels_to_monitor];
+        let mut rx_index = 0;
+        $(
+            rx_mon[rx_index] = $rx.meta_data();
+            rx_index += 1;
+        )*
+
+        let mut tx_mon = [$crate::monitor::TxMetaData::default(); $tx_channels_to_monitor];
+        let mut tx_index = 0;
+        $(
+            tx_mon[tx_index] = $tx.meta_data();
+            tx_index += 1;
+        )*
+        $(
+            for meta in $tx_bundle.meta_data() {
+                tx_mon[tx_index] = meta;
+                tx_index += 1;
+            }
+        )*
+
+        $self.into_monitor_internal(rx_mon, tx_mon)
+    }};
+}
+
 /// Splits a bundle into multiple parts using constants or literals.
 ///
 /// This version supports constant identifiers (e.g., PDF_F) and ensures

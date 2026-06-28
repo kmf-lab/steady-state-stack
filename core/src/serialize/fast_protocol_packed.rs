@@ -214,6 +214,7 @@ pub fn write_long_signed(value: i64, byte_buffer: &mut BytesMut) {
 // ss[related stream.control-payload]
 mod tests {
     use super::*;
+    use crate::ss_proptest;
     use bytes::{Bytes, BytesMut};
 
     // ss[related stream.control-payload]
@@ -288,5 +289,62 @@ mod tests {
         assert!(read_long_signed(&mut empty_signed).is_none());
         let mut empty_unsigned = Bytes::from_static(&[]);
         assert!(read_long_unsigned(&mut empty_unsigned).is_none());
+    }
+
+    /// Overlong unsigned continuation (no stop bit within 10 bytes) must fail.
+    #[test]
+    // ss[verify stream.control-payload]
+    fn test_read_unsigned_too_many_continuation_bytes() {
+        let mut buf = Bytes::from_static(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        assert!(read_long_unsigned(&mut buf).is_none());
+    }
+
+    /// Truncated signed encoding (continuation without stop) must fail.
+    #[test]
+    // ss[verify stream.control-payload]
+    fn test_read_signed_truncated_continuation() {
+        let mut buf = Bytes::from_static(&[0x00, 0x00]);
+        assert!(read_long_signed(&mut buf).is_none());
+    }
+
+    /// Signed encoding with only non-stop continuation bytes must fail once the buffer ends.
+    #[test]
+    // ss[verify stream.control-payload]
+    fn test_read_signed_non_stop_bytes_exhaust_buffer() {
+        let mut buf = Bytes::from_static(&[0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]);
+        assert!(read_long_signed(&mut buf).is_none());
+    }
+
+    use proptest::prelude::*;
+
+    ss_proptest! {
+
+        /// Property: FAST unsigned encode/decode is a round-trip for all u64 values.
+        #[test]
+        // ss[verify stream.control-payload]
+        // ss[verify verify.process.proptest]
+        fn proptest_unsigned_roundtrip(value: u64) {
+            let mut buffer = BytesMut::with_capacity(16);
+            write_long_unsigned(value, &mut buffer);
+            let mut read_buffer = buffer.freeze();
+            let decoded = read_long_unsigned(&mut read_buffer)
+                .expect("valid unsigned encoding must decode");
+            prop_assert_eq!(value, decoded);
+            prop_assert!(read_buffer.is_empty(), "no trailing bytes");
+        }
+
+        /// Property: FAST signed encode/decode is a round-trip for all i64 values.
+        #[test]
+        // ss[verify stream.control-payload]
+        // ss[verify verify.process.proptest]
+        fn proptest_signed_roundtrip(value: i64) {
+            let mut buffer = BytesMut::with_capacity(16);
+            write_long_signed(value, &mut buffer);
+            let mut read_buffer = buffer.freeze();
+            let decoded = read_long_signed(&mut read_buffer)
+                .expect("valid signed encoding must decode");
+            prop_assert_eq!(value, decoded);
+            prop_assert!(read_buffer.is_empty(), "no trailing bytes");
+        }
     }
 }

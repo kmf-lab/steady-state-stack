@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Gate B: merged llvm-cov for release (lib + uri_contract; no live aeron_integration_suite).
+# Optional Gate C merge when SS_AERON_GATE_C=1 (live driver + aeron_integration_suite).
 # See CHANGELOG.md "Coverage (pre-release scope)".
 set -euo pipefail
 
@@ -25,15 +26,36 @@ echo "llvm-cov pass B (${FEATURES_B}): lib..."
 cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F "${FEATURES_B}" \
   -p steady_state --lib
 
+MERGE_INPUTS=(cov_a.lcov cov_b.lcov)
+
+if [[ "${SS_AERON_GATE_C:-0}" == "1" ]]; then
+  echo "llvm-cov pass C (Gate C): lib + aeron_integration_suite (live media driver required)..."
+  export SS_AERON_GATE_C=1
+  export SS_AERON_LLVM_COV_ALLOW_TESTS=1
+  cargo llvm-cov --lcov --output-path cov_c.lcov --no-default-features -F "${FEATURES_A}" \
+    -p steady_state --lib --test aeron_integration_suite
+  MERGE_INPUTS+=(cov_c.lcov)
+else
+  echo "Gate C llvm-cov pass skipped (set SS_AERON_GATE_C=1 to merge live Aeron suite coverage)."
+fi
+
 if command -v lcov >/dev/null 2>&1; then
-  echo "Merging LCOV..."
-  lcov --add-tracefile cov_a.lcov --add-tracefile cov_b.lcov -o merged.lcov
+  echo "Merging LCOV (${#MERGE_INPUTS[@]} inputs)..."
+  lcov_args=()
+  for f in "${MERGE_INPUTS[@]}"; do
+    lcov_args+=(--add-tracefile "$f")
+  done
+  lcov "${lcov_args[@]}" -o merged.lcov
   if command -v genhtml >/dev/null 2>&1; then
     genhtml merged.lcov --output-directory coverage_html
     echo "HTML report: coverage_html/index.html"
   fi
 else
-  echo "lcov not installed; cov_a.lcov and cov_b.lcov written (install lcov to merge)."
+  echo "lcov not installed; ${MERGE_INPUTS[*]} written (install lcov to merge)."
 fi
 
-echo "Gate B complete (live Aeron suite excluded; use ./scripts/run-aeron-integration.sh for Gate C)."
+if [[ "${SS_AERON_GATE_C:-0}" == "1" ]]; then
+  echo "Gate B+C merge complete (live Aeron suite included via SS_AERON_GATE_C=1)."
+else
+  echo "Gate B complete (live Aeron suite excluded; use SS_AERON_GATE_C=1 or ./scripts/run-aeron-integration.sh for Gate C)."
+fi

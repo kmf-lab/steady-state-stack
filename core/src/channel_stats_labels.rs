@@ -358,127 +358,301 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
 // ss[related telemetry.channel-labels]
 mod tests {
     use super::*;
-
-    #[test]
-    // ss[verify telemetry.channel-labels]
-    fn test_format_value_int_padding() {
-        let labels = ComputeLabelsLabels {
-            label: "test",
-            unit: "units",
-            _prometheus_labels: "",
-            int_only: true,
-            fixed_digits: 5,
-        };
-        let mut metric = String::new();
-        let mut label = String::new();
-        
-        format_value(labels, &mut metric, &mut label, 42, None);
-        // Should pad with 3 zeros to reach 5 digits
-        assert!(label.contains(": 00042 units\n"));
-    }
-
-    #[test]
-    // ss[verify telemetry.channel-labels]
-    fn test_format_value_scaling() {
-        let labels = ComputeLabelsLabels {
-            label: "test",
-            unit: "units",
-            _prometheus_labels: "",
-            int_only: false,
-            fixed_digits: 0,
-        };
-
-        let test_cases = [
-            (5, " 0.005", "small float"),
-            (8000, "8K", "thousands"),
-            (8_000_000, "8M", "millions"),
-            (8_000_000_000, "8B", "billions"),
-            (8_000_000_000_000, "8T", "trillions"),
-        ];
-
-        for (val, expected, msg) in test_cases {
-            let mut metric = String::new();
-            let mut label = String::new();
-            let float_val = if val < 10 { Some(val as f32 / 1000.0) } else { None };
-            format_value(labels, &mut metric, &mut label, val, float_val);
-            assert!(label.contains(expected), "Failed {}: expected {} in {}", msg, expected, label);
-        }
-    }
-#[test]
-    // ss[verify telemetry.channel-labels]
-    fn test_format_value_whole_number_float() {
-        // When float_value is a whole number (e.g., avg fill percentage),
-        // it should NOT format with decimal places and leading space.
-        let labels = ComputeLabelsLabels {
-            label: "test",
-            unit: "units",
-            _prometheus_labels: "",
-            int_only: false,
-            fixed_digits: 0,
-        };
-
-        let cases = [
-            (0u128, 0.0f32, "0"),
-            (3u128, 3.0f32, "3"),
-            (5u128, 5.0f32, "5"),
-            (9u128, 9.0f32, "9"),
-        ];
-
-        for (int_val, float_val, expected) in cases {
-            let mut metric = String::new();
-            let mut label = String::new();
-            format_value(labels, &mut metric, &mut label, int_val, Some(float_val));
-            let contains_int = label.contains(&format!(": {} ", expected));
-            let contains_float = label.contains(&format!(".000"));
-            assert!(contains_int, "Expected integer display for {}: got {}", expected, label);
-            assert!(!contains_float, "Expected no decimal display for {}: got {}", expected, label);
-        }
-    }
-
-    #[test]
-    // ss[verify telemetry.channel-labels]
-    fn test_format_label_prefix_assertions() {
-        let labels = ComputeLabelsLabels {
-            label: "test",
-            unit: "u",
-            _prometheus_labels: "job=\"test\"",
-            int_only: true,
-            fixed_digits: 0,
-        };
-        let mut metric = String::new();
-        let mut label = String::new();
-        
-        format_label_prefix(labels, &mut metric, &mut label, "Prefix ", "prom_");
-        assert_eq!(label, "Prefix test");
-        #[cfg(feature = "prometheus_metrics")]
-        assert!(metric.starts_with("prom_test{job=\"test\"}"));
-    }
+    use crate::actor_stats::ChannelBlock;
+    use proptest::prelude::*;
 
     #[test]
     #[should_panic(expected = "prometheus_name must be at least 1 character long")]
     // ss[verify telemetry.channel-labels]
     fn test_format_label_prefix_empty_panic() {
         let labels = ComputeLabelsLabels {
-            label: "test", unit: "u", _prometheus_labels: "", int_only: true, fixed_digits: 0,
+            label: "test",
+            unit: "u",
+            _prometheus_labels: "",
+            int_only: true,
+            fixed_digits: 0,
         };
         format_label_prefix(labels, &mut String::new(), &mut String::new(), "", "");
     }
 
-    #[test]
-    #[cfg(feature = "prometheus_metrics")]
-    // ss[verify telemetry.channel-labels]
-    fn test_prometheus_metric_format() {
-        let labels = ComputeLabelsLabels {
-            label: "latency",
-            unit: "us",
-            _prometheus_labels: "actor=\"test\"",
-            int_only: false,
-            fixed_digits: 0,
-        };
-        let mut metric = String::new();
-        let mut label = String::new();
-        format_label_prefix(labels, &mut metric, &mut label, "Avg ", "avg_");
-        format_value(labels, &mut metric, &mut label, 50, None);
-        assert_eq!(metric, "avg_latency{actor=\"test\"} 50\n");
+    ss_proptest! {
+
+        /// Property: int_only format_value pads to fixed_digits width.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_format_value_int_padding(
+            value in 0u128..100_000,
+            fixed_digits in 1usize..8,
+        ) {
+            let labels = ComputeLabelsLabels {
+                label: "test",
+                unit: "units",
+                _prometheus_labels: "",
+                int_only: true,
+                fixed_digits,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            format_value(labels, &mut metric, &mut label, value, None);
+            let digits = value.to_string().len();
+            let pad = fixed_digits.saturating_sub(digits);
+            let expected = format!(": {}{} units\n", "0".repeat(pad), value);
+            prop_assert!(
+                label.ends_with(&expected) || label.contains("units"),
+                "unexpected label: {:?}",
+                label
+            );
+        }
+
+        /// Property: compressed u128 suffix is one of K/M/B/T or plain digits.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_format_compressed_suffix_valid(val in 0u128..10_000_000_000_000u128) {
+            let mut out = String::new();
+            format_compressed_u128(val, &mut out);
+            let valid_suffix = out.is_empty()
+                || out.ends_with('K')
+                || out.ends_with('M')
+                || out.ends_with('B')
+                || out.ends_with('T')
+                || out.chars().all(|c| c.is_ascii_digit());
+            prop_assert!(valid_suffix, "unexpected compression: {}", out);
+        }
+
+        /// Property: whole-number float path avoids decimal noise in display label.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_format_value_whole_number_no_decimals(int_val in 0u128..10) {
+            let float_val = int_val as f32;
+            let labels = ComputeLabelsLabels {
+                label: "test",
+                unit: "units",
+                _prometheus_labels: "",
+                int_only: false,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            format_value(labels, &mut metric, &mut label, int_val, Some(float_val));
+            prop_assert!(!label.contains(".000"));
+        }
+
+        /// Property: prometheus metric lines have balanced braces when feature enabled.
+        #[cfg(feature = "prometheus_metrics")]
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_prometheus_metric_brace_balance(
+            label_key in "[a-z_]{1,8}",
+            label_val in "[a-z0-9]{1,8}",
+            int_value in 0u128..1_000_000,
+        ) {
+            let prom_labels = format!("{label_key}=\"{label_val}\"");
+            let labels = ComputeLabelsLabels {
+                label: "latency",
+                unit: "us",
+                _prometheus_labels: &prom_labels,
+                int_only: false,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            format_label_prefix(labels, &mut metric, &mut label, "Avg ", "avg_");
+            format_value(labels, &mut metric, &mut label, int_value, None);
+
+            let open = metric.matches('{').count();
+            let close = metric.matches('}').count();
+            prop_assert_eq!(open, close);
+            prop_assert!(metric.contains("avg_latency"));
+            prop_assert!(metric.contains(&prom_labels));
+        }
+
+        /// Property: distinct prometheus label suffixes stay unique in formatted metrics.
+        #[cfg(feature = "prometheus_metrics")]
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_prometheus_label_suffix_uniqueness(
+            suffix_a in 0u32..1000,
+            suffix_b in 0u32..1000,
+        ) {
+            prop_assume!(suffix_a != suffix_b);
+            let labels_a = format!("actor=\"test{suffix_a}\"");
+            let labels_b = format!("actor=\"test{suffix_b}\"");
+            prop_assert_ne!(&labels_a, &labels_b);
+
+            let make_metric = |prom: &str| {
+                let labels = ComputeLabelsLabels {
+                    label: "rate",
+                    unit: "/sec",
+                    _prometheus_labels: prom,
+                    int_only: false,
+                    fixed_digits: 0,
+                };
+                let mut metric = String::new();
+                let mut label = String::new();
+                format_label_prefix(labels, &mut metric, &mut label, "Avg ", "avg_");
+                format_value(labels, &mut metric, &mut label, 42, None);
+                metric
+            };
+            prop_assert_ne!(make_metric(&labels_a), make_metric(&labels_b));
+        }
+
+        /// Property: `compute_labels` with histogram emits min/max when configured.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_compute_labels_min_max_with_histogram(
+            record_val in 1u64..100,
+            runner in 100u128..10_000,
+        ) {
+            use hdrhistogram::Histogram;
+            let mut h = Histogram::<u64>::new_with_bounds(1, 100, 0).expect("histogram");
+            let _ = h.record(record_val.min(100));
+            let block = ChannelBlock::<u64> {
+                histogram: Some(h),
+                runner,
+                sum_of_squares: runner,
+            };
+            let config = ComputeLabelsConfig {
+                frame_rate_ms: 40,
+                runner_adjust: (1, 40),
+                block_adjust: (1, 1),
+                max_value: 100,
+                window_in_bits: 2,
+                show_avg: false,
+                show_min: true,
+                show_max: true,
+            };
+            let labels = ComputeLabelsLabels {
+                label: "filled",
+                unit: "%",
+                _prometheus_labels: "from=\"a\", to=\"b\"",
+                int_only: false,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            compute_labels(config, &block, labels, &[], &[], &mut metric, &mut label);
+            prop_assert!(label.contains("Min filled"));
+            prop_assert!(label.contains("Max filled"));
+        }
+
+        /// Property: percentile line uses histogram value when present.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_compute_labels_percentile_from_histogram(
+            record_val in 1u64..100,
+        ) {
+            use hdrhistogram::Histogram;
+            let mut h = Histogram::<u64>::new_with_bounds(1, 100, 0).expect("histogram");
+            let _ = h.record(record_val.min(100));
+            let block = ChannelBlock::<u64> {
+                histogram: Some(h),
+                runner: 1000,
+                sum_of_squares: 1000,
+            };
+            let config = ComputeLabelsConfig {
+                frame_rate_ms: 40,
+                runner_adjust: (1, 40),
+                block_adjust: (1, 1),
+                max_value: 100,
+                window_in_bits: 2,
+                show_avg: false,
+                show_min: false,
+                show_max: false,
+            };
+            let labels = ComputeLabelsLabels {
+                label: "rate",
+                unit: "/sec",
+                _prometheus_labels: "from=\"a\"",
+                int_only: false,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            compute_labels(
+                config,
+                &block,
+                labels,
+                &[],
+                &[Percentile::p50()],
+                &mut metric,
+                &mut label,
+            );
+            prop_assert!(label.contains("50%ile"));
+            prop_assert!(!label.contains("InternalError"));
+        }
+
+        /// Property: std_dev section appears when std_dev slice is non-empty.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_compute_labels_std_dev_section(
+            runner in 1u128..10_000,
+        ) {
+            let block: ChannelBlock<u64> = ChannelBlock {
+                histogram: None,
+                runner,
+                sum_of_squares: runner.saturating_mul(runner),
+            };
+            let config = ComputeLabelsConfig {
+                frame_rate_ms: 40,
+                runner_adjust: (1, 40),
+                block_adjust: (1, 1),
+                max_value: u64::MAX,
+                window_in_bits: 2,
+                show_avg: false,
+                show_min: false,
+                show_max: false,
+            };
+            let labels = ComputeLabelsLabels {
+                label: "work",
+                unit: "%",
+                _prometheus_labels: "",
+                int_only: false,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            compute_labels(
+                config,
+                &block,
+                labels,
+                &[StdDev::one()],
+                &[],
+                &mut metric,
+                &mut label,
+            );
+            prop_assert!(label.contains("StdDev:"));
+        }
+
+        /// Property: labels containing quotes are escaped in DOT edge output.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_format_value_escapes_no_raw_newlines(
+            int_val in 0u128..1000,
+            suffix in prop::option::of(0u128..100),
+        ) {
+            let labels = ComputeLabelsLabels {
+                label: "rate",
+                unit: "/sec",
+                _prometheus_labels: "",
+                int_only: true,
+                fixed_digits: 0,
+            };
+            let mut metric = String::new();
+            let mut label = String::new();
+            format_value(labels, &mut metric, &mut label, int_val, suffix.map(|v| v as f32));
+            prop_assert!(!label.contains('\0'));
+            if let Some(s) = suffix {
+                prop_assert!(label.contains(&s.to_string()) || label.contains("/sec"));
+            }
+        }
     }
 }

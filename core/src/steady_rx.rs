@@ -969,36 +969,156 @@ mod rx_tests {
 // ss[related philosophy.zero-copy-discipline]
 mod steady_rx_tests {
     use crate::channel_builder::ChannelBuilder;
+    use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
     use crate::*;
+    use proptest::prelude::*;
 
-    // ss[verify philosophy.zero-copy-discipline]
-    // ss[verify philosophy.pull-reactor]
-    // ss[verify philosophy.lock-first-contract]
-    #[test]
-    fn test_peek_slice_and_iter() {
-        let builder = ChannelBuilder::default().with_capacity(4);
-        let (tx_lazy, rx_lazy) = builder.build_channel::<i32>();
-        tx_lazy.testing_send_all(vec![5, 6, 7], false);
+    ss_proptest! {
 
-        let rx = rx_lazy.clone();
-        let ste_rx = core_exec::block_on(rx.lock());
-        let mut buf = [0; 3];
-        let n = ste_rx.shared_try_peek_slice(&mut buf);
-        assert_eq!(n, 3);
-        assert_eq!(buf, [5, 6, 7]);
-        assert!(ste_rx.shared_try_peek().is_some());
+        /// Property: channel delivery preserves FIFO order (i32).
+        #[test]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_channel_fifo_order_i32(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let taken = channel_fifo_take(cap, messages.clone());
+            prop_assert_eq!(taken, messages);
+        }
 
-        let collected: Vec<_> = ste_rx.try_peek_iter().cloned().collect();
-        assert_eq!(collected, vec![5, 6, 7]);
-    }
+        /// Property: channel delivery preserves FIFO order (u64).
+        #[test]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_channel_fifo_order_u64(
+            cap in capacity(),
+            messages in message_vec::<u64>(),
+        ) {
+            let messages: Vec<u64> = messages.into_iter().take(cap).collect();
+            let taken = channel_fifo_take(cap, messages.clone());
+            prop_assert_eq!(taken, messages);
+        }
 
-    // ss[verify philosophy.zero-copy-discipline]
-    #[test]
-    fn test_shared_try_peek_empty_channel() {
-        let builder = ChannelBuilder::default().with_capacity(4);
-        let (_tx, rx_lazy) = builder.build_channel::<i64>();
-        let rx = rx_lazy.clone();
-        let ste_rx = core_exec::block_on(rx.lock());
-        assert!(ste_rx.shared_try_peek().is_none());
+        /// Property: peek-before-take exposes the full queued sequence without mutation.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify verify.process.proptest]
+        fn proptest_peek_then_take_matches(
+            cap in 2usize..32,
+            messages in message_vec::<u32>(),
+        ) {
+            let messages: Vec<u32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, rx_lazy) = builder.build_channel::<u32>();
+            tx_lazy.testing_send_all(messages.clone(), false);
+            let rx = rx_lazy.clone();
+            let ste_rx = core_exec::block_on(rx.lock());
+            let peeked: Vec<_> = ste_rx.try_peek_iter().cloned().collect();
+            prop_assert_eq!(peeked, messages);
+        }
+
+        /// Property: empty channel peek returns no items.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify verify.process.proptest]
+        fn proptest_peek_empty_channel(cap in capacity()) {
+            let taken = channel_fifo_take::<i64>(cap, vec![]);
+            prop_assert!(taken.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (_tx, rx_lazy) = builder.build_channel::<i64>();
+            let rx = rx_lazy.clone();
+            let ste_rx = core_exec::block_on(rx.lock());
+            prop_assert!(ste_rx.shared_try_peek().is_none());
+        }
+
+        /// Property: lane_mask zero-bit lane wins wait_avail_index immediately.
+        #[test]
+        // ss[verify bundle.index-wait-readiness]
+        // ss[verify actor.index-wait-round-robin]
+        // ss[verify verify.process.proptest]
+        fn proptest_bundle_wait_avail_lane_mask(
+            cap in 2usize..16,
+            mask in lane_mask(2),
+            per_lane in 1usize..4,
+        ) {
+            prop_assume!(per_lane <= cap);
+            use crate::SteadyRxBundleTrait;
+            let b0 = ChannelBuilder::default().with_capacity(cap);
+            let (tx0, rx0) = b0.build_channel::<i32>();
+            let b1 = ChannelBuilder::default().with_capacity(cap);
+            let (tx1, rx1) = b1.build_channel::<i32>();
+            let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+            let need = per_lane.min(cap);
+            let mut counts = [need, need];
+            if mask & 1 == 0 {
+                counts[0] = 0;
+            }
+            if mask & 2 == 0 {
+                counts[1] = 0;
+            }
+            if counts[0] > 0 && mask & 1 != 0 {
+                tx0.testing_send_all(vec![1i32; counts[0]], false);
+            }
+            if counts[1] > 0 && mask & 2 != 0 {
+                tx1.testing_send_all(vec![2i32; counts[1]], false);
+            }
+            let idx = core_exec::block_on(bundle.wait_avail_index(&counts));
+            if counts[0] == 0 {
+                prop_assert_eq!(idx, 0);
+            } else if counts[1] == 0 {
+                prop_assert_eq!(idx, 1);
+            } else {
+                prop_assert!(idx < 2);
+            }
+        }
+
+        /// Property: try_peek_iter exposes the full queued FIFO sequence.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify channel.testing-take-all]
+        // ss[verify verify.process.proptest]
+        fn proptest_peek_iter_len_matches_fifo(
+            cap in capacity(),
+            messages in message_vec::<i64>(),
+        ) {
+            let messages: Vec<i64> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, rx_lazy) = builder.build_channel::<i64>();
+            tx_lazy.testing_send_all(messages.clone(), false);
+            let rx = rx_lazy.clone();
+            let ste_rx = core_exec::block_on(rx.lock());
+            let peeked: Vec<_> = ste_rx.try_peek_iter().cloned().collect();
+            prop_assert_eq!(peeked.len(), messages.len());
+            prop_assert_eq!(peeked, messages);
+        }
+
+        /// Property: try_take drain matches channel_fifo_take harness.
+        #[test]
+        // ss[verify channel.testing-take-all]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_try_take_matches_fifo_harness(
+            cap in capacity(),
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            let expected = channel_fifo_take(cap, messages.clone());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, rx_lazy) = builder.build_channel::<i32>();
+            tx_lazy.testing_send_all(messages, false);
+            let rx = rx_lazy.clone();
+            let mut ste_rx = core_exec::block_on(rx.lock());
+            let mut taken = Vec::new();
+            while let Some(v) = ste_rx.try_take() {
+                taken.push(v);
+            }
+            prop_assert_eq!(taken, expected);
+        }
     }
 }

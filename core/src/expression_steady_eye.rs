@@ -118,38 +118,90 @@ mod tests {
         );
     }
 
-
-    /// Tests a chain of all `true` expressions.
+    /// `Eye::veto_reason` includes file, line, and expression text.
     #[test]
     // ss[verify telemetry.dot-export]
-    fn test_all_true_expressions() {
-        let result = i!(true) && i!(true) && i!(true);
-        assert!(result, "Result should be true");
-        assert_eq!(
-            i_take_expression(),
-            None,
-            "No identifier should be stored when all are true"
-        );
+    fn veto_reason_includes_location_and_expression() {
+        let eye = Eye {
+            expression: "channel.is_closed()",
+            file: "actor.rs",
+            line: 99,
+        };
+        let reason = eye.veto_reason();
+        assert!(reason.contains("actor.rs:99"));
+        assert!(reason.contains("channel.is_closed()"));
     }
 
-    /// Tests multiple `false` expressions, ensuring the last one is stored.
+    use proptest::prelude::*;
+
+    ss_proptest! {
+
+        /// Property: i!(b) stores expression iff b is false; read clears storage.
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        fn proptest_i_macro_records_only_false(value in any::<bool>()) {
+            let _ = i_take_expression();
+            let result = i!(value);
+            prop_assert_eq!(result, value);
+            let stored = i_take_expression();
+            if value {
+                prop_assert!(stored.is_none());
+            } else {
+                prop_assert!(stored.is_some());
+            }
+            prop_assert!(i_take_expression().is_none());
+        }
+
+        /// Property: short-circuit && stores the first false operand, not later ones.
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        fn proptest_i_macro_short_circuit_chain(
+            a in any::<bool>(),
+            b in any::<bool>(),
+            c in any::<bool>(),
+        ) {
+            let _ = i_take_expression();
+            let result = i!(a) && i!(b) && i!(c);
+            prop_assert_eq!(result, a && b && c);
+            if result {
+                prop_assert!(i_take_expression().is_none());
+            } else if !a {
+                let eye = i_take_expression().expect("stored");
+                prop_assert_eq!(eye.expression, "a");
+            } else if !b {
+                let eye = i_take_expression().expect("stored");
+                prop_assert_eq!(eye.expression, "b");
+            } else {
+                let eye = i_take_expression().expect("stored");
+                prop_assert_eq!(eye.expression, "c");
+            }
+        }
+    }
+
+    /// Complex expression text is captured verbatim by `i!`.
     #[test]
     // ss[verify telemetry.dot-export]
-    fn test_multiple_false_expressions() {
-        let condition1 = false;
-        let condition2 = false;
+    fn false_complex_expression_stored() {
+        let flag = false;
+        let _ = i!(flag && true);
+        let eye = i_take_expression().expect("stored");
+        assert!(eye.expression.contains("flag"));
+    }
 
-        let result = i!(condition1) && i!(condition2);
-        assert!(!result, "Result should be false");
-        assert_eq!(
-            i_take_expression().expect("").expression,
-            "condition1",
-            "condition2 should be stored as the last false"
-        );
-        assert_eq!(
-            i_take_expression(),
-            None,
-            "Storage should be cleared after reading"
-        );
+    /// Thread-local `LAST_FALSE` is isolated per thread.
+    #[test]
+    // ss[verify telemetry.dot-export]
+    fn i_macro_thread_local_isolation() {
+        let _ = i_take_expression();
+        let child_stored = std::thread::spawn(|| {
+            let _ = i!(false);
+            i_take_expression().is_some()
+        })
+        .join()
+        .expect("child join");
+        assert!(child_stored);
+        assert!(i_take_expression().is_none(), "parent thread unaffected");
     }
 }

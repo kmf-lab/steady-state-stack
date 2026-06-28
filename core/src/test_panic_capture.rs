@@ -2,8 +2,14 @@
 //!
 //! The test creates a minimal graph setup to verify that panics are correctly captured and handled,
 //! ensuring that the graph can restart actors as intended.
+//!
+//! llvm-cov: exclude this module from coverage targets — `test_panic_graph` is `#[ignore]` and
+//! exercises production restart behavior only when run manually.
+//!
+//! To run manually: `cargo test test_panic_graph -- --ignored`
 
-
+// llvm-cov exclude-start (advanced panic integration; not part of Phase 1 unit coverage)
+// coverage:off — advanced panic integration; not part of Phase 1 unit coverage
 #[cfg(test)]
 // ss[related testing.never-run-in-unit]
 mod simple_graph_test {

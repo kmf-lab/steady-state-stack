@@ -361,4 +361,399 @@ mod state_management_tests {
             assert_eq!(*guard, MyState { value: 75 });
         }
     }
+
+    use proptest::prelude::*;
+    use proptest::test_runner::TestCaseError;
+    use serde::de::DeserializeOwned;
+
+    fn assert_persistent_json_roundtrip<T>(value: T) -> Result<(), TestCaseError>
+    where
+        T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + Send + 'static,
+    {
+        let dir = tempdir().expect("tempdir");
+        let file_path = dir.path().join("state.json");
+        let expected = value.clone();
+        {
+            let state = new_persistent_state::<T, _>(&file_path);
+            async_std::task::block_on(async {
+                let mut guard = state.lock(|| expected.clone()).await;
+                *guard = expected.clone();
+            });
+        }
+        let file = File::open(&file_path).expect("persisted file");
+        let reader = BufReader::new(file);
+        let loaded: T = serde_json::from_reader(reader).expect("valid json");
+        prop_assert_eq!(loaded, expected);
+        Ok(())
+    }
+
+    ss_proptest! {
+
+        /// Property: persistent state round-trips arbitrary i32 values through JSON on disk.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_roundtrip_i32(value: i32) {
+            assert_persistent_json_roundtrip(value)?;
+        }
+
+        /// Property: persistent state round-trips string payloads.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_roundtrip_string(s in "\\PC{0,48}") {
+            assert_persistent_json_roundtrip(s)?;
+        }
+
+        /// Property: persistent state round-trips struct payloads.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_roundtrip_struct(value: i32, label in "\\PC{0,16}") {
+            #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+            struct Labeled {
+                value: i32,
+                label: String,
+            }
+            assert_persistent_json_roundtrip(Labeled { value, label })?;
+        }
+
+        /// Property: persistent state round-trips vector payloads.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_roundtrip_vec(
+            items in prop::collection::vec(-1_000i32..1_000, 0..16),
+        ) {
+            assert_persistent_json_roundtrip(items)?;
+        }
+
+        /// Property: corrupt on-disk JSON falls back to the init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_invalid_json_fallback(
+            init_value in -1_000i32..1_000,
+            garbage in "\\PC{1,64}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            std::fs::write(&file_path, garbage).expect("write garbage");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: `persist` on non-persistent state is a no-op success.
+        #[test]
+        // ss[verify state.lock-init-once]
+        // ss[verify verify.process.proptest]
+        fn proptest_non_persistent_persist_is_noop(value: i32) {
+            let state = new_state::<MyState>();
+            async_std::task::block_on(async {
+                let mut guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value = value;
+                guard.persist().await.expect("persist noop");
+            });
+        }
+
+        /// Property: structurally valid JSON with wrong shape still falls back to init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_wrong_shape_fallback(
+            init_value in -500i32..500,
+            extra in "\\PC{0,24}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"{{"not_value":{init_value},"label":"{extra}"}}"#);
+            std::fs::write(&file_path, body).expect("write wrong shape");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: clone shares mutations across handles.
+        #[test]
+        // ss[verify state.clone-shared]
+        // ss[verify verify.process.proptest]
+        fn proptest_cloned_state_shares_value(a: i32, b: i32) {
+            let state1 = new_state::<i32>();
+            async_std::task::block_on(async {
+                let _ = state1.lock(|| a).await;
+            });
+            let state2 = state1.clone();
+            async_std::task::block_on(async {
+                let mut guard = state2.lock(|| 0).await;
+                *guard = b;
+            });
+            let read = async_std::task::block_on(async { *state1.lock(|| 0).await });
+            prop_assert_eq!(read, b);
+        }
+
+        /// Property: empty file falls back to init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_empty_file_fallback(init_value in -1_000i32..1_000) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            std::fs::write(&file_path, "").expect("write empty");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: truncated JSON falls back to init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_truncated_json_fallback(
+            init_value in -500i32..500,
+            prefix in "\\PC{1,32}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"{{"value":{init_value},"extra":"{prefix}"#);
+            std::fs::write(&file_path, body).expect("write truncated");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: valid on-disk JSON loads without calling init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_valid_json_loads(
+            disk_value in -10_000i32..10_000,
+            init_value in -10_000i32..10_000,
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let on_disk = MyState { value: disk_value };
+            let file = File::create(&file_path).expect("create");
+            serde_json::to_writer(file, &on_disk).expect("write");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, disk_value);
+        }
+
+        /// Property: explicit `persist` writes current state to disk.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_explicit_persist(
+            value in -5_000i32..5_000,
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            async_std::task::block_on(async {
+                let mut guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value = value;
+                guard.persist().await.expect("persist");
+            });
+            let file = File::open(&file_path).expect("open");
+            let reader = BufReader::new(file);
+            let loaded: MyState = serde_json::from_reader(reader).expect("json");
+            prop_assert_eq!(loaded.value, value);
+        }
+
+        /// Property: `try_lock_sync` returns None before initialization.
+        #[test]
+        // ss[verify state.try-lock-sync]
+        // ss[verify verify.process.proptest]
+        fn proptest_try_lock_sync_before_init(_seed in 0u8..2) {
+            let state = new_state::<MyState>();
+            prop_assert!(state.try_lock_sync().is_none());
+        }
+
+        /// Property: JSON with the wrong scalar type falls back to the init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_type_mismatch_fallback(
+            init_value in -1_000i32..1_000,
+            label in "\\PC{0,16}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"{{"value":"{label}"}}"#);
+            std::fs::write(&file_path, body).expect("write mismatched type");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON `null` document falls back to the init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_null_fallback(init_value in -1_000i32..1_000) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            std::fs::write(&file_path, "null").expect("write null");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON array document falls back to the init closure.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_json_array_fallback(
+            init_value in -500i32..500,
+            extra in -500i32..500,
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"[{{"value":{init_value}}},{{"value":{extra}}}]"#);
+            std::fs::write(&file_path, body).expect("write array");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: persisting to a directory path returns an I/O error.
+        #[test]
+        // ss[verify state.save-on-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_persist_directory_fails(value in -500i32..500) {
+            let dir = tempdir().expect("tempdir");
+            let state = new_persistent_state::<MyState, _>(dir.path());
+            let err = async_std::task::block_on(async {
+                let mut guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value = value;
+                guard.persist().await
+            });
+            prop_assert!(err.is_err());
+        }
+
+        /// Property: JSON missing required fields falls back to init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_missing_field_fallback(init_value in -1_000i32..1_000) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            std::fs::write(&file_path, r#"{}"#).expect("write empty object");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON boolean where integer expected falls back to init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_boolean_type_fallback(init_value in -500i32..500) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            std::fs::write(&file_path, r#"{"value":true}"#).expect("write bool");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON float where integer expected falls back to init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_float_type_fallback(
+            init_value in -500i32..500,
+            fractional in 0.1f64..99.9,
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"{{"value":{fractional}}}"#);
+            std::fs::write(&file_path, body).expect("write float");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON numeric string where integer expected falls back to init.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_numeric_string_fallback(
+            init_value in -1_000i32..1_000,
+            disk_digits in "\\d{1,6}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = format!(r#"{{"value":"{disk_digits}"}}"#);
+            std::fs::write(&file_path, body).expect("write numeric string");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: init_value }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, init_value);
+        }
+
+        /// Property: JSON with extra unknown fields still loads valid `MyState` when shape matches.
+        #[test]
+        // ss[verify state.persistent-load]
+        // ss[verify verify.process.proptest]
+        fn proptest_persistent_state_extra_fields_ignored(
+            disk_value in -10_000i32..10_000,
+            extra in "\\PC{0,24}",
+        ) {
+            let dir = tempdir().expect("tempdir");
+            let file_path = dir.path().join("state.json");
+            let body = serde_json::json!({
+                "value": disk_value,
+                "extra": extra,
+            })
+            .to_string();
+            std::fs::write(&file_path, body).expect("write extra fields");
+            let state = new_persistent_state::<MyState, _>(&file_path);
+            let got = async_std::task::block_on(async {
+                let guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value
+            });
+            prop_assert_eq!(got, disk_value);
+        }
+    }
 }

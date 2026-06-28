@@ -275,53 +275,9 @@ mod tests {
 
     #[test]
     // ss[verify actor.regeneration-survives]
-    fn test_work_new_valid() {
-        assert_eq!(Work::new(50.0), Some(Work { work: 5000 }));
-        assert_eq!(Work::new(0.0), Some(Work { work: 0 }));
-        assert_eq!(Work::new(100.0), Some(Work { work: 10_000 }));
-    }
-
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_work_new_invalid() {
-        assert_eq!(Work::new(-1.0), None);
-        assert_eq!(Work::new(101.0), None);
-    }
-
-    #[test]
-    // ss[verify actor.regeneration-survives]
     fn test_work_rational() {
         let work = Work::new(25.0).expect("internal error");
         assert_eq!(work.rational(), (2500, 10_000));
-    }
-
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_work_percent_methods() {
-        assert_eq!(Work::p10(), Work { work: 1000 });
-        assert_eq!(Work::p20(), Work { work: 2000 });
-        assert_eq!(Work::p30(), Work { work: 3000 });
-        assert_eq!(Work::p40(), Work { work: 4000 });
-        assert_eq!(Work::p50(), Work { work: 5000 });
-        assert_eq!(Work::p60(), Work { work: 6000 });
-        assert_eq!(Work::p70(), Work { work: 7000 });
-        assert_eq!(Work::p80(), Work { work: 8000 });
-        assert_eq!(Work::p90(), Work { work: 9000 });
-        assert_eq!(Work::p100(), Work { work: 10_000 });
-    }
-
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_mcpu_new_valid() {
-        assert_eq!(MCPU::new(512), Some(MCPU { mcpu: 512 }));
-        assert_eq!(MCPU::new(0), None);
-        assert_eq!(MCPU::new(1024), Some(MCPU { mcpu: 1024 }));
-    }
-
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_mcpu_new_invalid() {
-        assert_eq!(MCPU::new(1025), None);
     }
 
     #[test]
@@ -331,56 +287,74 @@ mod tests {
         assert_eq!(mcpu.mcpu(), 256);
     }
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_mcpu_methods() {
-        assert_eq!(MCPU::m16(), MCPU { mcpu: 16 });
-        assert_eq!(MCPU::m64(), MCPU { mcpu: 64 });
-        assert_eq!(MCPU::m256(), MCPU { mcpu: 256 });
-        assert_eq!(MCPU::m512(), MCPU { mcpu: 512 });
-        assert_eq!(MCPU::m768(), MCPU { mcpu: 768 });
-        assert_eq!(MCPU::m1024(), MCPU { mcpu: 1024 });
-    }
+    use proptest::prelude::*;
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_percentile_new_valid() {
-        assert_eq!(Percentile::new(25.0), Some(Percentile(25.0)));
-        assert_eq!(Percentile::new(0.0), Some(Percentile(0.0)));
-        assert_eq!(Percentile::new(100.0), Some(Percentile(100.0)));
-    }
+    ss_proptest! {
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_percentile_new_invalid() {
-        assert_eq!(Percentile::new(-1.0), None);
-        assert_eq!(Percentile::new(101.0), None);
-    }
+        /// Property: Work::new accepts exactly [0, 100] percent inputs.
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify verify.process.proptest]
+        fn proptest_work_valid_range(value in -10.0f32..110.0f32) {
+            let work = Work::new(value);
+            if value >= 0.0 && value <= 100.0 {
+                prop_assert!(work.is_some());
+                prop_assert_eq!(work.expect("some").work, (value * 100.0) as u16);
+            } else {
+                prop_assert!(work.is_none());
+            }
+        }
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_percentile_methods() {
-        assert_eq!(Percentile::p25(), Percentile(25.0));
-        assert_eq!(Percentile::p50(), Percentile(50.0));
-        assert_eq!(Percentile::p75(), Percentile(75.0));
-        assert_eq!(Percentile::p80(), Percentile(80.0));
-        assert_eq!(Percentile::p90(), Percentile(90.0));
-        assert_eq!(Percentile::p96(), Percentile(96.0));
-        assert_eq!(Percentile::p99(), Percentile(99.0));
-    }
+        /// Property: MCPU::new accepts exactly (0, 1024] millicores.
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify verify.process.proptest]
+        fn proptest_mcpu_valid_range(value in 0u16..1030u16) {
+            let mcpu = MCPU::new(value);
+            if value > 0 && value <= 1024 {
+                prop_assert!(mcpu.is_some());
+                prop_assert_eq!(mcpu.expect("some").mcpu, value);
+            } else {
+                prop_assert!(mcpu.is_none());
+            }
+        }
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_percentile_custom() {
-        assert_eq!(Percentile::custom(42.0), Some(Percentile(42.0)));
-        assert_eq!(Percentile::custom(-1.0), None);
-        assert_eq!(Percentile::custom(101.0), None);
-    }
+        /// Property: Percentile::new accepts exactly [0, 100].
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify verify.process.proptest]
+        fn proptest_percentile_valid_range(value in -5.0f64..105.0f64) {
+            let percentile = Percentile::new(value);
+            if value >= 0.0 && value <= 100.0 {
+                prop_assert!(percentile.is_some());
+                prop_assert!((percentile.expect("some").percentile() - value).abs() < f64::EPSILON);
+            } else {
+                prop_assert!(percentile.is_none());
+            }
+        }
 
-    #[test]
-    // ss[verify actor.regeneration-survives]
-    fn test_percentile_getter() {
-        let percentile = Percentile::new(42.0).expect("internal error");
-        assert_eq!(percentile.percentile(), 42.0);
+        /// Property: Work::pN() ≡ Work::new(N*10) for N = 1..10.
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify verify.process.proptest]
+        fn proptest_work_pN_equivalence(n in 1u64..=10u64) {
+            let percent = (n * 10) as f32;
+            let from_new = Work::new(percent).expect("valid percent");
+            let from_pN = match n {
+                1 => Work::p10(),
+                2 => Work::p20(),
+                3 => Work::p30(),
+                4 => Work::p40(),
+                5 => Work::p50(),
+                6 => Work::p60(),
+                7 => Work::p70(),
+                8 => Work::p80(),
+                9 => Work::p90(),
+                10 => Work::p100(),
+                _ => unreachable!(),
+            };
+            prop_assert_eq!(from_new, from_pN);
+            prop_assert_eq!(from_new.rational(), (from_new.work as u64, 10_000));
+        }
     }
 }

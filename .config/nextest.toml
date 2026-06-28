@@ -9,6 +9,7 @@ filter = 'not (test(aeron_integration_serial_suite) | test(aeron_preflight_wire_
 
 [profile.ci-unit]
 filter = 'not (test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle))'
+slow-timeout = { period = "300s", terminate-after = 2 }
 
 [[profile.ci-unit.overrides]]
 filter = 'test(aeron_integration_serial_suite)'
@@ -22,3 +23,8 @@ enabled = false
 filter = 'test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle)'
 test-threads = 1
 slow-timeout = { period = "120s", terminate-after = 2 }
+
+[profile.mutants]
+filter = 'not (test(aeron_integration_serial_suite) | test(aeron_preflight_wire_settle))'
+test-threads = 1
+slow-timeout = { period = "300s", terminate-after = 2 }

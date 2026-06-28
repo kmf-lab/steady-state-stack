@@ -246,4 +246,38 @@ mod tests {
         };
         assert_eq!(cli_builder.install_dir, expected_dir);
     }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn with_custom_location_sets_dir_even_when_not_on_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let custom = temp_dir.path().join("off-path-bin");
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
+            .with_custom_location(custom.clone());
+        assert!(!cli_builder.system_wide);
+        assert_eq!(cli_builder.install_dir, custom);
+    }
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn with_custom_location_honors_path_when_on_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let custom = temp_dir.path().join("on-path-bin");
+        std::fs::create_dir_all(&custom).expect("mkdir");
+        let old_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = if old_path.is_empty() {
+            custom.to_string_lossy().into_owned()
+        } else {
+            format!("{}:{}", custom.display(), old_path)
+        };
+        unsafe {
+            std::env::set_var("PATH", &new_path);
+        }
+        let cli_builder = LocalCLIBuilder::new("/some/path".to_string(), true)
+            .with_custom_location(custom.clone());
+        unsafe {
+            std::env::set_var("PATH", old_path);
+        }
+        assert_eq!(cli_builder.install_dir, custom);
+    }
 }

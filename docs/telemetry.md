@@ -18,13 +18,13 @@ When configured through steady config / graph setup, a builtin HTTP server may e
 
 ## DOT export
 
-Graph topology can be exported as DOT for documentation (`dot.rs`, `dot_node.rs`, `dot_edge.rs`).
+Graph topology can be exported as DOT for documentation (`core/src/dot/` — `build.rs`, `register.rs`, `history.rs`; plus `dot_node.rs`, `dot_edge.rs`, `dot_unify.rs`).
 
 ---
 
 ## Shutdown visibility
 
-Unclean shutdown records veto reasons and optional backtraces via graph liveliness reporting (`graph_liveliness.rs`).
+Unclean shutdown records veto reasons and optional backtraces via graph liveliness reporting (`core/src/graph/shutdown.rs`; public path remains `graph_liveliness` re-exports).
 
 ---
 

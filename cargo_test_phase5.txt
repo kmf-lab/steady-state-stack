@@ -1,0 +1,1513 @@
+warning: ignoring unknown configuration keys in config file /home/nate/kmf-lab/steady-state-stack/.config/nextest.toml:
+  - profile.aeron-live.filter
+  - profile.ci-unit.filter
+  - profile.ci-unit.overrides.0.enabled
+  - profile.ci-unit.overrides.1.enabled
+  - profile.default.filter
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling shlex v2.0.1
+   Compiling memchr v2.8.2
+   Compiling bitflags v2.13.0
+   Compiling autocfg v1.5.1
+   Compiling zerocopy v0.8.52
+   Compiling syn v2.0.118
+   Compiling smallvec v1.15.2
+   Compiling log v0.4.32
+   Compiling regex-syntax v0.8.11
+   Compiling socket2 v0.6.4
+   Compiling time-core v0.1.9
+   Compiling cc v1.2.64
+   Compiling rustix v1.1.4
+   Compiling nix v0.31.3
+   Compiling serde_json v1.0.150
+   Compiling num-conv v0.2.2
+   Compiling kv-log-macro v1.0.7
+   Compiling num-traits v0.2.19
+   Compiling aho-corasick v1.1.4
+   Compiling async-io v2.6.0
+   Compiling memoffset v0.9.1
+   Compiling time-macros v0.2.29
+   Compiling nom v7.1.3
+   Compiling parking_lot_core v0.9.12
+   Compiling nix v0.29.0
+   Compiling ctrlc v3.5.2
+   Compiling libz-sys v1.1.29
+   Compiling openssl-sys v0.9.117
+   Compiling libnghttp2-sys v0.1.13+1.68.1
+   Compiling curl-sys v0.4.87+curl-8.19.0
+   Compiling regex-automata v0.4.14
+   Compiling chrono v0.4.45
+   Compiling wait-timeout v0.2.1
+   Compiling quick-error v1.2.3
+   Compiling bit-vec v0.8.0
+   Compiling deranged v0.5.8
+   Compiling bit-set v0.8.0
+   Compiling hdrhistogram v7.5.4
+   Compiling parking_lot v0.12.5
+   Compiling uuid v1.23.3
+   Compiling rand_xorshift v0.4.0
+   Compiling futures-timer v3.0.4
+   Compiling unarray v0.1.4
+   Compiling polling v3.11.0
+   Compiling synstructure v0.13.2
+   Compiling tempfile v3.27.0
+   Compiling regex v1.12.4
+   Compiling ppv-lite86 v0.2.21
+   Compiling async-global-executor v2.4.1
+   Compiling ahash v0.8.12
+   Compiling env_logger v0.10.2
+   Compiling async-std v1.13.2
+   Compiling rusty-fork v0.3.1
+   Compiling time v0.3.49
+   Compiling rand_chacha v0.3.1
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.8.6
+   Compiling rand v0.9.4
+   Compiling pretty_env_logger v0.5.0
+   Compiling proptest v1.11.0
+   Compiling rand_distr v0.5.1
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.6
+   Compiling tracing-attributes v0.1.31
+   Compiling pin-project-internal v1.1.13
+   Compiling serde_derive v1.0.228
+   Compiling futures-macro v0.3.32
+   Compiling thiserror-impl v1.0.69
+   Compiling thiserror-impl v2.0.18
+   Compiling pin-project v1.1.13
+   Compiling clap_derive v4.6.1
+   Compiling tracing v0.1.44
+   Compiling futures-util v0.3.32
+   Compiling zerofrom v0.1.8
+   Compiling yoke v0.8.3
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling tracing-futures v0.2.5
+   Compiling thiserror v1.0.69
+   Compiling aeron v0.2.0
+   Compiling thiserror v2.0.18
+   Compiling flexi_logger v0.31.9
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling icu_collections v2.2.0
+   Compiling icu_locale_core v2.2.0
+   Compiling askama_parser v0.14.0
+   Compiling serde v1.0.228
+   Compiling clap v4.6.1
+   Compiling icu_provider v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling futures-executor v0.3.32
+   Compiling async-ringbuf v0.3.5
+   Compiling futures v0.3.32
+   Compiling askama_derive v0.14.0
+   Compiling idna_adapter v1.2.2
+   Compiling idna v1.1.0
+   Compiling url v2.5.8
+   Compiling askama v0.14.0
+   Compiling curl v0.4.49
+   Compiling isahc v1.8.2
+   Compiling steady_state v0.2.13 (/home/nate/kmf-lab/steady-state-stack/core)
+warning: steady_state@0.2.13: ########### Community support needed ###########################
+warning: steady_state@0.2.13: Please Sponsor Steady_State: https://github.com/sponsors/kmf-lab
+warning: steady_state@0.2.13: ################################################################
+warning: unused import: `Ordering`
+  --> core/src/telemetry/metrics_server.rs:27:36
+   |
+27 | use std::sync::atomic::{AtomicU64, Ordering};
+   |                                    ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `colors::actor_fillcolor_hex_into`
+  --> core/src/dot/mod.rs:18:16
+   |
+18 | pub(crate) use colors::actor_fillcolor_hex_into;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::actor_stats::ActorStatsComputer`
+  --> core/src/dot/mod.rs:36:5
+   |
+36 | use crate::actor_stats::ActorStatsComputer;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::channel_stats::ChannelStatsComputer`
+  --> core/src/dot/mod.rs:37:5
+   |
+37 | use crate::channel_stats::ChannelStatsComputer;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::OpenOptions`
+  --> core/src/dot/mod.rs:41:5
+   |
+41 | use std::fs::OpenOptions;
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::deps::*`
+ --> core/src/graph/identity.rs:1:5
+  |
+1 | use super::deps::*;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `debug`
+ --> core/src/graph/liveliness.rs:5:11
+  |
+5 | use log::{debug, error, trace, warn};
+  |           ^^^^^
+
+warning: unused import: `super::state::GraphLivelinessState`
+ --> core/src/graph/builder.rs:6:5
+  |
+6 | use super::state::GraphLivelinessState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `builder::MIN_MS_RATE`
+  --> core/src/graph/mod.rs:20:16
+   |
+20 | pub(crate) use builder::MIN_MS_RATE;
+   |                ^^^^^^^^^^^^^^^^^^^^
+
+warning: glob import doesn't reexport anything with visibility `pub` because no imported item is public enough
+  --> core/src/graph/mod.rs:22:9
+   |
+22 | pub use shutdown::*;
+   |         ^^^^^^^^^^^
+   |
+note: the most public imported item is `pub(crate)`
+  --> core/src/graph/mod.rs:22:9
+   |
+22 | pub use shutdown::*;
+   |         ^^^^^^^^^^^
+   = help: reduce the glob import's visibility or increase visibility of imported items
+
+warning: unused import: `shutdown::*`
+  --> core/src/graph/mod.rs:22:9
+   |
+22 | pub use shutdown::*;
+   |         ^^^^^^^^^^^
+
+warning: unused import: `Receiver`
+  --> core/src/actor_builder/builder.rs:14:33
+   |
+14 | use futures::channel::oneshot::{Receiver, Sender};
+   |                                 ^^^^^^^^
+
+warning: unused import: `futures_util::future::Shared`
+  --> core/src/actor_builder/builder.rs:15:5
+   |
+15 | use futures_util::future::Shared;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Ordering`
+  --> core/src/actor_builder/builder.rs:23:38
+   |
+23 | use std::sync::atomic::{AtomicUsize, Ordering};
+   |                                      ^^^^^^^^
+
+warning: unused import: `crate::dot::RemoteDetails`
+ --> core/src/actor_builder/context.rs:2:5
+  |
+2 | use crate::dot::RemoteDetails;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `GraphLivelinessState`
+ --> core/src/actor_builder/context.rs:3:63
+  |
+3 | use crate::graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
+  |                                                               ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::VecDeque`
+  --> core/src/actor_builder/context.rs:16:5
+   |
+16 | use std::collections::VecDeque;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Ordering`
+  --> core/src/actor_builder/context.rs:20:38
+   |
+20 | use std::sync::atomic::{AtomicUsize, Ordering};
+   |                                      ^^^^^^^^
+
+warning: unused imports: `CoreBalancer` and `pin_thread_to_core`
+ --> core/src/actor_builder/spawn.rs:2:23
+  |
+2 | use super::affinity::{pin_thread_to_core, CoreBalancer};
+  |                       ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `futures_util::lock::Mutex`
+  --> core/src/actor_builder/spawn.rs:11:5
+   |
+11 | use futures_util::lock::Mutex;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> core/src/actor_builder/spawn.rs:16:5
+   |
+16 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `super::affinity::pin_thread_to_core`
+ --> core/src/actor_builder/troupe.rs:2:5
+  |
+2 | use super::affinity::pin_thread_to_core;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `catch_unwind`
+  --> core/src/actor_builder/troupe.rs:17:18
+   |
+17 | use std::panic::{catch_unwind, AssertUnwindSafe};
+   |                  ^^^^^^^^^^^^
+
+warning: unused imports: `DynCall`, `SteadyContextArchetype`, `build_actor_context`, and `build_actor_registration`
+  --> core/src/actor_builder/mod.rs:23:26
+   |
+23 | pub(crate) use context::{build_actor_context, build_actor_registration, DynCall, SteadyContextArchetype};
+   |                          ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::io`
+   --> core/src/lib.rs:393:5
+    |
+393 | use std::io;
+    |     ^^^^^^^
+
+warning: unused imports: `append_channel_fill_tooltip`, `format_avg_fill_rollup_line_into`, and `mean_avg_fill_from_edge_slice`
+  --> core/src/dot/mod.rs:30:5
+   |
+30 |     append_channel_fill_tooltip, format_avg_fill_rollup_line_into,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |     mean_avg_fill_from_edge_slice, mean_avg_fill_percent,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::telemetry::metrics_server::async_write_all`
+ --> core/src/dot/tests/format_tests.rs:3:5
+  |
+3 | use crate::telemetry::metrics_server::async_write_all;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::dot_unify::ChannelEdgeRole`
+ --> core/src/dot/tests/build_tests.rs:4:5
+  |
+4 | use crate::dot_unify::ChannelEdgeRole;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ActorIdentity`, `ActorMetaData`, and `ChannelMetaData`
+ --> core/src/dot/tests/build_tests.rs:5:22
+  |
+5 | use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
+  |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^               ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::telemetry::metrics_server::async_write_all`
+ --> core/src/dot/tests/build_tests.rs:6:5
+  |
+6 | use crate::telemetry::metrics_server::async_write_all;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bytes::BytesMut`
+ --> core/src/dot/tests/build_tests.rs:7:5
+  |
+7 | use bytes::BytesMut;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::remove_file`
+ --> core/src/dot/tests/build_tests.rs:8:5
+  |
+8 | use std::fs::remove_file;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::PathBuf`
+ --> core/src/dot/tests/build_tests.rs:9:5
+  |
+9 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> core/src/dot/tests/build_tests.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+  --> core/src/dot/tests/build_tests.rs:11:5
+   |
+11 | use std::time::Instant;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::test_dot_frames`
+ --> core/src/dot/tests/history_tests.rs:3:5
+  |
+3 | use super::test_dot_frames;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::dot_unify::ChannelEdgeRole`
+ --> core/src/dot/tests/history_tests.rs:4:5
+  |
+4 | use crate::dot_unify::ChannelEdgeRole;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ActorIdentity`, `ActorMetaData`, and `ActorStatus`
+ --> core/src/dot/tests/history_tests.rs:5:22
+  |
+5 | use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
+  |                      ^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+  --> core/src/dot/tests/history_tests.rs:11:5
+   |
+11 | use std::time::Instant;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::test_dot_frames`
+ --> core/src/dot/tests/register_tests.rs:3:5
+  |
+3 | use super::test_dot_frames;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ActorStatus`
+ --> core/src/dot/tests/register_tests.rs:5:52
+  |
+5 | use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
+  |                                                    ^^^^^^^^^^^
+
+warning: unused import: `crate::telemetry::metrics_server::async_write_all`
+ --> core/src/dot/tests/register_tests.rs:6:5
+  |
+6 | use crate::telemetry::metrics_server::async_write_all;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bytes::BytesMut`
+ --> core/src/dot/tests/register_tests.rs:7:5
+  |
+7 | use bytes::BytesMut;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::remove_file`
+ --> core/src/dot/tests/register_tests.rs:8:5
+  |
+8 | use std::fs::remove_file;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::PathBuf`
+ --> core/src/dot/tests/register_tests.rs:9:5
+  |
+9 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::time::Instant`
+  --> core/src/dot/tests/register_tests.rs:11:5
+   |
+11 | use std::time::Instant;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+  --> core/src/dot_unify.rs:23:18
+   |
+23 | use log::{trace, warn};
+   |                  ^^^^
+
+warning: unused imports: `GraphBuilder` and `Graph`
+ --> core/src/graph_liveliness/tests/liveliness_unit.rs:3:59
+  |
+3 |     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
+  |                                                           ^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `ScheduleAs`
+ --> core/src/graph_liveliness/tests/liveliness_unit.rs:7:13
+  |
+7 | use crate::{ScheduleAs, SteadyActor};
+  |             ^^^^^^^^^^
+
+warning: unused imports: `ActorIdentity`, `GraphLiveliness`, `ShutdownVote`, `VoterStatus`, and `effective_block_until_stopped_timeout`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:3:5
+  |
+3 |     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^                       ^^^^^^^^^^^^^^^
+4 |     GraphLivelinessState, ShutdownVote, VoterStatus,
+  |                           ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::core_exec`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:6:5
+  |
+6 | use crate::core_exec;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ScheduleAs`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:7:13
+  |
+7 | use crate::{ScheduleAs, SteadyActor};
+  |             ^^^^^^^^^^
+
+warning: unused import: `futures::lock::Mutex as FutMutex`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:8:5
+  |
+8 | use futures::lock::Mutex as FutMutex;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicUsize` and `Ordering`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:9:25
+  |
+9 | use std::sync::atomic::{AtomicUsize, Ordering};
+  |                         ^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> core/src/graph_liveliness/tests/builder_unit.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::thread`
+  --> core/src/graph_liveliness/tests/builder_unit.rs:11:5
+   |
+11 | use std::thread;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `Instant`
+  --> core/src/graph_liveliness/tests/builder_unit.rs:12:27
+   |
+12 | use std::time::{Duration, Instant};
+   |                           ^^^^^^^
+
+warning: unused imports: `ActorIdentity`, `GraphLivelinessState`, `GraphLiveliness`, `Graph`, `ShutdownVote`, `VoterStatus`, and `effective_block_until_stopped_timeout`
+ --> core/src/graph_liveliness/tests/shutdown_integration.rs:3:5
+  |
+3 |     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^  ^^^^^                ^^^^^^^^^^^^^^^
+4 |     GraphLivelinessState, ShutdownVote, VoterStatus,
+  |     ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused import: `crate::core_exec`
+ --> core/src/graph_liveliness/tests/shutdown_integration.rs:6:5
+  |
+6 | use crate::core_exec;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `futures::lock::Mutex as FutMutex`
+ --> core/src/graph_liveliness/tests/shutdown_integration.rs:8:5
+  |
+8 | use futures::lock::Mutex as FutMutex;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AtomicUsize` and `Ordering`
+ --> core/src/graph_liveliness/tests/shutdown_integration.rs:9:25
+  |
+9 | use std::sync::atomic::{AtomicUsize, Ordering};
+  |                         ^^^^^^^^^^^  ^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> core/src/graph_liveliness/tests/shutdown_integration.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `std::thread`
+  --> core/src/graph_liveliness/tests/shutdown_integration.rs:11:5
+   |
+11 | use std::thread;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `Instant`
+  --> core/src/graph_liveliness/tests/shutdown_integration.rs:12:27
+   |
+12 | use std::time::{Duration, Instant};
+   |                           ^^^^^^^
+
+warning: unused import: `crate::ss_proptest`
+ --> core/src/graph_liveliness/tests/liveliness_proptest.rs:2:5
+  |
+2 | use crate::ss_proptest;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `VoterStatus`
+ --> core/src/graph_liveliness/tests/liveliness_proptest.rs:6:5
+  |
+6 |     VoterStatus,
+  |     ^^^^^^^^^^^
+
+warning: unused imports: `DynCall`, `build_actor_context`, and `build_actor_registration`
+  --> core/src/actor_builder/mod.rs:23:26
+   |
+23 | pub(crate) use context::{build_actor_context, build_actor_registration, DynCall, SteadyContextArchetype};
+   |                          ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^
+
+warning: unused import: `SteadyStreamRxBundleTrait`
+   --> core/src/distributed/aeron_publish_bundle.rs:471:71
+    |
+471 |         LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, SteadyStreamRxBundleTrait,
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::steady_actor_shadow::SteadyActorShadow`
+   --> core/src/steady_actor.rs:977:13
+    |
+977 |         use crate::steady_actor_shadow::SteadyActorShadow;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::steady_actor::SendOutcome`
+  --> core/src/steady_actor_spotlight/tests.rs:21:5
+   |
+21 | use crate::steady_actor::SendOutcome;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `GraphBuilder`
+   --> core/src/steady_actor_core.rs:309:32
+    |
+309 |     use crate::{ActorIdentity, GraphBuilder, SendSaturation, SendOutcome, RxDone, TxDone};
+    |                                ^^^^^^^^^^^^
+
+warning: unused import: `parking_lot::RwLock`
+   --> core/src/steady_actor_core.rs:315:9
+    |
+315 |     use parking_lot::RwLock;
+    |         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `assert_in_logs`
+   --> core/src/logging_util.rs:364:17
+    |
+364 |     use crate::{assert_in_logs, LogFileConfig, LogLevel};
+    |                 ^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> core/src/core_tx_guard.rs:197:9
+    |
+197 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `crate::channel_stats::DOT_GREEN`
+  --> core/src/actor_stats_tests.rs:10:9
+   |
+10 |     use crate::channel_stats::DOT_GREEN;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `assert_steady_rx_eq_count`
+   --> core/src/channel_builder_lazy.rs:442:21
+    |
+442 |         use crate::{assert_steady_rx_eq_count, GraphBuilder};
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `GRAPH_DOT_DISK_WRITE_INTERVAL_SECS` is never used
+  --> core/src/telemetry/metrics_server.rs:35:7
+   |
+35 | const GRAPH_DOT_DISK_WRITE_INTERVAL_SECS: u64 = 10;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `last_disk_write` and `start_time` are never read
+  --> core/src/telemetry/metrics_server.rs:44:5
+   |
+39 | struct MetricState {
+   |        ----------- fields in this struct
+...
+44 |     last_disk_write: Arc<AtomicU64>,
+   |     ^^^^^^^^^^^^^^^
+45 |     start_time: Instant,
+   |     ^^^^^^^^^^
+   |
+   = note: `MetricState` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: function `pin_thread_to_core` is never used
+  --> core/src/actor_builder/affinity.rs:97:15
+   |
+97 | pub(crate) fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
+   |               ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `SteadyActor`
+ --> core/src/graph_liveliness/tests/liveliness_unit.rs:7:25
+  |
+7 | use crate::{ScheduleAs, SteadyActor};
+  |                         ^^^^^^^^^^^
+
+warning: unused import: `SteadyActor`
+ --> core/src/graph_liveliness/tests/builder_unit.rs:7:25
+  |
+7 | use crate::{ScheduleAs, SteadyActor};
+  |                         ^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> core/src/actor_builder/troupe.rs:459:17
+    |
+459 |             let mut total = 1usize;
+    |                 ----^^^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `steady_state` (lib) generated 28 warnings (run `cargo fix --lib -p steady_state` to apply 24 suggestions)
+warning: variable does not need to be mutable
+    --> core/src/steady_actor_shadow.rs:1077:13
+     |
+1077 |         let mut graph = GraphBuilder::for_testing().build(());
+     |             ----^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> core/src/steady_actor_shadow.rs:1165:13
+     |
+1165 |         let mut shadow = graph.new_testing_test_monitor("test");
+     |             ----^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+    --> core/src/steady_actor_shadow.rs:1201:13
+     |
+1201 |         let mut shadow = graph.new_testing_test_monitor("test");
+     |             ----^^^^^^
+     |             |
+     |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> core/src/steady_actor_shadow/tests/proptest_shadow.rs:428:13
+    |
+428 |         let mut graph = GraphBuilder::for_testing().build(());
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> core/src/steady_actor_spotlight/spotlight_proptest.rs:326:13
+    |
+326 |         let mut spotlight = shadow.into_spotlight([], []);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> core/src/steady_actor_spotlight/spotlight_proptest.rs:511:13
+    |
+511 |         let mut spotlight = shadow.into_spotlight([&rx_steady], []);
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: function `check_addr` is never used
+   --> core/src/telemetry/metrics_server.rs:986:19
+    |
+986 |     pub(crate) fn check_addr(addr: &str) -> Option<String> {
+    |                   ^^^^^^^^^^
+
+warning: function `stand_up_test_server` is never used
+   --> core/src/telemetry/metrics_server.rs:996:8
+    |
+996 |     fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: function `launch_server` is never used
+    --> core/src/telemetry/metrics_server.rs:1017:8
+     |
+1017 |     fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
+     |        ^^^^^^^^^^^^^
+
+warning: function `validate_path` is never used
+    --> core/src/telemetry/metrics_server.rs:1075:8
+     |
+1075 |     fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
+     |        ^^^^^^^^^^^^^
+
+warning: function `create_rx` is never used
+  --> core/src/steady_actor_spotlight/tests.rs:67:4
+   |
+67 | fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>) {
+   |    ^^^^^^^^^
+
+warning: function `create_test_channel` is never used
+  --> core/src/steady_actor_spotlight/tests.rs:79:4
+   |
+79 | fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
+   |    ^^^^^^^^^^^^^^^^^^^
+
+warning: function `proptest_filled_pN_equivalence` should have a snake case name
+    --> core/src/channel_builder.rs:1277:12
+     |
+1277 |         fn proptest_filled_pN_equivalence(n in 1u64..=10u64) {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to snake case: `proptest_filled_p_n_equivalence`
+     |
+     = note: `#[warn(non_snake_case)]` (part of `#[warn(nonstandard_style)]`) on by default
+
+warning: function `proptest_work_pN_equivalence` should have a snake case name
+   --> core/src/actor_builder_units.rs:340:12
+    |
+340 |         fn proptest_work_pN_equivalence(n in 1u64..=10u64) {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: convert the identifier to snake case: `proptest_work_p_n_equivalence`
+
+warning: variable `from_pN` should have a snake case name
+   --> core/src/actor_builder_units.rs:343:17
+    |
+343 |             let from_pN = match n {
+    |                 ^^^^^^^ help: convert the identifier to snake case: `from_p_n`
+
+warning: `steady_state` (lib test) generated 90 warnings (21 duplicates) (run `cargo fix --lib -p steady_state --tests` to apply 58 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9m 02s
+────────────
+ Nextest run ID bbf91fda-3d86-4be1-b97d-eecd55f75b37 with nextest profile: ci-unit
+    Starting 783 tests across 5 binaries (2 tests skipped)
+        PASS [   0.057s] steady_state abstract_executor_async_std::async_std_exec_tests::test_spawn_blocking_async_std
+        PASS [   0.062s] steady_state abstract_executor_tests::tests::test_init_without_driver
+        PASS [   0.062s] steady_state actor_builder::affinity::affinity_tests::test_core_balancer
+        PASS [   0.068s] steady_state abstract_executor_async_std::async_std_exec_tests::test_spawn_blocking_panic_propagates
+        PASS [   0.069s] steady_state abstract_executor_tests::tests::test_block_on
+        PASS [   0.070s] steady_state abstract_executor_async_std::async_std_exec_tests::test_spawn_more_threads_async_std
+        PASS [   0.073s] steady_state abstract_executor_async_std::async_std_exec_tests::test_init_driver_once_and_block_on_future
+        PASS [   0.030s] steady_state actor_builder::tests::test_actor_builder_core_configs
+        PASS [   0.021s] steady_state actor_builder::tests::test_actor_refresh_window_matches_shared_frame_math
+        PASS [   0.098s] steady_state abstract_executor_async_std::async_std_exec_tests::test_spawn_detached_async_std
+        PASS [   0.040s] steady_state actor_builder::tests::test_internal_compute_refresh_window_edge_cases
+        PASS [   0.044s] steady_state actor_builder::tests::test_explicit_core_zero_panic
+        PASS [   0.049s] steady_state actor_builder::tests::test_core_balancer
+        PASS [   0.065s] steady_state actor_builder::tests::test_builder_gauntlet
+        PASS [   0.050s] steady_state actor_builder::tests::test_troupe_ops
+        PASS [   0.080s] steady_state actor_builder::tests::test_builder_state_modifications
+        PASS [   0.064s] steady_state actor_builder::tests::test_schedule_as
+        PASS [   0.175s] steady_state abstract_executor_tests::tests::test_init_with_driver
+        PASS [   0.051s] steady_state actor_builder_units::tests::test_mcpu_rational
+        PASS [   0.038s] steady_state actor_builder_units::tests::test_work_rational
+        PASS [   0.023s] steady_state actor_stats::actor_stats_tests::test_avg_rational_none
+        PASS [   0.054s] steady_state actor_stats::actor_stats_tests::test_compute_std_dev_large_numbers
+        PASS [   0.373s] steady_state actor_builder::spawn::spawn_proptest::proptest_dynamic_schedule_matches_guard_presence
+        PASS [   0.052s] steady_state actor_stats::actor_stats_tests::test_time_label
+        PASS [   0.042s] steady_state actor_stats::extra_tests::test_accumulate_data_frame_histogram_errors
+        PASS [   0.293s] steady_state actor_builder_units::tests::proptest_mcpu_valid_range
+        PASS [   0.276s] steady_state actor_builder_units::tests::proptest_work_valid_range
+        PASS [   0.295s] steady_state actor_builder_units::tests::proptest_work_pN_equivalence
+        PASS [   0.314s] steady_state actor_builder_units::tests::proptest_percentile_valid_range
+        PASS [   0.062s] steady_state actor_stats::extra_tests::test_bucket_refresh_histogram_errors
+        PASS [   0.044s] steady_state actor_stats::extra_tests::test_compute_std_dev_branches
+        PASS [   0.064s] steady_state actor_stats::extra_tests::test_compute_std_dev_alternative_branch
+        PASS [   0.069s] steady_state actor_stats::extra_tests::test_comprehensive_alert_combinations
+        PASS [   0.043s] steady_state actor_stats::extra_tests::test_compute_with_current_mcpu
+        PASS [   0.490s] steady_state actor_builder::spawn::spawn_proptest::proptest_excluded_core_fallback
+        PASS [   0.386s] steady_state actor_builder::troupe::troupe_proptest::proptest_transfer_from_empty_returns_false
+        PASS [   0.057s] steady_state actor_stats::extra_tests::test_compute_with_actor_suffix
+        PASS [   0.042s] steady_state actor_stats::extra_tests::test_compute_with_restarts
+        PASS [   0.055s] steady_state actor_stats::extra_tests::test_compute_with_current_work
+        PASS [   0.030s] steady_state actor_stats::extra_tests::test_compute_with_stopped_actor
+        PASS [   0.050s] steady_state actor_stats::extra_tests::test_compute_with_window_display
+        PASS [   0.051s] steady_state actor_stats::extra_tests::test_init_histogram_creation_errors
+        PASS [   0.051s] steady_state actor_stats::extra_tests::test_init_with_actor_suffix
+        PASS [   0.052s] steady_state actor_stats::extra_tests::test_std_dev_functions_with_none_current
+        PASS [   0.049s] steady_state actor_stats::extra_tests::test_trigger_alert_level_orange
+        PASS [   0.048s] steady_state actor_stats::extra_tests::test_triggered_mcpu_percentiles
+        PASS [   0.055s] steady_state actor_stats::extra_tests::test_trigger_alert_level_yellow
+        PASS [   0.076s] steady_state actor_stats::extra_tests::test_time_label_thresholds
+        PASS [   0.041s] steady_state actor_stats::test_actor_stats::test_init
+        PASS [   0.057s] steady_state actor_stats::test_actor_stats::test_accumulate_data_frame
+        PASS [   0.054s] steady_state actor_stats::test_actor_stats::test_compute_labels
+        PASS [   0.058s] steady_state actor_stats::test_actor_stats::test_dot_subtitle_escaped_in_label_only
+        PASS [   0.054s] steady_state actor_stats::test_actor_stats::test_percentile_rational
+        PASS [   0.038s] steady_state actor_stats::test_actor_stats_triggers::test_trigger_avg_below_mcpu
+        PASS [   0.050s] steady_state actor_stats::test_actor_stats_triggers::test_trigger_avg_above_work
+        PASS [   0.068s] steady_state actor_stats::test_actor_stats_triggers::test_trigger_avg_above_mcpu
+        PASS [   0.045s] steady_state actor_stats::test_actor_stats_triggers::test_trigger_avg_below_work
+        PASS [   0.040s] steady_state actor_stats_tests::extra_tests::test_accumulate_data_frame_histogram_errors
+        PASS [   0.584s] steady_state actor_builder::troupe::troupe_proptest::proptest_add_actor_grows_queue
+        PASS [   0.064s] steady_state actor_stats_tests::extra_tests::test_init_histogram_creation_errors
+        PASS [   0.574s] steady_state actor_builder::troupe::troupe_proptest::proptest_transfer_preserves_actor_count
+        PASS [   0.639s] steady_state actor_builder::troupe::troupe_proptest::proptest_future_builder_context_team_id
+        PASS [   0.961s] steady_state actor_builder::affinity::affinity_tests::proptest_core_balancer_round_robin
+        PASS [   0.034s] steady_state actor_stats_tests::test_actor_stats::test_compute_std_dev_branches
+        PASS [   0.438s] steady_state actor_stats_tests::extra_tests::proptest_no_triggers_grey
+        PASS [   0.054s] steady_state actor_stats_tests::test_actor_stats::test_std_dev_functions_with_none_current
+        PASS [   0.054s] steady_state actor_stats_tests::test_actor_stats::test_time_label_thresholds
+        PASS [   0.070s] steady_state channel_builder::test_builder::test_channel_builder_bundle_index
+        PASS [   0.046s] steady_state channel_builder::test_builder::test_channel_builder_new
+        PASS [   0.048s] steady_state channel_builder::test_builder::test_channel_builder_to_meta_data
+        PASS [   0.043s] steady_state channel_builder::test_builder::test_channel_builder_with_avg_filled
+        PASS [   0.553s] steady_state actor_stats_tests::test_actor_stats::proptest_trigger_mcpu_iff_predicate
+        PASS [   0.037s] steady_state channel_builder::test_builder::test_channel_builder_with_avg_rate
+        PASS [   0.050s] steady_state channel_builder::test_builder::test_channel_builder_with_avg_latency
+        PASS [   0.051s] steady_state channel_builder::test_builder::test_channel_builder_with_capacity
+        PASS [   0.045s] steady_state channel_builder::test_builder::test_channel_builder_with_filled_max
+        PASS [   0.046s] steady_state channel_builder::test_builder::test_channel_builder_with_filled_min
+        PASS [   0.025s] steady_state channel_builder::test_builder::test_channel_builder_with_filled_standard_deviation
+        PASS [   0.620s] steady_state actor_stats_tests::test_actor_stats::proptest_trigger_work_percentile_iff_predicate
+        PASS [   0.042s] steady_state channel_builder::test_builder::test_channel_builder_with_labels
+        PASS [   0.060s] steady_state channel_builder::test_builder::test_channel_builder_with_filled_percentile
+        PASS [   0.036s] steady_state channel_builder::test_builder::test_channel_builder_with_latency_percentile
+        PASS [   0.737s] steady_state actor_stats_tests::extra_tests::proptest_alert_color_priority
+        PASS [   0.042s] steady_state channel_builder::test_builder::test_channel_builder_with_latency_trigger
+        PASS [   0.608s] steady_state actor_stats_tests::test_actor_stats::proptest_trigger_work_stddev_iff_predicate
+        PASS [   0.045s] steady_state channel_builder::test_builder::test_channel_builder_with_memory_usage_sets_flag
+        PASS [   0.043s] steady_state channel_builder::test_builder::test_channel_builder_with_no_refresh_window
+        PASS [   0.046s] steady_state channel_builder::test_builder::test_channel_builder_with_no_totals
+        PASS [   0.076s] steady_state channel_builder::test_builder::test_channel_builder_with_latency_standard_deviation
+        PASS [   0.032s] steady_state channel_builder::test_builder::test_channel_builder_with_type
+        PASS [   0.715s] steady_state actor_stats_tests::test_actor_stats::proptest_trigger_work_iff_predicate
+        PASS [   0.054s] steady_state channel_builder::test_builder::test_channel_builder_with_rate_percentile
+        PASS [   0.049s] steady_state channel_builder::test_builder::test_channel_builder_with_rate_standard_deviation
+        PASS [   0.070s] steady_state channel_builder::test_builder::test_stream_builder_bundle_index
+        PASS [   0.063s] steady_state channel_builder::test_builder::test_to_meta_data_zero_capacity_panics
+        PASS [   0.932s] steady_state actor_stats_tests::extra_tests::proptest_single_orange_alert
+        PASS [   0.159s] steady_state channel_builder::tests_inputs::proptest_filled_pN_equivalence
+        PASS [   0.198s] steady_state channel_builder::tests_inputs::proptest_rate_denominator_ordering
+        PASS [   1.011s] steady_state actor_stats_tests::extra_tests::proptest_single_yellow_alert
+        PASS [   0.050s] steady_state channel_builder_lazy::steady_lazy_tests::test_assert_steady_rx_eq_count_macro
+        PASS [   0.053s] steady_state channel_builder_lazy::steady_lazy_tests::test_lazy_channel_initialization
+        PASS [   0.295s] steady_state channel_builder::tests_inputs::proptest_filled_percentage_valid_range
+        PASS [   0.280s] steady_state channel_builder::tests_inputs::proptest_rate_rational_ms_consistent
+        PASS [   0.066s] steady_state channel_builder_lazy::steady_lazy_tests::test_lazy_flow
+        PASS [   0.036s] steady_state channel_builder_lazy::steady_lazy_tests::test_lazy_tx_bundle_clone
+        PASS [   0.066s] steady_state channel_builder_lazy::steady_lazy_tests::test_lazy_rx_bundle_clone
+        PASS [   0.038s] steady_state channel_stats::channel_stats_tests::test_alert_color_priority
+        PASS [   0.063s] steady_state channel_builder_lazy::steady_lazy_tests::test_testing_send_all_with_close
+        PASS [   0.402s] steady_state channel_builder::tests_inputs::proptest_builder_clone_immutability
+        PASS [   0.046s] steady_state channel_stats::channel_stats_tests::test_avg_filled_percentage_none
+        PASS [   0.082s] steady_state channel_builder_lazy::steady_lazy_tests::test_testing_take_all
+        PASS [   0.043s] steady_state channel_stats::channel_stats_tests::test_avg_filled_whole_percent_none_when_no_current_block
+        PASS [   1.139s] steady_state actor_stats_tests::test_actor_stats::proptest_trigger_mcpu_stddev_iff_predicate
+        PASS [   0.036s] steady_state channel_stats::channel_stats_tests::test_avg_filled_whole_percent_none_when_show_disabled
+        PASS [   1.194s] steady_state actor_stats_tests::test_actor_stats::proptest_mcpu_work_ordering
+        PASS [   0.034s] steady_state channel_stats::channel_stats_tests::test_avg_latency_none
+        PASS [   0.060s] steady_state channel_stats::channel_stats_tests::test_avg_filled_whole_percent_none_when_runner_zero
+        PASS [   0.063s] steady_state channel_stats::channel_stats_tests::test_avg_filled_whole_percent_returns_some_when_nonzero
+        PASS [   0.052s] steady_state channel_stats::channel_stats_tests::test_bundle_and_memory_display
+        PASS [   0.044s] steady_state channel_stats::channel_stats_tests::test_compute_filled_labels_inner_shows_avg_when_nonzero_runner
+        PASS [   0.048s] steady_state channel_stats::channel_stats_tests::test_edge_label_no_avg_filled_when_runner_zero_via_compute
+        PASS [   0.038s] steady_state channel_stats::channel_stats_tests::test_histogram_creation_failure_handling
+        PASS [   0.061s] steady_state channel_stats::channel_stats_tests::test_compute_filled_labels_inner_omits_avg_when_runner_zero
+        PASS [   0.328s] steady_state channel_builder::tests_inputs::proptest_trigger_accumulation_immutable
+        PASS [   0.056s] steady_state channel_stats::channel_stats_tests::test_init_and_label_building
+        PASS [   0.037s] steady_state channel_stats::channel_stats_tests::test_monotonic_total_and_resets
+        PASS [   0.043s] steady_state channel_stats::channel_stats_tests::test_std_dev_triggers
+        PASS [   0.038s] steady_state channel_stats::channel_stats_tests::test_trigger_gauntlet_filled
+        PASS [   0.038s] steady_state channel_stats::channel_stats_tests::test_trigger_gauntlet_rate
+        PASS [   0.480s] steady_state channel_builder::tests_inputs::proptest_refresh_window_floor_matches_shared_math
+        PASS [   0.069s] steady_state channel_stats::channel_stats_tests::test_init_builds_labels_without_suffix_on_to_actor
+        PASS [   0.051s] steady_state channel_stats::channel_stats_tests::test_trigger_gauntlet_latency
+        PASS [   0.539s] steady_state channel_builder::tests_inputs::proptest_no_refresh_window_zeros_bits
+        PASS [   0.067s] steady_state channel_stats::channel_stats_tests::test_zero_capacity_safety
+        PASS [   0.040s] steady_state channel_stats_labels::tests::test_format_label_prefix_empty_panic
+        PASS [   0.187s] steady_state channel_stats_labels::tests::proptest_format_compressed_suffix_valid
+        PASS [   1.506s] steady_state actor_stats_tests::test_actor_stats::proptest_percentile_rational_consistent
+        PASS [   0.269s] steady_state channel_stats_labels::tests::proptest_compute_labels_min_max_with_histogram
+        PASS [   0.630s] steady_state channel_builder::tests_inputs::proptest_to_meta_data_preserves_flags
+        PASS [   0.275s] steady_state channel_stats_labels::tests::proptest_format_value_whole_number_no_decimals
+        PASS [   0.327s] steady_state channel_stats_labels::tests::proptest_compute_labels_percentile_from_histogram
+        PASS [   0.323s] steady_state channel_stats_labels::tests::proptest_format_value_int_padding
+        PASS [   0.468s] steady_state channel_stats_labels::tests::proptest_prometheus_label_suffix_uniqueness
+        PASS [   0.494s] steady_state channel_stats_labels::tests::proptest_compute_labels_std_dev_section
+        PASS [   0.410s] steady_state channel_stats_tests::channel_stats_tests::proptest_avg_filled_whole_percent_bounded
+        PASS [   0.412s] steady_state channel_stats_tests::channel_stats_tests::proptest_avg_latency_none_when_no_sample
+        PASS [   0.666s] steady_state channel_stats_labels::tests::proptest_format_value_escapes_no_raw_newlines
+        PASS [   0.762s] steady_state channel_stats_tests::channel_stats_tests::proptest_alert_color_priority_red_over_yellow
+        PASS [   0.892s] steady_state channel_stats_labels::tests::proptest_prometheus_metric_brace_balance
+        PASS [   0.022s] steady_state channel_stats_tests::channel_stats_tests::test_avg_filled_percentage_none
+        PASS [   0.482s] steady_state channel_stats_tests::channel_stats_tests::proptest_triggered_filled_exact_iff
+        PASS [   0.040s] steady_state channel_stats_tests::channel_stats_tests::test_avg_latency_none
+        PASS [   0.031s] steady_state channel_stats_tests::channel_stats_tests::test_histogram_creation_failure_handling
+        PASS [   0.064s] steady_state channel_stats_tests::channel_stats_tests::test_zero_capacity_safety
+        PASS [   0.637s] steady_state channel_stats_tests::channel_stats_tests::proptest_triggered_filled_percentage_iff
+        PASS [   0.843s] steady_state channel_stats_tests::channel_stats_tests::proptest_suppress_avg_only_omits_avg_line
+        PASS [   0.577s] steady_state channel_stats_tests::channel_stats_tests::proptest_triggered_rate_avg_below_iff
+        PASS [   0.994s] steady_state channel_stats_tests::channel_stats_tests::proptest_prometheus_label_suffix_uniqueness
+        PASS [   0.677s] steady_state channel_stats_tests::channel_stats_tests::proptest_triggered_latency_iff_predicate
+        PASS [   0.636s] steady_state channel_stats_tests::channel_stats_tests::proptest_triggered_rate_iff_avg_rational
+        PASS [   0.543s] steady_state channel_stats_tests::channel_stats_tests::proptest_window_rollover_sets_current_filled
+        PASS [   1.052s] steady_state channel_stats_tests::channel_stats_tests::proptest_total_consumed_monotonic
+        PASS [   0.070s] steady_state core_rx::core_rx_async_tests::test_advance_index_valid
+        PASS [   1.207s] steady_state channel_stats_tests::channel_stats_tests::proptest_reset_clears_state_and_handles_take_rollback
+        PASS [   0.080s] steady_state core_rx::core_rx_async_tests::test_log_periodic
+        PASS [   0.092s] steady_state core_rx::core_rx_async_tests::test_monitor_not
+        PASS [   0.074s] steady_state core_rx::core_rx_async_tests::test_one
+        PASS [   0.106s] steady_state core_rx::core_rx_async_tests::test_rx_telemetry_warning
+        PASS [   0.137s] steady_state core_rx::core_rx_async_tests::test_rx_core_state_boundaries
+        PASS [   1.489s] steady_state channel_stats_tests::channel_stats_tests::proptest_bundle_sum_equals_lanes
+        PASS [   0.086s] steady_state core_rx::core_rx_async_tests::test_try_take_empty
+        PASS [   0.107s] steady_state core_rx::core_rx_async_tests::test_wait_avail_units
+        PASS [   0.089s] steady_state core_rx::core_rx_async_tests::test_wait_avail_units_shutdown
+        PASS [   0.077s] steady_state core_rx::core_rx_async_tests::test_wait_closed_or_avail_units
+        PASS [   0.085s] steady_state core_rx::core_rx_async_tests::test_wait_shutdown_or_avail_units_shutdown
+        PASS [   0.092s] steady_state core_rx_guard::tests::mutex_guard_forwards_avail_items_count
+        PASS [   1.630s] steady_state core_rx::core_rx_async_tests::proptest_capacity_for_matches_avail
+        PASS [   2.046s] steady_state core_rx::core_rx_async_tests::proptest_advance_index_empty_returns_zero
+        PASS [   1.956s] steady_state core_rx::core_rx_async_tests::proptest_validate_capacity_items_clamped
+        PASS [   2.339s] steady_state core_rx::core_rx_async_tests::proptest_peek_preserves_avail_length
+        PASS [   1.000s] steady_state core_rx_stream::core_rx_stream_tests::proptest_stream_egress_no_silent_drop
+        PASS [   2.842s] steady_state core_rx::core_rx_async_tests::proptest_advance_index_bounded
+        PASS [   2.608s] steady_state core_rx::core_rx_async_tests::proptest_rx_fifo_order
+        PASS [   0.090s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_advance_fail
+        PASS [   0.112s] steady_state core_rx_stream::core_rx_stream_tests::test_general
+        PASS [   0.067s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_core_basics
+        PASS [   2.752s] steady_state core_rx::core_rx_async_tests::proptest_take_slice_never_exceeds_avail
+        PASS [   0.068s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_shared_capacity_for_bounds
+        PASS [   0.137s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_peek_async_timeout
+        PASS [   0.093s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_take_slice_logic
+        PASS [   0.084s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_take_slice_wrap_around
+        PASS [   0.090s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_telemetry_normal
+        PASS [   0.061s] steady_state core_tx::core_tx_rx_tests::done_one_and_shared_mark_closed
+        PASS [   0.083s] steady_state core_rx_stream::core_rx_stream_tests::test_stream_rx_try_take_partial_payload
+        PASS [   2.385s] steady_state core_rx_guard::tests::proptest_guard_peek_preserves_avail
+        PASS [   3.298s] steady_state core_rx::core_rx_async_tests::proptest_avail_plus_taken_le_capacity
+        PASS [   1.348s] steady_state core_rx_stream::core_rx_stream_tests::proptest_stream_rx_advance_empty_zero
+        PASS [   0.078s] steady_state core_tx::core_tx_rx_tests::shared_send_iter_until_full_and_warn_after_close
+        PASS [   3.253s] steady_state core_rx::core_rx_async_tests::proptest_shutdown_operations_no_panic
+        PASS [   0.063s] steady_state core_tx::core_tx_rx_tests::shared_try_send_and_async_variants
+        PASS [   0.086s] steady_state core_tx::core_tx_rx_tests::test_bad_message_detection
+        PASS [   0.072s] steady_state core_tx::core_tx_rx_tests::test_mutexguard_txcore_methods
+        PASS [   0.064s] steady_state core_tx::core_tx_rx_tests::test_send_async_saturation_closes_on_shutdown
+        PASS [   0.117s] steady_state core_tx::core_tx_rx_tests::test_send_async_saturation_awaits_room_and_succeeds
+        PASS [   2.894s] steady_state core_rx_guard::tests::proptest_guard_advance_index_bounded
+        PASS [   0.047s] steady_state core_tx::core_tx_rx_tests::test_send_async_saturation_returns_blocked
+        PASS [   0.075s] steady_state core_tx::core_tx_rx_tests::test_send_async_saturation_policies
+        PASS [   0.067s] steady_state core_tx::core_tx_rx_tests::test_tx_rx_basic_flow
+        PASS [   0.073s] steady_state core_tx::core_tx_rx_tests::test_tx_telemetry_inc_monitor_not
+        PASS [   0.771s] steady_state core_tx::core_tx_rx_tests::proptest_send_iter_respects_capacity
+        PASS [   0.608s] steady_state core_tx::core_tx_rx_tests::proptest_vacant_plus_inflight_le_capacity
+        PASS [   1.763s] steady_state core_rx_stream::core_rx_stream_tests::proptest_stream_rx_advance_index_bounded
+        PASS [   0.822s] steady_state core_tx::core_tx_rx_tests::proptest_send_slice_never_exceeds_vacant
+        PASS [   0.984s] steady_state core_tx::core_tx_rx_tests::proptest_mark_closed_idempotent_vacant_unchanged
+        PASS [   2.017s] steady_state core_rx_stream::core_rx_stream_tests::proptest_stream_rx_avail_le_capacity
+        PASS [   1.438s] steady_state core_tx::core_tx_rx_tests::proptest_no_silent_drop
+        PASS [   0.097s] steady_state core_tx_stream::core_tx_stream_tests::test_general
+        PASS [   0.058s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_defrag_partial_flush
+        PASS [   2.136s] steady_state core_rx_stream::core_rx_stream_tests::proptest_stream_rx_peek_preserves_avail
+        PASS [   0.119s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_egress_tx_core
+        PASS [   0.070s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core
+        PASS [   0.105s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_egress_tx_core_capacity_checks
+        PASS [   0.086s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_mark_closed_dropped
+        PASS [   0.128s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_advance_fail
+        PASS [   4.296s] steady_state core_rx_guard::tests::proptest_guard_fifo_matches_channel
+        PASS [   0.101s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_partial_slice_send
+        PASS [   0.086s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_periodic_log
+        PASS [   0.073s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_wait_empty_terminated
+        PASS [   0.121s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_saturation_policies
+        PASS [   0.119s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_telemetry_warning
+        PASS [   1.244s] steady_state core_tx_stream::core_tx_stream_tests::proptest_stream_egress_vacant_plus_sent_le_capacity
+        PASS [   0.081s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_ingress_tx_core_wait_shutdown
+        PASS [   0.101s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_send_async_timeout_saturation
+        PASS [   0.109s] steady_state core_tx_stream::core_tx_stream_tests::test_stream_tx_iter_until_full
+        PASS [   1.920s] steady_state core_tx_guard::core_tx_guard_tests::proptest_guard_try_send_bounded
+        PASS [   1.644s] steady_state core_tx_stream::core_tx_stream_tests::proptest_stream_ingress_no_silent_drop
+        PASS [   1.870s] steady_state core_tx_guard::core_tx_guard_tests::proptest_guard_vacant_matches_direct
+        PASS [   0.505s] steady_state distributed::aeron_channel_builder::tests::proptest_builder_ipc_fields_subset_of_uri
+        PASS [   0.059s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_channel_cstring_ipv4_udp_with_interface_and_term
+        PASS [   0.084s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_channel_cstring_ipv6_udp_endpoint
+        PASS [   0.051s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_channel_cstring_spy_ipc_and_multicast_manual
+        PASS [   0.569s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::proptest_channel_cstring_ipc_term
+        PASS [   0.056s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_media_driver_probe_bool_matches_result
+        PASS [   0.078s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_media_driver_probe_error_display_and_hint
+        PASS [   0.068s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::test_media_driver_probe_with_zero_wait_fails_fast
+        PASS [   2.077s] steady_state core_tx_stream::core_tx_stream_tests::proptest_stream_egress_mark_closed_idempotent
+        PASS [   0.080s] steady_state distributed::aeron_publish::aeron_publish_state_tests::test_publish_state_default
+        PASS [   0.768s] steady_state distributed::aeron_channel_builder::tests::proptest_builder_p2p_fields_subset_of_uri
+        PASS [   0.051s] steady_state distributed::aeron_publish::aeron_publish_state_tests::test_publish_state_registration_cleared_on_default
+        PASS [   0.072s] steady_state distributed::aeron_publish::aeron_publish_state_tests::test_publish_stream_id_constant_positive
+        PASS [   0.923s] steady_state distributed::aeron_channel_builder::tests::proptest_builder_multicast_fields_subset_of_uri
+        PASS [   0.244s] steady_state distributed::aeron_publish::aeron_publish_graph_tests::test_publish_simulated_graph_stops_cleanly
+        PASS [   0.093s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_graph_tests::test_mock_receiver_run_graph_stops_cleanly
+        PASS [   0.094s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_graph_tests::test_mock_sender_run_graph_stops_cleanly
+        PASS [   0.039s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_tests::test_publish_state_init
+        PASS [   2.305s] steady_state core_tx_stream::core_tx_stream_tests::proptest_stream_egress_send_slice_within_vacant
+        PASS [   0.406s] steady_state distributed::aeron_publish::aeron_publish_graph_tests::test_publish_internal_closed_egress_stops_without_driver
+        PASS [   0.351s] steady_state distributed::aeron_publish::aeron_publish_graph_tests::test_publish_stops_during_driver_wait_without_driver
+        PASS [   0.048s] steady_state distributed::aeron_subscribe::aeron_subscribe_state_tests::test_fresh_stream_ids_disjoint_from_preflight_probe
+        PASS [   0.030s] steady_state distributed::aeron_subscribe::aeron_subscribe_state_tests::test_poll_scheduler_delay_within_bounds
+        PASS [   0.202s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_graph_tests::test_publish_bundle_simulated_graph_stops_cleanly
+        PASS [   0.037s] steady_state distributed::aeron_subscribe::aeron_subscribe_state_tests::test_subscribe_state_default
+        PASS [   0.226s] steady_state distributed::aeron_subscribe::aeron_subscribe_graph_tests::test_subscribe_simulated_graph_stops_cleanly
+        PASS [   0.396s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_graph_tests::test_publish_bundle_internal_closed_egress_stops_without_driver
+        PASS [   0.157s] steady_state distributed::aeron_subscribe_bundle::aeron_subscribe_bundle_graph_tests::test_subscribe_bundle_simulated_graph_stops_cleanly
+        PASS [   0.410s] steady_state distributed::aeron_publish_bundle::aeron_publish_bundle_graph_tests::test_publish_bundle_stops_during_driver_wait_without_driver
+        PASS [   0.941s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::proptest_channel_cstring_p2p_udp_tokens
+        PASS [   0.052s] steady_state distributed::aeron_subscribe_bundle::aeron_subscribe_bundle_tests::test_subscribe_state_resize
+        PASS [   0.055s] steady_state distributed::aeron_subscribe_bundle::aeron_subscribe_bundle_tests::test_subscribe_state_init
+        PASS [   0.995s] steady_state distributed::aeron_channel_structs::aeron_channel_structs_tests::proptest_channel_cstring_multicast_tokens
+        PASS [   0.383s] steady_state distributed::aeron_subscribe::aeron_subscribe_graph_tests::test_subscribe_stops_during_driver_wait_without_driver
+        PASS [   0.065s] steady_state distributed::aqueduct_builder::distributed_builder_tests::test_build_aqueduct_lazy_stream_tx
+        PASS [   0.074s] steady_state distributed::aqueduct_builder::distributed_builder_tests::test_build_aqueduct_lazy_stream_rx_bundle_simple
+        PASS [   0.067s] steady_state distributed::aqueduct_builder::distributed_builder_tests::test_build_aqueduct_lazy_stream_tx_bundle_session
+        PASS [   0.049s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_defrag_ensure_additional_capacity
+        PASS [   0.051s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_extract_stream_payload_slices_behavior
+        PASS [   0.483s] steady_state distributed::aeron_subscribe::aeron_subscribe_graph_tests::test_subscribe_internal_closed_ingress_stops_without_driver
+        PASS [   0.080s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_defrag_new_properties
+        PASS [   0.412s] steady_state distributed::aeron_subscribe_bundle::aeron_subscribe_bundle_graph_tests::test_subscribe_bundle_internal_closed_ingress_stops_without_driver
+        PASS [   0.066s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_lazy_rx_bundle_clone_empty
+        PASS [   0.043s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_rate_collector_constants
+        PASS [   0.048s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_steady_tx_bundle_trait_empty
+        PASS [   0.130s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_lazy_tx_bundle_clone_empty
+        PASS [   0.071s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_ingress_egress_build_helpers
+        PASS [   0.093s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_steady_rx_bundle_trait_empty
+        PASS [   0.150s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_lazy_stream_testing_send_and_take_roundtrip
+        PASS [   2.458s] steady_state core_tx_stream::core_tx_stream_tests::proptest_stream_ingress_send_slice_within_vacant
+        PASS [   0.064s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_rx_bundle_trait_empty
+        PASS [   0.035s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_testing_new_methods
+        PASS [   0.055s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_session_message_new_and_from_defrag
+        PASS [   0.066s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_tx_fragment_consume_and_defrag_room
+        PASS [   0.033s] steady_state distributed::polling::tests::test_beyond_max_delay
+        PASS [   0.091s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_tx_bundle_trait_empty
+        PASS [   0.090s] steady_state distributed::aqueduct_stream::extra_stream_tests::test_stream_tx_rate_and_poll_helpers
+        PASS [   0.077s] steady_state distributed::polling::tests::test_at_expected_moment
+        PASS [   3.342s] steady_state core_tx_guard::core_tx_guard_tests::proptest_guard_mark_closed_idempotent
+        PASS [   0.078s] steady_state distributed::polling::tests::test_one_std_dev_before
+        PASS [   0.034s] steady_state distributed::polling::tests::test_three_std_dev_before
+        PASS [   0.089s] steady_state distributed::polling::tests::test_poll_sequence_with_delay_vector
+        PASS [   0.081s] steady_state distributed::polling::tests::test_slightly_after_expected_moment
+        PASS [   0.085s] steady_state distributed::polling::tests::test_slightly_before_expected_moment
+        PASS [   0.087s] steady_state distributed::polling::tests::test_three_std_dev_after
+        PASS [   0.086s] steady_state distributed::polling::tests::test_zero_std_dev
+        PASS [   0.438s] steady_state distributed::aqueduct_stream::extra_stream_tests::proptest_stream_ingress_testing_new_length
+        PASS [   3.415s] steady_state core_tx_guard::core_tx_guard_tests::proptest_guard_no_silent_drop
+        PASS [   0.066s] steady_state dot::dot_tests::build_tests::test_bundle_tooltip_uses_total_consumed
+        PASS [   0.514s] steady_state distributed::aqueduct_stream::extra_stream_tests::proptest_stream_egress_length_matches_payload
+        PASS [   0.070s] steady_state dot::dot_tests::build_tests::test_edge_compute_and_refresh
+        PASS [   0.052s] steady_state dot::dot_tests::build_tests::test_edge_tooltip_prefers_avg_fill_when_enabled
+        PASS [   0.065s] steady_state dot::dot_tests::build_tests::test_edge_tooltip_omits_avg_fill_when_no_window_sample
+        PASS [   0.046s] steady_state dot::dot_tests::build_tests::test_large_bundle_tooltip_no_total_volume
+        PASS [   0.083s] steady_state dot::dot_tests::build_tests::test_edge_tooltip_uses_total_consumed
+        PASS [   0.072s] steady_state dot::dot_tests::build_tests::test_large_bundle_avg_fill_uses_mean_summary
+        PASS [   0.072s] steady_state dot::dot_tests::build_tests::test_multi_lane_avg_fill_omits_when_all_zero_percent
+        PASS [   0.759s] steady_state distributed::aeron_subscribe_bundle::aeron_subscribe_bundle_graph_tests::test_subscribe_bundle_stops_during_driver_wait_without_driver
+        PASS [   0.038s] steady_state dot::dot_tests::build_tests::test_node_compute_refresh_with_load_calculation
+        PASS [   0.078s] steady_state dot::dot_tests::build_tests::test_node_compute_and_refresh
+        PASS [   0.065s] steady_state dot::dot_tests::build_tests::test_node_compute_refresh_full_busy_when_await_zero
+        PASS [   0.068s] steady_state dot::dot_tests::build_tests::test_partner_tooltip_uses_total_consumed
+        PASS [   0.051s] steady_state dot::dot_tests::build_tests::test_stage1_avg_fill_mean_when_lanes_exceed_inline_cap
+        PASS [   0.760s] steady_state distributed::aqueduct_builder::distributed_builder_tests::test_build_aqueduct_lazy_stream_rx
+        PASS [   0.275s] steady_state dot::dot_tests::format_proptest::proptest_mean_avg_fill_percent_bounded
+        PASS [   0.534s] steady_state dot::dot_tests::format_proptest::proptest_mean_avg_fill_all_zero_or_none
+        PASS [   0.582s] steady_state dot::dot_tests::format_proptest::proptest_color_to_rgb_bounded
+        PASS [   0.594s] steady_state dot::dot_tests::format_proptest::proptest_actor_fillcolor_hex_prefix
+        PASS [   0.841s] steady_state dot::dot_tests::build_proptest::proptest_build_dot_digraph_header
+        PASS [   0.073s] steady_state dot::dot_tests::format_tests::test_build_metric
+        PASS [   0.072s] steady_state dot::dot_tests::format_tests::test_mean_avg_fill_percent_all_none_returns_none_without_panic
+        PASS [   0.908s] steady_state dot::dot_tests::build_proptest::proptest_build_dot_no_bare_quotes
+        PASS [   0.089s] steady_state dot::dot_tests::history_tests::test_frame_history_all_to_file_async
+        PASS [   0.049s] steady_state dot::dot_tests::history_tests::test_frame_history_apply_edge
+        PASS [   0.817s] steady_state dot::dot_tests::format_proptest::proptest_mean_avg_fill_ignores_zeros
+        PASS [   0.044s] steady_state dot::dot_tests::history_tests::test_frame_history_apply_node
+        PASS [   0.036s] steady_state dot::dot_tests::history_tests::test_frame_history_mark_position
+        PASS [   0.059s] steady_state dot::dot_tests::history_tests::test_frame_history_new
+        PASS [   0.083s] steady_state dot::dot_tests::history_tests::test_frame_history_update
+        PASS [   0.593s] steady_state dot::dot_tests::format_proptest::proptest_rgb_to_hex_format
+        PASS [   0.075s] steady_state dot::dot_tests::register_tests::test_apply_node_def
+        PASS [   0.061s] steady_state dot::dot_tests::register_tests::test_define_unified_edges
+        PASS [   1.106s] steady_state dot::dot_tests::format_proptest::proptest_escape_dot_quotes_replaces_double_quotes
+        PASS [   0.549s] steady_state dot::dot_tests::history_proptest::proptest_apply_edge_grows_buffer
+        PASS [   0.060s] steady_state dot_unify::unify_edge_tests::default_channel_meta_id_zero_collides_by_design
+        PASS [   1.461s] steady_state dot::dot_tests::build_proptest::proptest_build_dot_edge_count_bounds
+        PASS [   0.189s] steady_state dot::render::render_proptest::proptest_render_edge_sidecar_rank_same
+        PASS [   0.055s] steady_state expression_steady_eye::tests::false_complex_expression_stored
+        PASS [   0.049s] steady_state expression_steady_eye::tests::i_macro_thread_local_isolation
+        PASS [   0.250s] steady_state expression_steady_eye::tests::proptest_i_macro_records_only_false
+        PASS [   0.920s] steady_state dot::dot_tests::history_proptest::proptest_build_history_path_deterministic_pure_subset
+        PASS [   0.928s] steady_state dot::dot_tests::history_proptest::proptest_mark_position_records_buffer_len
+        PASS [   0.055s] steady_state expression_steady_eye::tests::test_false_expression
+        PASS [   0.049s] steady_state expression_steady_eye::tests::test_true_expression
+        PASS [   0.074s] steady_state expression_steady_eye::tests::veto_reason_includes_location_and_expression
+        PASS [   0.057s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_aeron_init_timeouts_depend_on_test_mode
+        PASS [   0.053s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_args_roundtrip
+        PASS [   0.048s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_empty_pipeline_names_clears_allowlist
+        PASS [   0.074s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_chain_sets_optional_fields
+        PASS [   0.089s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_build_returns_startable_graph
+        PASS [   0.053s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_telemetry_features_off_keeps_io_driver_disabled
+        PASS [   0.090s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_extended_chain_sets_graph_fields
+        PASS [   0.077s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_builder_for_testing_sets_test_flags
+        PASS [   0.064s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_telemetry_rate_below_minimum_clamped_in_test_mode
+        PASS [   0.070s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_stage_manager_guard_derefs_to_initialized_hub
+        PASS [   0.074s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::graph_telemetry_rate_respects_minimum_when_telemetry_on
+        PASS [   0.569s] steady_state expression_steady_eye::tests::proptest_i_macro_short_circuit_chain
+        PASS [   0.068s] steady_state graph_liveliness::graph_liveliness_tests::builder_unit::start_with_timeout_empty_graph_reaches_running
+        PASS [   2.424s] steady_state dot::dot_tests::build_proptest::proptest_build_dot_all_node_ids_present
+        PASS [   0.361s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_effective_timeout_monotonic
+        PASS [   0.335s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_is_in_state_membership
+        PASS [   2.517s] steady_state dot::dot_tests::format_proptest::proptest_escape_node_tooltip_no_bare_quotes
+        PASS [   2.948s] steady_state dot::dot_tests::build_proptest::proptest_build_dot_respects_bundle_floor
+        PASS [   0.036s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::actor_by_id_finds_catalog_entries
+        PASS [   0.091s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::actor_identity_debug_includes_name_and_suffix
+        PASS [   0.597s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_liveliness_state_reflexive
+        PASS [   0.998s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_dead_voters_auto_yes
+        PASS [   1.041s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_check_is_stopped_outcomes
+        PASS [   0.056s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::effective_block_until_stopped_timeout_uses_telemetry_floor
+        PASS [   0.039s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::is_shutdown_telemetry_complete_counts_non_telemetry_voters
+        PASS [   0.042s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::remove_voter_marks_dead_when_registered
+        PASS [   0.065s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::is_running_accept_shutdown_transitions_vote
+        PASS [   0.101s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::internal_request_shutdown_from_running_sets_stop_requested
+        PASS [   2.018s] steady_state dot::render::render_proptest::proptest_render_edge_contains_endpoints
+        PASS [   0.058s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::test_graph_liveliness_state_cloning
+        PASS [   0.061s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::test_graph_liveliness_state_equality
+        PASS [   0.069s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::test_graph_liveliness_state_debug_output
+        PASS [   0.060s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::vote_for_the_dead_casts_dead_actor_ballots
+        PASS [   0.061s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_unit::wait_for_registrations_waits_until_actor_count_matches
+        PASS [   0.057s] steady_state graph_liveliness::graph_liveliness_tests::shutdown_unit::watch_shutdown_returns_err_on_unclean_timeout
+        PASS [   0.045s] steady_state graph_liveliness::graph_liveliness_tests::shutdown_unit::watch_shutdown_unclean_reports_multiple_voters_with_backtrace
+        PASS [   0.083s] steady_state graph_liveliness::graph_liveliness_tests::shutdown_integration::test_clean_shutdown_actor_accepts_stop
+        PASS [   0.062s] steady_state graph_liveliness::graph_liveliness_tests::shutdown_unit::watch_shutdown_returns_ok_when_all_votes_in_favor
+        PASS [   1.305s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_check_is_stopped_monotonic
+        PASS [   0.174s] steady_state graph_liveliness::graph_liveliness_tests::shutdown_integration::test_unclean_shutdown_veto
+        PASS [   0.216s] steady_state graph_testing::graph_testing_tests::proptest_empty_graph_start_with_timeout_reaches_running
+        PASS [   2.345s] steady_state dot::render::render_proptest::proptest_render_edge_escapes_embedded_quotes
+        PASS [   0.923s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_vote_in_favor_total_conserved
+        PASS [   0.422s] steady_state graph_testing::graph_testing_tests::proptest_call_actor_internal_missing_actor
+        PASS [   1.009s] steady_state graph_liveliness::graph_liveliness_tests::liveliness_proptest::proptest_vote_accept_idempotent
+        PASS [   0.282s] steady_state graph_testing::graph_testing_tests::proptest_respond_with_empty_channel
+        PASS [   2.412s] steady_state dot_unify::unify_edge_tests::proptest_at_most_one_endpoint_per_channel
+        PASS [   1.439s] steady_state graph_testing::graph_testing_tests::proptest_should_apply_empty_queue
+        PASS [   3.898s] steady_state dot::render::render_proptest::proptest_render_edge_optional_labels
+        PASS [   1.464s] steady_state graph_testing::graph_testing_tests::proptest_simulate_direction_echo_roundtrip
+        PASS [   0.074s] steady_state graph_testing::graph_testing_tests::staged_single_sim_producer_and_real_consumer_shuts_down_cleanly
+        PASS [   0.064s] steady_state graph_testing::graph_testing_tests::test_avail
+        PASS [   0.223s] steady_state graph_testing::graph_testing_tests::staged_pipeline_four_actor_graph_regression
+        PASS [   0.073s] steady_state graph_testing::graph_testing_tests::test_graph_test_result
+        PASS [   0.118s] steady_state graph_testing::graph_testing_tests::test_call_actor_internal_errors
+        PASS [   0.076s] steady_state graph_testing::graph_testing_tests::test_node_tx_rx
+        PASS [   0.083s] steady_state graph_testing::graph_testing_tests::test_register_node
+        PASS [   0.078s] steady_state graph_testing::graph_testing_tests::test_respond_with_error_path
+        PASS [   0.079s] steady_state graph_testing::graph_testing_tests::test_should_apply_logic
+        PASS [   4.821s] steady_state dot::dot_tests::history_proptest::proptest_apply_edge_sync_path_after_many_writes
+        PASS [   0.084s] steady_state graph_testing::graph_testing_tests::test_side_channel_responder_new
+        PASS [   0.075s] steady_state graph_testing::graph_testing_tests::test_stage_manager_clone
+        PASS [   0.103s] steady_state graph_testing::graph_testing_tests::test_stack_guarded_graph
+        PASS [   0.076s] steady_state graph_testing::graph_testing_tests::test_stage_manager_debug
+        PASS [   0.056s] steady_state graph_testing::graph_testing_tests::test_stage_manager_default
+        PASS [   0.036s] steady_state install::local_cli::tests::test_default_installation_directory_user_local
+        PASS [   0.042s] steady_state install::local_cli::tests::test_new_local_cli_builder_system_wide
+        PASS [   0.097s] steady_state install::local_cli::tests::test_default_installation_directory_system_wide
+        PASS [   0.036s] steady_state install::local_cli::tests::test_new_local_cli_builder_user_local
+        PASS [   0.143s] steady_state install::local_cli::tests::with_custom_location_sets_dir_even_when_not_on_path
+        PASS [   0.123s] steady_state install::serviced::tests::process_systemd_commands_install_and_uninstall_return_true
+        PASS [   0.236s] steady_state install::serviced::tests::create_service_file_writes_unit_with_secrets
+        PASS [   0.071s] steady_state install::serviced::tests::test_systemd_builder_new
+        PASS [   0.082s] steady_state install::serviced::tests::process_systemd_commands_none_returns_false
+        PASS [   0.063s] steady_state install::serviced::tests::test_systemd_builder_with_description
+        PASS [   0.074s] steady_state install::serviced::tests::test_systemd_builder_with_after
+        PASS [   2.683s] steady_state graph_testing::graph_testing_tests::proptest_simulate_direction_echo_at_lane_mismatch
+        PASS [   0.092s] steady_state install::serviced::tests::test_systemd_builder_with_restart
+        PASS [   0.107s] steady_state install::serviced::tests::test_systemd_builder_with_on_boot
+        PASS [   2.599s] steady_state graph_testing::graph_testing_tests::proptest_simulate_wait_for_message_mismatch
+        PASS [   0.053s] steady_state install::serviced::tests::test_systemd_builder_with_service_file_default_folder
+        PASS [   0.074s] steady_state install::serviced::tests::test_systemd_builder_with_service_executable_folder
+        PASS [   0.096s] steady_state install::serviced::tests::test_systemd_builder_with_secret
+        PASS [   3.136s] steady_state graph_testing::graph_testing_tests::proptest_call_actor_internal_ok_response
+        PASS [   0.044s] steady_state install::serviced::tests::test_systemd_builder_with_wanted_by
+        PASS [   0.077s] steady_state install::serviced::tests::test_systemd_builder_with_service_name
+        PASS [   0.079s] steady_state install::serviced::tests::test_systemd_builder_with_service_user
+        PASS [   0.075s] steady_state install::serviced::tests::test_systemd_service_manager_creation
+        PASS [   0.095s] steady_state logging::tests::init_logging_reinit_with_same_level_succeeds
+        PASS [   0.073s] steady_state logging::tests::init_logging_with_file_config_succeeds
+        PASS [   0.066s] steady_state logging::tests::init_logging_without_file_config_succeeds
+        PASS [   0.077s] steady_state logging::tests::log_file_config_fields_roundtrip
+        PASS [   0.080s] steady_state logging::tests::log_level_to_level_filter_maps_all_variants
+        PASS [   0.077s] steady_state logging_util::tests::initialize_is_idempotent_and_level_can_change
+        PASS [   0.038s] steady_state loop_driver::loop_driver_tests::await_for_all_all_true
+        PASS [   0.076s] steady_state logging_util::tests::log_capture_guard_drop_stops_capture
+        PASS [   0.097s] steady_state logging_util::tests::initialize_with_rotating_file_config
+        PASS [   0.082s] steady_state logging_util::tests::log_capture_records_active_thread_messages
+        PASS [   0.051s] steady_state loop_driver::loop_driver_tests::await_for_all_one_false
+        PASS [   0.061s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_five_others_complete
+        PASS [   0.050s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_four_others_complete
+        PASS [   0.113s] steady_state loop_driver::loop_driver_tests::await_for_all_empty
+        PASS [   0.103s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_three_others_complete
+        PASS [   0.202s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_five_first_completes
+        PASS [   0.186s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_four_first_completes
+        PASS [   0.154s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_three_first_completes
+        PASS [   0.073s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_two_others_complete
+        PASS [   0.186s] steady_state loop_driver::loop_driver_tests::await_for_all_or_proceed_upon_two_first_completes
+        PASS [   0.063s] steady_state loop_driver::loop_driver_tests::await_for_any_one
+        PASS [   1.245s] steady_state install::local_cli::tests::test_build_creates_executable_in_install_dir
+        PASS [   0.152s] steady_state loop_driver::loop_driver_tests::await_for_any_five_fifth_completes
+        PASS [   0.156s] steady_state loop_driver::loop_driver_tests::await_for_any_four_fourth_completes
+        PASS [   0.072s] steady_state loop_driver::loop_driver_tests::steady_fuse_future_works
+        PASS [   0.159s] steady_state loop_driver::loop_driver_tests::await_for_any_two_first_completes
+        PASS [   0.187s] steady_state loop_driver::loop_driver_tests::await_for_any_two_second_completes
+        PASS [   0.208s] steady_state loop_driver::loop_driver_tests::await_for_any_three_third_completes
+        PASS [   0.051s] steady_state loop_driver::loop_driver_tests::wait_for_all_all_true
+        PASS [   0.176s] steady_state loop_driver::loop_driver_tests::steady_select_four_fourth_completes
+        PASS [   0.149s] steady_state loop_driver::loop_driver_tests::steady_select_three_third_completes
+        PASS [   0.203s] steady_state loop_driver::loop_driver_tests::steady_select_five_fifth_completes
+        PASS [   0.061s] steady_state loop_driver::loop_driver_tests::wait_for_all_one_false
+        PASS [   0.077s] steady_state loop_driver::loop_driver_tests::wait_for_all_empty
+        PASS [   0.182s] steady_state loop_driver::loop_driver_tests::steady_select_two_first_completes
+        PASS [   0.163s] steady_state loop_driver::loop_driver_tests::steady_select_two_second_completes
+        PASS [   0.069s] steady_state loop_driver::loop_driver_tests::wait_for_any_one
+        PASS [   0.162s] steady_state loop_driver::loop_driver_tests::wait_for_any_five_fourth_completes
+        PASS [   0.110s] steady_state macros::macros_tests::test_split_bundle_partitions_lazy_tx_bundle
+        PASS [   0.197s] steady_state loop_driver::loop_driver_tests::wait_for_any_four_third_completes
+        PASS [   0.092s] steady_state macros::macros_tests::test_steady_rx_bundle
+        PASS [   0.075s] steady_state macros::macros_tests::test_steady_rx_bundle_active
+        PASS [   0.191s] steady_state loop_driver::loop_driver_tests::wait_for_any_three_second_completes
+        PASS [   0.059s] steady_state macros::macros_tests::test_steady_tx_bundle
+        PASS [   0.184s] steady_state loop_driver::loop_driver_tests::wait_for_any_two_first_completes
+        PASS [   0.092s] steady_state metrics::tests::alert_color_variants_distinct
+        PASS [   0.107s] steady_state macros::macros_tests::test_steady_tx_bundle_active
+        PASS [   0.098s] steady_state metrics::tests::monitor_constants_are_ordered
+        PASS [   0.290s] steady_state metrics::tests::proptest_stddev_valid_range
+        PASS [   0.370s] steady_state metrics::tests::proptest_trigger_stddev_above_parts
+        PASS [   0.460s] steady_state metrics::tests::proptest_trigger_percentile_above
+        PASS [   0.072s] steady_state metrics::tests::send_saturation_default_is_warn_then_await
+        PASS [   0.040s] steady_state metrics::tests::send_saturation_deprecated_return_blocked_msg
+        PASS [   0.517s] steady_state metrics::tests::proptest_trigger_avg_below
+        PASS [   0.059s] steady_state metrics::tests::stddev_new_rejects_boundary_values
+        PASS [   0.055s] steady_state metrics::tests::trigger_avg_below_and_duration_metric
+        PASS [   0.506s] steady_state metrics::tests::proptest_trigger_stddev_below_parts
+        PASS [   0.085s] steady_state metrics::tests::stddev_presets_match_constructors
+        PASS [   0.052s] steady_state metrics::tests::trigger_avg_below_and_percentile_below
+        PASS [   0.056s] steady_state metrics::tests::trigger_stddev_and_percentile_above_variants
+        PASS [   0.046s] steady_state monitor::metadata::tests::actor_status_and_metadata_defaults
+        PASS [   0.055s] steady_state monitor::metadata::tests::actor_metadata_trigger_and_percentile_fields
+        PASS [   0.038s] steady_state monitor::metadata::tests::actor_status_calls_array_tracks_operations
+        PASS [   0.052s] steady_state monitor::metadata::tests::channel_metadata_triggers_and_flags_equality
+        PASS [   0.064s] steady_state monitor::metadata::tests::call_index_constants_are_ordered_and_distinct
+        PASS [   0.061s] steady_state monitor::metadata::tests::metadata_registry_populated_by_eager_channel_build
+        PASS [   0.073s] steady_state monitor::metadata::tests::metadata_holders_return_inner_arrays
+        PASS [   0.698s] steady_state metrics::tests::proptest_trigger_percentile_below
+        PASS [   0.062s] steady_state monitor::telemetry_iface::tests::consume_dot_subtitle_default_returns_none
+        PASS [   0.476s] steady_state metrics::tests::proptest_trigger_threshold_clone_consistent
+        PASS [   0.071s] steady_state monitor::metadata::tests::tx_and_rx_metadata_provider_clone_metadata
+        PASS [   0.070s] steady_state monitor::telemetry_iface::tests::stub_consume_into_methods_return_false_without_mutation
+        PASS [   0.081s] steady_state monitor::telemetry_iface::tests::consume_dot_subtitle_override_returns_pending_value
+        PASS [   0.077s] steady_state monitor_telemetry::monitor_telemetry_tests::test_dot_subtitle_mailbox_collapses_and_truncates
+        PASS [   0.075s] steady_state monitor_telemetry::monitor_telemetry_tests::test_dot_subtitle_mailbox_take_and_clear
+        PASS [   0.085s] steady_state monitor_telemetry::monitor_telemetry_old_tests::test_steady_telemetry_rx_actor_metadata
+        PASS [   0.075s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_actor_send_status_reset_and_message
+        PASS [   0.076s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_consume_send_into_without_send
+        PASS [   0.082s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_consume_actor_without_actor
+        PASS [   0.069s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_actor_rx_sets_version
+        PASS [   0.072s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_is_dirty_all_none
+        PASS [   0.076s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_actor_metadata_clone
+        PASS [   0.082s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_consume_take_into_without_take
+        PASS [   4.636s] steady_state graph_testing::graph_testing_tests::proptest_simulate_wait_for_message_match
+        PASS [   0.083s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_consume_actor_aggregates_status
+        PASS [   0.088s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_consume_dot_subtitle_with_mailbox
+        PASS [   0.036s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_tx_channel_id_vec_empty
+        PASS [   0.077s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_consume_take_and_send_into_with_data
+        PASS [   0.073s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_rx_channel_id_vec_empty
+        PASS [   0.083s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_is_empty_and_closed_all_none
+        PASS [   0.088s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_rx_is_empty_false_when_data_present
+        PASS [   0.056s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_send_process_event_not_monitored
+        PASS [   0.047s] steady_state runner::tests::release_build_constructs_and_default_worker_allowlist
+        PASS [   0.091s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_send_process_event_normal
+        PASS [   0.055s] steady_state runner::tests::file_logging_without_level_still_runs
+        PASS [   0.065s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_send_process_event_unknown
+        PASS [   0.027s] steady_state runner::tests::test_build_pipeline_internal_behavior_names_applied
+        PASS [   0.099s] steady_state monitor_telemetry::monitor_telemetry_tests::test_steady_telemetry_send_process_event_normal_inverse
+        PASS [   0.056s] steady_state runner::tests::release_build_constructs_without_running_production_graph
+        PASS [   0.054s] steady_state runner::tests::test_build_run_propagates_closure_error
+        PASS [   0.062s] steady_state runner::tests::test_build_run_succeeds_with_builder_chain
+        PASS [   0.068s] steady_state serialize::byte_buffer_packer::tests::test_consume_to_u64_large
+        PASS [   0.044s] steady_state serialize::byte_buffer_packer::tests::test_consume_to_u64_small
+        PASS [   0.108s] steady_state runner::tests::test_build_runs_minimal_graph_shutdown
+        PASS [   0.073s] steady_state serialize::byte_buffer_packer::tests::test_delta_write_count_and_sync
+        PASS [   0.072s] steady_state serialize::byte_buffer_packer::tests::test_round_trip_multiple_changes
+        PASS [   0.048s] steady_state serialize::byte_buffer_packer::tests::test_round_trip_single_change
+        PASS [   0.067s] steady_state serialize::byte_buffer_packer::tests::test_round_trip_no_change
+        PASS [   0.042s] steady_state serialize::byte_buffer_packer::tests::test_sync_data_forces_full_record
+        PASS [   0.032s] steady_state serialize::fast_protocol_packed::tests::test_read_empty_buffers
+        PASS [   0.077s] steady_state serialize::fast_protocol_packed::tests::test_read_signed_non_stop_bytes_exhaust_buffer
+        PASS [   0.062s] steady_state serialize::fast_protocol_packed::tests::test_read_signed_truncated_continuation
+        PASS [   0.067s] steady_state serialize::fast_protocol_packed::tests::test_signed_boundaries
+        PASS [   0.077s] steady_state serialize::fast_protocol_packed::tests::test_read_unsigned_too_many_continuation_bytes
+        PASS [   0.084s] steady_state serialize::fast_protocol_packed::tests::test_unsigned_boundaries
+        PASS [   0.511s] steady_state serialize::fast_protocol_packed::tests::proptest_signed_roundtrip
+        PASS [   0.668s] steady_state serialize::fast_protocol_packed::tests::proptest_unsigned_roundtrip
+        PASS [   0.973s] steady_state serialize::byte_buffer_packer::tests::proptest_packed_vec_roundtrip_delta
+        PASS [   1.175s] steady_state serialize::byte_buffer_packer::tests::proptest_consume_to_u64_roundtrip
+        PASS [   1.210s] steady_state serialize::byte_buffer_packer::tests::proptest_packed_vec_full_sync_roundtrip
+        PASS [   1.824s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_rx_step_drains_fifo
+        PASS [   3.189s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_rx_stage_step_wait_for
+        PASS [   2.436s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_stream_tx_step
+        PASS [   3.118s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_stream_rx_step
+        PASS [   3.709s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_stream_tx_close_outputs
+        PASS [   4.286s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_tx_bundle_close_outputs
+        PASS [   3.101s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_tx_bundle_stage_step_lane
+        PASS [   0.069s] steady_state simulate_edge::tests::test_sim_tx_close_outputs_on_simulated_stop
+        PASS [   0.086s] steady_state simulate_edge::tests::test_simulate_single_rx
+        PASS [   0.038s] steady_state simulate_edge::tests::test_simulate_single_tx
+        PASS [   5.568s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_rx_bundle_round_robin
+        PASS [   2.776s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_tx_stage_step_echo
+        PASS [   1.064s] steady_state state_management::state_management_tests::proptest_non_persistent_persist_is_noop
+        PASS [   2.388s] steady_state simulate_edge::simulate_edge_proptest::proptest_simulated_behavior_closes_outputs_on_stop
+        PASS [   3.356s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_tx_step_fills_channel
+        PASS [   1.570s] steady_state state_management::state_management_tests::proptest_cloned_state_shares_value
+        PASS [   3.792s] steady_state simulate_edge::simulate_edge_proptest::proptest_sim_tx_close_outputs_marks_closed
+        PASS [   2.985s] steady_state simulate_edge::simulate_edge_proptest::proptest_simulated_behavior_stage_mode_closes_tx
+        PASS [  40.569s] steady_state graph_testing::graph_testing_tests::proptest_actor_perform_with_suffix_registers
+        PASS [  36.534s] steady_state state_management::state_management_tests::proptest_persistent_state_json_roundtrip_i32
+        PASS [  38.989s] steady_state state_management::state_management_tests::proptest_persistent_state_json_roundtrip_vec
+        PASS [  59.112s] steady_state graph_testing::graph_testing_tests::proptest_pipeline_random_messages_clean_shutdown
+        PASS [   0.343s] steady_state state_management::state_management_tests::proptest_try_lock_sync_before_init
+        PASS [   0.053s] steady_state state_management::state_management_tests::test_basic_state
+        PASS [   0.060s] steady_state state_management::state_management_tests::test_cloning_shared_state
+        PASS [   0.113s] steady_state state_management::state_management_tests::test_persistent_state_invalid_file
+        PASS [   0.112s] steady_state state_management::state_management_tests::test_persistent_state_load
+        PASS [   0.083s] steady_state state_management::state_management_tests::test_persistent_state_no_file
+        PASS [   0.120s] steady_state state_management::state_management_tests::test_persistent_state_save
+        PASS [   0.045s] steady_state steady_actor::steady_actor_tests::index_wait_pure::next_index_wait_start_empty_len
+        PASS [   0.045s] steady_state steady_actor::steady_actor_tests::index_wait_pure::next_index_wait_start_wrap_and_invalid_last
+        PASS [   0.402s] steady_state steady_actor::steady_actor_tests::index_wait_pure::proptest_avoid_repeat_lane_prefers_alternate
+        PASS [   0.440s] steady_state steady_actor::steady_actor_tests::index_wait_pure::proptest_avoid_repeat_lane_singleton
+        PASS [   0.293s] steady_state steady_actor::steady_actor_tests::index_wait_pure::proptest_index_wait_counts_uniform
+        PASS [   0.588s] steady_state steady_actor::steady_actor_tests::index_wait_pure::proptest_next_index_wait_start_in_range
+        PASS [   0.074s] steady_state steady_actor::steady_actor_tests::test_blocking_call_future_fetch_ready
+        PASS [   0.080s] steady_state steady_actor::steady_actor_tests::test_blocking_call_future_fetch_timeout
+        PASS [  49.533s] steady_state state_management::state_management_tests::proptest_persistent_state_json_roundtrip_struct
+        PASS [   0.078s] steady_state steady_actor::steady_actor_tests::test_blocking_call_future_terminated
+        PASS [   0.055s] steady_state steady_actor::steady_actor_tests::test_send_outcome_expect_panic
+        PASS [   0.048s] steady_state steady_actor::steady_actor_tests::test_send_outcome_methods
+        PASS [  49.664s] steady_state state_management::state_management_tests::proptest_persistent_state_json_roundtrip_string
+        PASS [   2.609s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_spotlight_wait_avail_shutdown_path
+        PASS [   2.966s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_shadow_wait_avail_shutdown_path
+        PASS [   3.409s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_shadow_wait_vacant_shutdown_path
+        PASS [   1.681s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_paired_lane_ready_shutdown_unmet_rx
+        PASS [  55.554s] steady_state state_management::state_management_tests::proptest_persistent_state_empty_file_fallback
+        PASS [   2.424s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_paired_lane_ready_immediate
+        PASS [  55.868s] steady_state state_management::state_management_tests::proptest_persistent_state_explicit_persist
+        PASS [   3.661s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_paired_lane_ready_zero_avail
+        PASS [   2.776s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_zero_required
+        PASS [   3.219s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_items_ready_immediate
+        PASS [   0.069s] steady_state steady_actor_core::steady_actor_core_tests::test_advance_send_index
+        PASS [   0.060s] steady_state steady_actor_core::steady_actor_core_tests::test_advance_take_index
+        PASS [   0.039s] steady_state steady_actor_core::steady_actor_core_tests::test_is_empty
+        PASS [   0.077s] steady_state steady_actor_core::steady_actor_core_tests::test_avail_units
+        PASS [   0.083s] steady_state steady_actor_core::steady_actor_core_tests::test_is_full
+        PASS [   0.098s] steady_state steady_actor_core::steady_actor_core_tests::test_peek_slice
+        PASS [   0.091s] steady_state steady_actor_core::steady_actor_core_tests::test_poke_slice
+        PASS [   0.113s] steady_state steady_actor_core::steady_actor_core_tests::test_send_async
+        PASS [   0.094s] steady_state steady_actor_core::steady_actor_core_tests::test_send_iter_until_full
+        PASS [   0.095s] steady_state steady_actor_core::steady_actor_core_tests::test_send_slice
+        PASS [   0.080s] steady_state steady_actor_core::steady_actor_core_tests::test_take_into_iter
+        PASS [   0.077s] steady_state steady_actor_core::steady_actor_core_tests::test_take_slice
+        PASS [   0.068s] steady_state steady_actor_core::steady_actor_core_tests::test_try_peek
+        PASS [   0.076s] steady_state steady_actor_core::steady_actor_core_tests::test_try_peek_iter
+        PASS [   0.087s] steady_state steady_actor_core::steady_actor_core_tests::test_try_send
+        PASS [   0.079s] steady_state steady_actor_core::steady_actor_core_tests::test_try_take
+        PASS [   0.089s] steady_state steady_actor_core::steady_actor_core_tests::test_vacant_units
+        PASS [   0.075s] steady_state steady_actor_core::steady_actor_core_tests::test_wait_shutdown
+        PASS [   0.149s] steady_state steady_actor_core::steady_actor_core_tests::test_wait
+        PASS [   0.069s] steady_state steady_actor_core::steady_actor_core_tests::test_wait_shutdown_aborts
+        PASS [   2.867s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_tx_until_vacant_satisfied_immediate
+        PASS [   0.042s] steady_state steady_actor_core::steady_actor_core_tests::test_yield_now
+        PASS [   1.354s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_call_async_aborts_on_shutdown
+        PASS [   3.055s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_tx_until_vacant_shutdown_full
+        PASS [   2.534s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_is_showstopper_threshold
+        PASS [   0.742s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_relay_stats_smartly_false
+        PASS [   2.660s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_peek_poke_slice_roundtrip
+        PASS [   3.599s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_peek_async_preserves_message
+        PASS [   1.674s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_send_async_await_for_room
+        PASS [   2.960s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_try_send_take_fifo
+        PASS [   3.006s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_avail_bundle
+        PASS [   1.894s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_avail_index_lane_mask
+        PASS [   4.027s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_avail_aborts_on_shutdown
+        PASS [   1.562s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_empty_on_drained_tx
+        PASS [   1.785s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_avail_when_ready
+        PASS [   3.554s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_avail_vacant_index_paired
+        PASS [   1.753s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_empty_on_empty_tx
+        PASS [   2.335s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_periodic_aborts_on_shutdown
+        PASS [   1.376s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_shutdown_after_request
+        PASS [   3.104s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_timeout_aborts_on_shutdown
+        PASS [   2.878s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_bundle
+        PASS [   2.436s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_when_room
+        PASS [   0.130s] steady_state steady_actor_shadow::tests::test_args
+        PASS [   0.061s] steady_state steady_actor_shadow::tests::test_call_async
+        PASS [   0.082s] steady_state steady_actor_shadow::tests::test_call_blocking
+        PASS [   0.094s] steady_state steady_actor_shadow::tests::test_flush_defrag_empty
+        PASS [   0.074s] steady_state steady_actor_shadow::tests::test_frame_rate_ms
+        PASS [   0.065s] steady_state steady_actor_shadow::tests::test_identity
+        PASS [  19.546s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_internal_behavior_vote_matrix
+        PASS [   0.081s] steady_state steady_actor_shadow::tests::test_is_empty_and_avail_units
+        PASS [   0.067s] steady_state steady_actor_shadow::tests::test_is_full_and_vacant_units
+        PASS [   0.070s] steady_state steady_actor_shadow::tests::test_is_showstopper
+        PASS [   0.071s] steady_state steady_actor_shadow::tests::test_liveliness_shutdown_timeout
+        PASS [   0.081s] steady_state steady_actor_shadow::tests::test_liveliness_states
+        PASS [   0.086s] steady_state steady_actor_shadow::tests::test_loglevel
+        PASS [   0.089s] steady_state steady_actor_shadow::tests::test_peek_async
+        PASS [   0.058s] steady_state steady_actor_shadow::tests::test_regeneration
+        PASS [   0.088s] steady_state steady_actor_shadow::tests::test_relay_stats_periodic
+        PASS [   0.067s] steady_state steady_actor_shadow::tests::test_relay_stats_smartly
+        PASS [  41.805s] steady_state state_management::state_management_tests::proptest_persistent_state_valid_json_loads
+        PASS [   0.097s] steady_state steady_actor_shadow::tests::test_request_shutdown
+        PASS [   0.092s] steady_state steady_actor_shadow::tests::test_send_iter_until_full
+        PASS [   0.057s] steady_state steady_actor_shadow::tests::test_shadow_wait_avail_index_direct
+        PASS [  78.633s] steady_state state_management::state_management_tests::proptest_persistent_state_invalid_json_fallback
+        PASS [   0.061s] steady_state steady_actor_shadow::tests::test_shadow_wait_avail_vacant_index_direct
+        PASS [   0.073s] steady_state steady_actor_shadow::tests::test_sidechannel_responder_none
+        PASS [   0.093s] steady_state steady_actor_shadow::tests::test_take_async_with_timeout
+        PASS [   0.091s] steady_state steady_actor_shadow::tests::test_take_into_iter
+        PASS [   0.065s] steady_state steady_actor_shadow::tests::test_try_send_and_try_take
+        PASS [   0.108s] steady_state steady_actor_shadow::tests::test_wait_empty
+        PASS [   0.090s] steady_state steady_actor_shadow::tests::test_wait_future_void
+        PASS [   0.140s] steady_state steady_actor_shadow::tests::test_wait
+        PASS [   0.094s] steady_state steady_actor_shadow::tests::test_wait_periodic
+        PASS [   0.073s] steady_state steady_actor_shadow::tests::test_yield_now
+        PASS [   0.149s] steady_state steady_actor_shadow::tests::test_wait_timeout
+        PASS [   2.615s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_send_take_slice_count
+        PASS [   3.015s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_relay_stats_smartly_fires
+        PASS [   3.450s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_is_showstopper_threshold
+        PASS [  54.804s] steady_state state_management::state_management_tests::proptest_persistent_state_truncated_json_fallback
+        FAIL [   0.148s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin
+──── STDOUT:             steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin
+
+running 1 test
+test steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin ... FAILED
+
+failures:
+
+failures:
+    steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 765 filtered out; finished in 0.06s
+
+──── STDERR:             steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:188:47:
+rx0
+
+thread 'steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin' (507856) panicked at core/src/steady_actor_spotlight/spotlight_proptest.rs:36:1:
+Test failed: rx0.
+minimal failing input: cap = 2, mask = 1, per_lane = 1
+successes: 0
+local rejects: 0
+global rejects: 0
+
+
+  Cancelling due to test failure: 11 tests still running
+        PASS [   2.595s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_aborts_on_shutdown
+        PASS [  44.852s] steady_state state_management::state_management_tests::proptest_persistent_state_wrong_shape_fallback
+        PASS [   4.294s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_try_send_take_fifo
+        PASS [   4.608s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_bundle
+        PASS [ 107.392s] steady_state graph_testing::graph_testing_tests::proptest_staged_puppet_echo_wait_matrix
+        PASS [  18.622s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_internal_behavior_vote_matrix
+        PASS [  37.263s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_periodic_when_running
+        PASS [ 150.479s] steady_state graph_testing::graph_testing_tests::proptest_puppet_shutdown_traffic_matrix
+        PASS [ 189.891s] steady_state graph_testing::graph_testing_tests::proptest_staged_puppet_multi_echo_sequence
+        SLOW [>300.000s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty
+        SLOW [>300.000s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask
+ TERMINATING [>600.000s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty
+     TIMEOUT [ 600.044s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty
+──── STDOUT:             steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty
+
+running 1 test
+test steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty has been running for over 60 seconds
+
+ TERMINATING [>600.000s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask
+     TIMEOUT [ 600.020s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask
+──── STDOUT:             steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask
+
+running 1 test
+test steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask has been running for over 60 seconds
+
+────────────
+     Summary [ 700.485s] 703/783 tests run: 700 passed, 1 failed, 2 timed out, 2 skipped
+     TIMEOUT [ 600.044s] steady_state steady_actor::steady_actor_tests::wait_helpers_proptest::proptest_wait_rx_until_avail_shutdown_empty
+     TIMEOUT [ 600.020s] steady_state steady_actor_shadow::shadow_proptest_suite::proptest_shadow::proptest_shadow_wait_vacant_index_lane_mask
+        FAIL [   0.148s] steady_state steady_actor_spotlight::spotlight_proptest::proptest_spotlight_wait_avail_index_round_robin
+warning: 80/783 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed

@@ -154,4 +154,93 @@ mod tests {
             assert_eq!(guard.shared_avail_items_count(), 2);
         });
     }
+
+    use proptest::prelude::*;
+    use crate::proptest_support::{capacity, channel_fifo_take, message_vec};
+
+    ss_proptest! {
+
+        /// Property: MutexGuard Rx drain preserves FIFO order.
+        #[test]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.internal-behavior-no-lazy]
+        // ss[verify channel.testing-take-all]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_fifo_matches_channel(
+            cap in capacity(),
+            messages in message_vec::<u32>(),
+        ) {
+            let messages: Vec<u32> = messages.into_iter().take(cap).collect();
+            let expected = channel_fifo_take(cap, messages.clone());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx) = builder.build_channel::<u32>();
+            tx.testing_send_all(messages, false);
+            let rx_est = rx.clone();
+            core_exec::block_on(async {
+                let mut guard = rx_est.lock().await;
+                prop_assert_eq!(guard.shared_avail_items_count(), expected.len());
+                let mut taken = Vec::new();
+                while let Some((_, v)) = guard.shared_try_take() {
+                    taken.push(v);
+                }
+                prop_assert_eq!(taken, expected);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: MutexGuard peek_slice does not change avail_units.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_peek_preserves_avail(
+            cap in 2usize..32,
+            messages in message_vec::<i32>(),
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx_est = rx.clone();
+            core_exec::block_on(async {
+                let mut guard = rx_est.lock().await;
+                let avail_before = guard.shared_avail_units();
+                let (a, b) = guard.shared_peek_slice();
+                prop_assert_eq!(a.len() + b.len(), avail_before);
+                prop_assert_eq!(guard.shared_avail_units(), avail_before);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: MutexGuard advance_index never exceeds avail_units.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify actor.lock-first.channels]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_guard_advance_index_bounded(
+            cap in 2usize..32,
+            messages in message_vec::<i32>(),
+            take_count in 1usize..32,
+        ) {
+            let messages: Vec<i32> = messages.into_iter().take(cap).collect();
+            prop_assume!(!messages.is_empty());
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx, rx) = builder.build_channel::<i32>();
+            tx.testing_send_all(messages, false);
+            let rx_est = rx.clone();
+            core_exec::block_on(async {
+                let mut guard = rx_est.lock().await;
+                let avail = guard.shared_avail_units();
+                let done = guard.shared_advance_index(take_count);
+                prop_assert!(done.item_count() <= avail);
+                prop_assert!(done.item_count() <= take_count);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+    }
 }

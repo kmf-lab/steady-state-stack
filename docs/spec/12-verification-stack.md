@@ -24,9 +24,9 @@ Coverage gates SHOULD use `cargo llvm-cov` with merged LCOV per `platform.covera
 
 ss[verify.process.proptest]
 
-Property tests SHOULD be added for channel/actor invariants described in lessons; **temporary waiver** until crates are wired. Distributed URI/aqueduct proptests are tracked as a follow-on after the Tracey audit (see `docs/spec/08-streams-and-distributed.md`).
+Property tests cover Tier-0 channel, actor, stats, graph, and telemetry invariants at **2048** cases per property (`ss_proptest!`, `core/src/proptest_support/`). See `docs/testing.md` for conventions.
 
-**Tier:** 1 — process waiver
+**Tier:** 1
 
 ---
 
@@ -54,6 +54,14 @@ Pull requests SHOULD run Tracey `validate` and fail on uncovered/untested Tier-0
 
 ---
 
+ss[verify.process.file-size]
+
+Rust sources under `core/src/` SHOULD stay below **1,200 lines** per file (soft target) and MUST NOT exceed **1,800 lines** (hard cap). CI SHOULD run `bash scripts/check-file-size.sh` on pull requests.
+
+**Tier:** 1
+
+---
+
 ## Requirement index
 
 | ID | Summary | Tier |
@@ -64,3 +72,4 @@ Pull requests SHOULD run Tracey `validate` and fail on uncovered/untested Tier-0
 | `verify.process.fuzz` | cargo-fuzz (deferred) | 1 |
 | `verify.process.mutants` | mutation testing | 1 |
 | `verify.process.tracey-gate` | Tracey on PR | 1 |
+| `verify.process.file-size` | per-file line cap | 1 |

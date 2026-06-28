@@ -566,6 +566,8 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
 mod tests {
     use super::*;
 
+    use crate::GraphBuilder;
+
     #[test]
     // ss[verify telemetry.builtin-server]
     fn test_compute_scale_up_delay() {
@@ -683,4 +685,101 @@ mod tests {
         // Since `configure` has no output, the main check is that no panic occurs.
         assert!(!telemetry_setup.channel_meta_data.connects_sidecar);
     }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(feature = "exec_async_std")]
+    fn send_all_local_telemetry_async_accepts_empty_state() {
+        use crate::graph_liveliness::ActorIdentity;
+        let ident = ActorIdentity::new(7, "phase7_telemetry", None);
+        send_all_local_telemetry_async::<0, 0>(ident, 0, None, None, None);
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(feature = "core_display")]
+    fn get_current_cpu_returns_positive_on_linux() {
+        let core = get_current_cpu();
+        assert!(core >= 1, "expected one-based CPU index, got {core}");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(all(
+        feature = "exec_async_std",
+        feature = "prometheus_metrics",
+        feature = "telemetry_server_builtin"
+    ))]
+    fn build_telemetry_metric_features_starts_collector_and_server() {
+        use std::thread::sleep;
+        use std::time::Duration;
+        use crate::GraphBuilder;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        build_telemetry_metric_features(&mut graph);
+        graph.start();
+        sleep(Duration::from_millis(120));
+        graph.request_shutdown();
+        graph
+            .block_until_stopped(Duration::from_secs(5))
+            .expect("telemetry stack shutdown");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    fn construct_telemetry_channels_registers_collector_detail() {
+        use crate::monitor::ChannelMetaData;
+        use crate::GraphBuilder;
+        use std::sync::Arc;
+
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("setup_actor");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 1,
+            capacity: 8,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 2,
+            capacity: 8,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [1],
+            vec![tx_meta],
+            [2],
+        );
+        assert!(send_rx.is_some());
+        assert!(send_tx.is_some());
+        assert!(state.is_some());
+        let reg = graph.all_telemetry_rx.read();
+        assert_eq!(reg.len(), 1);
+        assert_eq!(reg[0].ident.label.name, "setup_actor");
+        assert_eq!(reg[0].telemetry_take.len(), 1);
+    }
+
+
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    fn construct_telemetry_channels_zero_len_registers_actor_only() {
+        let graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("zero_channel_actor");
+        let (send_rx, send_tx, state) =
+            construct_telemetry_channels::<0, 0>(&shadow, vec![], [], vec![], []);
+        assert!(send_rx.is_none());
+        assert!(send_tx.is_none());
+        assert!(state.is_some());
+        let reg = graph.all_telemetry_rx.read();
+        assert_eq!(reg.len(), 1);
+        assert_eq!(reg[0].telemetry_take.len(), 1);
+    }
 }
+
+#[cfg(test)]
+#[path = "setup_proptest.rs"]
+mod setup_proptest;

@@ -351,6 +351,38 @@ pub(crate) mod extra_tests {
 pub(crate) mod metric_collector_tests {
     // ss[related telemetry.prometheus-metrics]
     use super::*;
+    use proptest::prelude::*;
+
+    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    async fn run_cooperative_shutdown_stub(
+        ctx: SteadyActorShadow,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut actor = ctx.into_spotlight([], []);
+        while actor.is_running(|| true) {
+            actor.wait_periodic(Duration::from_millis(10)).await;
+        }
+        Ok(())
+    }
+
+    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    fn run_collector_graph_integration(
+        build: impl FnOnce(&mut Graph) + Send + 'static,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use std::thread::sleep;
+        use std::time::Duration;
+        use crate::SteadyRunner;
+
+        SteadyRunner::test_build().run((), move |mut graph| {
+            build(&mut graph);
+            assert!(
+                graph.start_with_timeout(Duration::from_secs(20)),
+                "graph failed to reach Running before shutdown"
+            );
+            sleep(Duration::from_millis(120));
+            graph.request_shutdown();
+            graph.block_until_stopped(Duration::from_secs(5))
+        })
+    }
 
     #[test]
     // ss[verify telemetry.prometheus-metrics]
@@ -378,5 +410,217 @@ pub(crate) mod metric_collector_tests {
         let line = format_diag_channel_slots(&[a.clone(), b.clone()]);
         assert!(line.starts_with("10:"));
         assert!(line.contains(";50:"));
+    }
+
+    #[test]
+    // ss[verify telemetry.prometheus-metrics]
+    fn telemetry_edge_diag_enabled_honors_env_flag() {
+        // SAFETY: test-local env mutation; restored before return.
+        unsafe {
+            std::env::set_var("STEADY_TELEMETRY_EDGE_DIAG", "1");
+        }
+        assert!(telemetry_edge_diag_enabled());
+        unsafe {
+            std::env::set_var("STEADY_TELEMETRY_EDGE_DIAG", "false");
+        }
+        assert!(!telemetry_edge_diag_enabled());
+        unsafe {
+            std::env::remove_var("STEADY_TELEMETRY_EDGE_DIAG");
+        }
+    }
+
+    #[test]
+    // ss[verify telemetry.prometheus-metrics]
+    #[cfg(all(
+        feature = "exec_async_std",
+        feature = "prometheus_metrics"
+    ))]
+    fn collector_run_processes_node_def_from_registry() {
+        use std::sync::Arc;
+        use std::collections::VecDeque;
+        use crate::graph_liveliness::ActorIdentity;
+        use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+        use crate::SoloAct;
+
+        struct EmptyTel {
+            meta: Arc<ActorMetaData>,
+        }
+        impl RxTel for EmptyTel {
+            fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
+                Vec::new()
+            }
+            fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
+                Vec::new()
+            }
+            fn consume_actor(&self) -> Option<ActorStatus> {
+                None
+            }
+            fn actor_metadata(&self) -> Arc<ActorMetaData> {
+                self.meta.clone()
+            }
+            fn consume_take_into(
+                &self,
+                _take_send_source: &mut Vec<(i64, i64)>,
+                _future_take: &mut Vec<i64>,
+                _future_send: &mut Vec<i64>,
+            ) -> bool {
+                false
+            }
+            fn consume_send_into(
+                &self,
+                _take_send_source: &mut Vec<(i64, i64)>,
+                _future_send: &mut Vec<i64>,
+            ) -> bool {
+                false
+            }
+            fn actor_rx(&self, _version: u32) -> Option<Box<crate::SteadyRx<ActorStatus>>> {
+                None
+            }
+            fn is_empty_and_closed(&self) -> bool {
+                true
+            }
+            fn is_empty(&self) -> bool {
+                true
+            }
+        }
+
+        run_collector_graph_integration(|graph| {
+            graph.actor_builder().with_name("phase7_worker").build(
+                |ctx| run_cooperative_shutdown_stub(ctx),
+                SoloAct,
+            );
+            crate::telemetry::setup::build_telemetry_metric_features(graph);
+            let ident = ActorIdentity::new(4, "phase7_actor", None);
+            let meta = Arc::new(ActorMetaData {
+                ident,
+                ..Default::default()
+            });
+            graph.all_telemetry_rx.write().push(CollectorDetail {
+                ident,
+                telemetry_take: VecDeque::from([Box::new(EmptyTel {
+                    meta: meta.clone(),
+                }) as Box<dyn RxTel>]),
+            });
+        })
+        .expect("collector shutdown");
+    }
+
+    #[test]
+    // ss[verify telemetry.prometheus-metrics]
+    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    fn collector_emits_node_def_when_edge_diag_enabled() {
+        use std::sync::Arc;
+        use crate::graph_liveliness::ActorIdentity;
+        use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+        use crate::SoloAct;
+
+        struct DiagTel {
+            meta: Arc<ActorMetaData>,
+            rx_meta: Arc<ChannelMetaData>,
+            tx_meta: Arc<ChannelMetaData>,
+        }
+        impl RxTel for DiagTel {
+            fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
+                vec![self.tx_meta.clone()]
+            }
+            fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
+                vec![self.rx_meta.clone()]
+            }
+            fn consume_actor(&self) -> Option<ActorStatus> {
+                None
+            }
+            fn actor_metadata(&self) -> Arc<ActorMetaData> {
+                self.meta.clone()
+            }
+            fn consume_take_into(
+                &self,
+                _take_send_source: &mut Vec<(i64, i64)>,
+                _future_take: &mut Vec<i64>,
+                _future_send: &mut Vec<i64>,
+            ) -> bool {
+                false
+            }
+            fn consume_send_into(
+                &self,
+                _take_send_source: &mut Vec<(i64, i64)>,
+                _future_send: &mut Vec<i64>,
+            ) -> bool {
+                false
+            }
+            fn actor_rx(&self, _version: u32) -> Option<Box<crate::SteadyRx<ActorStatus>>> {
+                None
+            }
+            fn is_empty_and_closed(&self) -> bool {
+                true
+            }
+            fn is_empty(&self) -> bool {
+                true
+            }
+        }
+
+        run_collector_graph_integration(|graph| {
+            // SAFETY: env is set on the SteadyRunner thread before telemetry actors start.
+            unsafe {
+                std::env::set_var("STEADY_TELEMETRY_EDGE_DIAG", "1");
+            }
+
+            graph.actor_builder().with_name("phase7_diag").build(
+                |ctx| run_cooperative_shutdown_stub(ctx),
+                SoloAct,
+            );
+            crate::telemetry::setup::build_telemetry_metric_features(graph);
+            let ident = ActorIdentity::new(8, "phase7_diag_actor", None);
+            let meta = Arc::new(ActorMetaData {
+                ident,
+                ..Default::default()
+            });
+            graph.all_telemetry_rx.write().push(CollectorDetail {
+                ident,
+                telemetry_take: std::collections::VecDeque::from([Box::new(DiagTel {
+                    meta: meta.clone(),
+                    rx_meta: Arc::new(ChannelMetaData {
+                        id: 3,
+                        ..Default::default()
+                    }),
+                    tx_meta: Arc::new(ChannelMetaData {
+                        id: 4,
+                        ..Default::default()
+                    }),
+                }) as Box<dyn RxTel>]),
+            });
+        })
+        .expect("collector shutdown");
+
+        // SAFETY: restore process env after the isolated runner thread finishes.
+        unsafe {
+            std::env::remove_var("STEADY_TELEMETRY_EDGE_DIAG");
+        }
+    }
+
+    ss_proptest! {
+        /// Property: diagnostic channel slot formatting is sorted by id.
+        #[test]
+        // ss[verify telemetry.prometheus-metrics]
+        // ss[verify verify.process.proptest]
+        fn proptest_format_diag_channel_slots_sorted(ids in prop::collection::vec(0usize..100, 1..8)) {
+            let metas: Vec<Arc<ChannelMetaData>> = ids
+                .iter()
+                .map(|id| {
+                    Arc::new(ChannelMetaData {
+                        id: *id,
+                        ..ChannelMetaData::default()
+                    })
+                })
+                .collect();
+            let line = format_diag_channel_slots(&metas);
+            let parsed: Vec<usize> = line
+                .split(';')
+                .filter_map(|part| part.split(':').next()?.parse().ok())
+                .collect();
+            let mut sorted = parsed.clone();
+            sorted.sort_unstable();
+            prop_assert_eq!(parsed, sorted);
+            prop_assert!(!line.is_empty());
+        }
     }
 }

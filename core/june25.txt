@@ -1,0 +1,108 @@
+Found 4080 mutants to test
+ok       Unmutated baseline in 85s build + 103s test
+MISSED   core/src/telemetry/metrics_collector.rs:54:5: replace run -> Result<(), Box<dyn std::error::Error>> with Ok(()) in 26s build + 118s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:88:5: replace telemetry_edge_diag_enabled -> bool with true in 26s build + 520s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:96:5: replace format_diag_channel_slots -> String with String::new() in 21s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:134:9: replace MetricsCollector::run -> Result<(), Box<dyn std::error::Error>> with Ok(()) in 37s build + 98s test
+MISSED   core/src/telemetry/metrics_collector.rs:139:9: replace MetricsCollector::internal_behavior -> Result<(), Box<dyn std::error::Error>> with Ok(()) in 33s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:150:22: replace += with -= in MetricsCollector::internal_behavior in 25s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:150:22: replace += with *= in MetricsCollector::internal_behavior in 29s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:166:24: replace > with < in MetricsCollector::internal_behavior in 26s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:166:24: replace > with >= in MetricsCollector::internal_behavior in 18s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:169:53: replace % with / in MetricsCollector::internal_behavior in 18s build + 91s test
+MISSED   core/src/telemetry/metrics_collector.rs:169:53: replace % with + in MetricsCollector::internal_behavior in 51s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:169:48: replace + with - in MetricsCollector::internal_behavior in 26s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:169:48: replace + with * in MetricsCollector::internal_behavior in 19s build + 112s test
+MISSED   core/src/telemetry/metrics_collector.rs:172:79: replace || with && in MetricsCollector::internal_behavior in 18s build + 105s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:172:52: replace == with != in MetricsCollector::internal_behavior in 43s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:173:53: replace == with != in MetricsCollector::internal_behavior in 21s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:181:64: replace + with - in MetricsCollector::internal_behavior in 19s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:181:64: replace + with * in MetricsCollector::internal_behavior in 20s build + 91s test
+MISSED   core/src/telemetry/metrics_collector.rs:182:60: replace + with - in MetricsCollector::internal_behavior in 35s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:182:60: replace + with * in MetricsCollector::internal_behavior in 18s build + 94s test
+MISSED   core/src/telemetry/metrics_collector.rs:183:66: replace + with - in MetricsCollector::internal_behavior in 18s build + 105s test
+MISSED   core/src/telemetry/metrics_collector.rs:183:66: replace + with * in MetricsCollector::internal_behavior in 22s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:224:45: replace >= with < in MetricsCollector::internal_behavior in 21s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:225:73: replace + with * in MetricsCollector::internal_behavior in 21s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:242:39: replace >= with < in MetricsCollector::internal_behavior in 19s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:243:69: replace + with - in MetricsCollector::internal_behavior in 21s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:243:69: replace + with * in MetricsCollector::internal_behavior in 19s build + 106s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:244:64: replace + with - in MetricsCollector::internal_behavior in 19s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:244:64: replace + with * in MetricsCollector::internal_behavior in 32s build + 94s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:245:64: replace + with - in MetricsCollector::internal_behavior in 21s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:245:64: replace + with * in MetricsCollector::internal_behavior in 38s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:259:28: delete ! in MetricsCollector::internal_behavior in 34s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:261:67: replace > with == in MetricsCollector::internal_behavior in 18s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:261:67: replace > with < in MetricsCollector::internal_behavior in 25s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:261:67: replace > with >= in MetricsCollector::internal_behavior in 19s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:262:45: replace >= with < in MetricsCollector::internal_behavior in 18s build + 105s test
+MISSED   core/src/telemetry/metrics_collector.rs:263:73: replace + with - in MetricsCollector::internal_behavior in 30s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:263:73: replace + with * in MetricsCollector::internal_behavior in 19s build + 106s test
+MISSED   core/src/telemetry/metrics_collector.rs:266:37: delete field ident from struct ActorStatus expression in MetricsCollector::internal_behavior in 20s build + 116s test
+MISSED   core/src/telemetry/metrics_collector.rs:267:37: delete field is_quiet from struct ActorStatus expression in MetricsCollector::internal_behavior in 24s build + 93s test
+MISSED   core/src/telemetry/metrics_collector.rs:271:36: delete ! in MetricsCollector::internal_behavior in 22s build + 92s test
+MISSED   core/src/telemetry/metrics_collector.rs:281:62: replace % with / in MetricsCollector::internal_behavior in 30s build + 93s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:281:62: replace % with + in MetricsCollector::internal_behavior in 34s build + 520s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:281:48: replace + with - in MetricsCollector::internal_behavior in 18s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:281:48: replace + with * in MetricsCollector::internal_behavior in 18s build + 90s test
+MISSED   core/src/telemetry/metrics_collector.rs:298:16: delete ! in MetricsCollector::internal_behavior in 18s build + 90s test
+TIMEOUT  core/src/telemetry/metrics_collector.rs:302:16: delete ! in MetricsCollector::internal_behavior in 18s build + 520s test
+MISSED   core/src/telemetry/metrics_collector.rs:311:16: delete ! in MetricsCollector::internal_behavior in 18s build + 90s test
+MISSED   core/src/telemetry/metrics_server.rs:68:5: replace run -> Result<(), Box<dyn Error>> with Ok(()) in 29s build + 91s test
+MISSED   core/src/telemetry/metrics_server.rs:206:12: delete ! in internal_behavior in 32s build + 91s test
+MISSED   core/src/telemetry/metrics_server.rs:214:23: replace || with && in internal_behavior in 22s build + 91s test
+MISSED   core/src/telemetry/metrics_server.rs:347:21: replace > with == in handle_new_requests in 32s build + 91s test
+MISSED   core/src/telemetry/metrics_server.rs:347:21: replace > with < in handle_new_requests in 22s build + 92s test
+MISSED   core/src/telemetry/metrics_server.rs:347:21: replace > with >= in handle_new_requests in 22s build + 90s test
+MISSED   core/src/telemetry/metrics_server.rs:382:5: replace process_msg with () in 31s build + 93s test
+TIMEOUT  core/src/telemetry/metrics_server.rs:637:5: replace write_graph_dot_to_logs -> std::io::Result<()> with Ok(()) in 30s build + 520s test
+MISSED   core/src/telemetry/metrics_server.rs:695:30: replace >= with < in handle_request in 22s build + 92s test
+TIMEOUT  core/src/telemetry/metrics_server.rs:747:59: replace || with && in handle_request in 22s build + 520s test
+TIMEOUT  core/src/telemetry/metrics_server.rs:753:43: replace && with || in handle_request in 22s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:59:5: replace construct_telemetry_channels -> (Option<SteadyTelemetrySend<RX_LEN>>, Option<SteadyTelemetrySend<TX_LEN>>, Option<SteadyTelemetryActorSend>,) with (None, None, None) in 34s build + 520s test
+MISSED   core/src/telemetry/setup.rs:59:62: replace + with * in construct_telemetry_channels in 33s build + 92s test
+TIMEOUT  core/src/telemetry/setup.rs:71:19: replace == with != in construct_telemetry_channels in 8s build + 520s test
+MISSED   core/src/telemetry/setup.rs:153:5: replace build_telemetry_metric_features with () in 31s build + 91s test
+TIMEOUT  core/src/telemetry/setup.rs:249:5: replace get_current_cpu -> i32 with 1 in 8s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:249:5: replace get_current_cpu -> i32 with -1 in 8s build + 520s test
+MISSED   core/src/telemetry/setup.rs:252:29: replace + with - in get_current_cpu in 25s build + 91s test
+TIMEOUT  core/src/telemetry/setup.rs:271:13: replace try_send_all_local_telemetry with () in 28s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:283:41: replace >= with < in try_send_all_local_telemetry in 29s build + 520s test
+MISSED   core/src/telemetry/setup.rs:283:54: replace >> with << in try_send_all_local_telemetry in 8s build + 91s test
+TIMEOUT  core/src/telemetry/setup.rs:287:93: replace / with % in try_send_all_local_telemetry in 8s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:287:93: replace / with * in try_send_all_local_telemetry in 8s build + 520s test
+MISSED   core/src/telemetry/setup.rs:287:71: replace * with + in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:287:71: replace * with / in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:288:49: replace < with == in try_send_all_local_telemetry in 9s build + 91s test
+MISSED   core/src/telemetry/setup.rs:288:49: replace < with > in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:288:49: replace < with <= in try_send_all_local_telemetry in 8s build + 91s test
+TIMEOUT  core/src/telemetry/setup.rs:288:64: replace * with + in try_send_all_local_telemetry in 9s build + 520s test
+MISSED   core/src/telemetry/setup.rs:288:64: replace * with / in try_send_all_local_telemetry in 8s build + 93s test
+MISSED   core/src/telemetry/setup.rs:289:46: replace >= with < in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:292:44: delete ! in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:330:79: replace += with -= in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:332:61: replace >= with < in try_send_all_local_telemetry in 9s build + 93s test
+MISSED   core/src/telemetry/setup.rs:332:69: replace * with + in try_send_all_local_telemetry in 9s build + 91s test
+MISSED   core/src/telemetry/setup.rs:332:69: replace * with / in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:335:66: replace > with == in try_send_all_local_telemetry in 9s build + 92s test
+MISSED   core/src/telemetry/setup.rs:335:66: replace > with < in try_send_all_local_telemetry in 8s build + 92s test
+MISSED   core/src/telemetry/setup.rs:346:83: replace += with -= in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:346:83: replace += with *= in try_send_all_local_telemetry in 8s build + 91s test
+MISSED   core/src/telemetry/setup.rs:365:50: replace > with == in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:365:50: replace > with < in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:365:50: replace > with >= in try_send_all_local_telemetry in 8s build + 90s test
+MISSED   core/src/telemetry/setup.rs:399:53: delete ! in try_send_all_local_telemetry in 6s build + 90s test
+MISSED   core/src/telemetry/setup.rs:420:50: replace > with == in try_send_all_local_telemetry in 6s build + 89s test
+MISSED   core/src/telemetry/setup.rs:440:53: delete ! in try_send_all_local_telemetry in 6s build + 89s test
+MISSED   core/src/telemetry/setup.rs:460:50: replace > with == in try_send_all_local_telemetry in 6s build + 93s test
+MISSED   core/src/telemetry/setup.rs:460:50: replace > with < in try_send_all_local_telemetry in 22s build + 121s test
+MISSED   core/src/telemetry/setup.rs:460:50: replace > with >= in try_send_all_local_telemetry in 22s build + 121s test
+TIMEOUT  core/src/telemetry/setup.rs:487:5: replace calculate_exponential_channel_backoff -> u32 with 1 in 22s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:489:21: replace - with / in calculate_exponential_channel_backoff in 22s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:508:5: replace send_all_local_telemetry_async with () in 78s build + 520s test
+TIMEOUT  core/src/telemetry/setup.rs:554:49: delete ! in send_all_local_telemetry_async in 64s build + 520s test
+TIMEOUT  core/src/serialize/byte_buffer_packer.rs:37:9: replace PackedVecWriter<T>::sync_data with () in 66s build + 520s test
+TIMEOUT  core/src/serialize/byte_buffer_packer.rs:68:9: replace PackedVecWriter<T>::consume_to_u64 -> Vec<u64> with vec![] in 32s build + 520s test
+TIMEOUT  core/src/serialize/byte_buffer_packer.rs:68:9: replace PackedVecWriter<T>::consume_to_u64 -> Vec<u64> with vec![0] in 29s build + 520s test
+TIMEOUT  core/src/serialize/byte_buffer_packer.rs:70:17: replace < with == in PackedVecWriter<T>::consume_to_u64 in 30s build + 520s test
+TIMEOUT  core/src/serialize/byte_buffer_packer.rs:70:17: replace < with > in PackedVecWriter<T>::consume_to_u64 in 36s build + 520s test

@@ -563,4 +563,33 @@ mod aeron_subscribe_bundle_graph_tests {
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
     }
+
+    /// Internal subscribe bundle path with closed ingress bundle.
+    #[async_std::test]
+    // ss[verify distributed.subscribe-publish]
+    async fn test_subscribe_bundle_internal_closed_ingress_stops_without_driver() {
+        const GIRTH: usize = 1;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(256);
+        let (lazy_tx, _rx) = cb.build_stream_bundle::<StreamIngress, GIRTH>(64);
+        for lane in lazy_tx.iter() {
+            lane.testing_close();
+        }
+        let channel = AeronConfig::new()
+            .with_media_type(MediaType::Ipc)
+            .use_ipc()
+            .build();
+        lazy_tx.build_aqueduct(
+            AqueTech::Aeron(channel, 53),
+            &graph
+                .actor_builder()
+                .with_name("AeronSubscribeBundleClosed")
+                .never_simulate(true),
+            SoloAct,
+        );
+        assert!(graph.start_with_timeout(Duration::from_secs(10)));
+        task::sleep(Duration::from_millis(50)).await;
+        graph.request_shutdown();
+        assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
+    }
 }

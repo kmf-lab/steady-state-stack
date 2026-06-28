@@ -274,7 +274,7 @@ path = "examples/simple_aeron_subscriber/main.rs"
 
 [dev-dependencies]
 async-std        = {  version = "1.13", features = ["attributes"] }  # for async unit testing only,
-proptest         = "1"
+proptest         = "1.10"
 rand_distr       = "0.5" # for random number generation
 rand             = "0.9" # for random number generation
 isahc            = "1.7"

@@ -8,7 +8,8 @@
 #   EXTRA_CARGO_MUTANTS_ARGS  Extra CLI tokens for `cargo mutants` (quote carefully), e.g.
 #                             EXTRA_CARGO_MUTANTS_ARGS='--shard 1/4'
 #   CARGO_MUTANTS_TIMEOUT_SECS  Wall-clock cap for all cargo commands in this run (default: 3600).
-#   CARGO_MUTANTS_JOBS         If set, passed as `cargo mutants -j ...`.
+#   CARGO_MUTANTS_JOBS         Parallel mutant jobs (default: 1). Use scripts/run_mutants.sh.
+#   NEXTEST_TEST_THREADS       Test threads per run (default: 1). Limits CPU during baseline/mutant tests.
 #
 # Widen scope by editing examine_globs in core/mutants.toml or passing --file / --exclude via
 # EXTRA_CARGO_MUTANTS_ARGS. Expect long runtimes for full-crate mutation.
@@ -40,6 +41,9 @@ fi
 MUTANTS_CONFIG="${REPO_ROOT}/core/mutants.toml"
 LOG="${REPO_ROOT}/cargo_mutants.txt"
 : "${CARGO_MUTANTS_TIMEOUT_SECS:=3600}"
+: "${CARGO_MUTANTS_JOBS:=1}"
+: "${NEXTEST_TEST_THREADS:=1}"
+export NEXTEST_TEST_THREADS
 
 mut_args=(
   --manifest-path core/Cargo.toml
@@ -47,12 +51,9 @@ mut_args=(
   --test-tool nextest
   --cap-lints true
   -t "${CARGO_MUTANTS_TIMEOUT_SECS}"
+  -j "${CARGO_MUTANTS_JOBS}"
 )
 
-if [[ -n "${CARGO_MUTANTS_JOBS:-}" ]]; then
-  mut_args+=( -j "${CARGO_MUTANTS_JOBS}" )
-fi
-
 # shellcheck disable=SC2086
-cargo mutants "${mut_args[@]}" ${EXTRA_CARGO_MUTANTS_ARGS:-} 2>&1 | tee "${LOG}"
+cargo mutants "${mut_args[@]}" ${EXTRA_CARGO_MUTANTS_ARGS:-} -- --test-threads "${NEXTEST_TEST_THREADS}" 2>&1 | tee "${LOG}"
 exit "${PIPESTATUS[0]}"

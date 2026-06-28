@@ -145,7 +145,7 @@ RULES: list[tuple[str, list[tuple[str, str]]]] = [
         ("index_wait_counts", "bundle.uniform-counts-helper"),
         ("wait_avail_bundle", "bundle.deprecated-bundle-waits"),
     ]),
-    ("monitor.rs", [
+    ("steady_actor_spotlight/tests.rs", [
         ("wait_for_index", "bundle.wait-for-index-macro"),
         ("wait_avail_bundle", "bundle.deprecated-bundle-waits"),
         ("wait_avail_index", "actor.index-wait-round-robin"),

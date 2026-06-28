@@ -353,3 +353,102 @@ pub fn colored_with_thread(
 /// Timestamp format used in logging.
 // ss[related philosophy.structural-hierarchy]
 pub const TS_DASHES: &str = "%Y-%m-%d %H:%M:%S%.6f %:z";
+
+#[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
+mod tests {
+    use super::*;
+    use crate::logging_util::steady_logger::{
+        initialize, initialize_with_level, initialize_with_level_and_file, start_log_capture,
+    };
+    use crate::{assert_in_logs, LogFileConfig, LogLevel};
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn log_capture_records_active_thread_messages() {
+        let _guard = start_log_capture();
+        info!("phase7-log-capture-marker");
+        assert_in_logs!(["phase7-log-capture-marker"]);
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn initialize_is_idempotent_and_level_can_change() {
+        initialize().expect("first init");
+        initialize_with_level(LogLevel::Warn).expect("set warn");
+        initialize_with_level(LogLevel::Trace).expect("set trace");
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn initialize_with_rotating_file_config() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = LogFileConfig {
+            directory: dir.path().to_string_lossy().into_owned(),
+            base_name: "phase7".into(),
+            max_size_bytes: 4096,
+            keep_count: 2,
+            delete_old_on_start: true,
+        };
+        initialize_with_level_and_file(LogLevel::Debug, Some(cfg)).expect("file logging");
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn plain_with_thread_formats_record_line() {
+        use flexi_logger::DeferredNow;
+        let mut buf = Vec::new();
+        let mut now = DeferredNow::default();
+        let record = log::Record::builder()
+            .args(format_args!("phase7-plain-marker"))
+            .level(log::Level::Info)
+            .target("steady_state::logging_util")
+            .build();
+        plain_with_thread(&mut buf, &mut now, &record).expect("format line");
+        let text = String::from_utf8(buf).expect("utf8 output");
+        assert!(text.contains("phase7-plain-marker"));
+        assert!(text.contains("INFO"));
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn colored_with_thread_formats_record_line() {
+        use flexi_logger::DeferredNow;
+        let mut buf = Vec::new();
+        let mut now = DeferredNow::default();
+        let record = log::Record::builder()
+            .args(format_args!("phase7-colored-marker"))
+            .level(log::Level::Warn)
+            .target("steady_state::logging_util")
+            .build();
+        colored_with_thread(&mut buf, &mut now, &record).expect("format line");
+        let text = String::from_utf8(buf).expect("utf8 output");
+        assert!(text.contains("phase7-colored-marker"));
+        assert!(text.contains("WARN"));
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn log_capture_guard_drop_stops_capture() {
+        let thread_id = std::thread::current().id();
+        {
+            let _guard = start_log_capture();
+            info!("phase7-guard-drop-marker");
+        }
+        let logged = if let Ok(contexts) = TEST_CONTEXTS.lock() {
+            contexts.get(&thread_id).is_some()
+        } else {
+            false
+        };
+        assert!(!logged, "capture context removed after guard drop");
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn log_capture_records_warn_and_error_levels() {
+        let _guard = start_log_capture();
+        warn!("phase7-warn-marker");
+        error!("phase7-error-marker");
+        assert_in_logs!(["phase7-warn-marker", "phase7-error-marker"]);
+    }
+}

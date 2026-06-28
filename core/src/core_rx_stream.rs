@@ -569,4 +569,173 @@ mod core_rx_stream_tests {
             Ok::<(), Box<dyn std::error::Error>>(())
         })
     }
+
+    use proptest::prelude::*;
+    use crate::proptest_support::capacity;
+
+    ss_proptest! {
+
+        /// Property: stream rx avail control and payload units never exceed capacity.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_rx_avail_le_capacity(
+            cap in 2usize..32,
+            payload_len in 1usize..8,
+            send_count in 1usize..6,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(cap * 16);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                for _ in 0..send_count.min(cap) {
+                    let payload = vec![0u8; payload_len];
+                    if tx_guard.shared_try_send(payload.as_slice()).is_err() {
+                        break;
+                    }
+                }
+                drop(tx_guard);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let (ctrl_avail, payload_avail) = rx_guard.shared_avail_units();
+                let (ctrl_cap, payload_cap) = rx_guard.shared_capacity();
+                prop_assert!(ctrl_avail <= ctrl_cap);
+                prop_assert!(payload_avail <= payload_cap);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: stream rx peek leaves avail unchanged.
+        #[test]
+        // ss[verify philosophy.zero-copy-discipline]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_rx_peek_preserves_avail(
+            cap in 2usize..16,
+            payload_len in 1usize..8,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(cap * 16);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                tx_guard.shared_try_send(&vec![0u8; payload_len]).unwrap();
+                drop(tx_guard);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let avail_before = rx_guard.shared_avail_units();
+                let _ = rx_guard
+                    .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+                    .await;
+                prop_assert_eq!(rx_guard.shared_avail_units(), avail_before);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: stream rx advance_index on empty channel returns zero.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_rx_advance_empty_zero(
+            cap in capacity(),
+            overshoot in 1usize..16,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (_tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamIngress>(cap * 8);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let done = rx_guard.shared_advance_index((overshoot, overshoot * 8));
+                prop_assert_eq!(done, RxDone::Stream(0, 0));
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: stream egress sent payload bytes equal received bytes.
+        #[test]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_egress_no_silent_drop(
+            cap in 2usize..16,
+            payloads in prop::collection::vec(prop::collection::vec(any::<u8>(), 1..8), 1..4),
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(cap * 32);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                let mut sent_bytes = 0usize;
+                for p in &payloads {
+                    if tx_guard.shared_try_send(p.as_slice()).is_ok() {
+                        sent_bytes += p.len();
+                    } else {
+                        break;
+                    }
+                }
+                drop(tx_guard);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let mut taken_bytes = 0usize;
+                while let Some((done, (_item, payload))) = rx_guard.shared_try_take() {
+                    let payload: &Box<[u8]> = &payload;
+                    if let RxDone::Stream(_, b) = done {
+                        prop_assert_eq!(b, payload.len());
+                        taken_bytes += b;
+                    }
+                }
+                prop_assert_eq!(taken_bytes, sent_bytes);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: stream rx advance_index never exceeds available control/payload units.
+        #[test]
+        // ss[verify channel.stream-dual-buffer]
+        // ss[verify channel.backpressure-never-drop]
+        // ss[verify verify.process.proptest]
+        fn proptest_stream_rx_advance_index_bounded(
+            cap in 2usize..16,
+            payload_len in 1usize..8,
+            overshoot in 1usize..16,
+        ) {
+            core_exec::block_on(async {
+                let mut graph = GraphBuilder::for_testing().build(());
+                let (tx, rx) = graph.channel_builder()
+                    .with_capacity(cap)
+                    .build_stream::<StreamEgress>(cap * 16);
+                let tx_clone = tx.clone();
+                let mut tx_guard = tx_clone.lock().await;
+                tx_guard.shared_try_send(&vec![0u8; payload_len]).unwrap();
+                drop(tx_guard);
+                let rx_clone = rx.clone();
+                let mut rx_guard = rx_clone.lock().await;
+                let (ctrl_avail, payload_avail) = rx_guard.shared_avail_units();
+                let done = rx_guard.shared_advance_index((
+                    ctrl_avail + overshoot,
+                    payload_avail + overshoot * payload_len,
+                ));
+                if let RxDone::Stream(ctrl, payload) = done {
+                    prop_assert!(ctrl <= ctrl_avail);
+                    prop_assert!(payload <= payload_avail);
+                }
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+    }
 }

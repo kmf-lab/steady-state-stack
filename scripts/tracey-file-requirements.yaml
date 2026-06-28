@@ -13,10 +13,51 @@ defaults:
   verb: related
 
 files:
-  monitor.rs:
+  monitor/mod.rs:
     primary: philosophy.single-wake-up
     verb: related
     requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - actor.index-wait-truthful
+      - bundle.index-wait-readiness
+      - bundle.deprecated-bundle-waits
+
+  monitor/metadata.rs:
+    primary: philosophy.single-wake-up
+    verb: related
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - actor.index-wait-truthful
+      - bundle.index-wait-readiness
+      - bundle.deprecated-bundle-waits
+
+  monitor/telemetry_iface.rs:
+    primary: philosophy.single-wake-up
+    verb: related
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - actor.index-wait-truthful
+      - bundle.index-wait-readiness
+      - bundle.deprecated-bundle-waits
+
+  monitor/helpers.rs:
+    primary: philosophy.single-wake-up
+    verb: related
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - actor.index-wait-truthful
+      - bundle.index-wait-readiness
+      - bundle.deprecated-bundle-waits
+
+  steady_actor_spotlight/tests.rs:
+    primary: actor.shadow-spotlight
+    verb: related
+    requirements:
+      - philosophy.single-wake-up
       - actor.wait-avail-vacant
       - actor.index-wait-round-robin
       - actor.index-wait-truthful
@@ -29,14 +70,71 @@ files:
       - {substr: wait_vacant, id: actor.wait-avail-vacant}
       - {substr: wait_for_index, id: bundle.wait-for-index-macro}
       - {substr: index_wait, id: bundle.index-wait-readiness}
-    impl_patterns:
-      - {substr: wait_avail_index, id: actor.index-wait-round-robin, verb: impl}
-      - {substr: wait_avail_bundle, id: bundle.deprecated-bundle-waits, verb: impl}
-      - {substr: wait_vacant_index, id: actor.index-wait-truthful, verb: impl}
 
-  dot.rs:
+  dot/mod.rs:
     primary: telemetry.dot-export
     test_default_verify: telemetry.dot-export
+
+  dot/escape.rs:
+    primary: telemetry.dot-export
+
+  dot/colors.rs:
+    primary: telemetry.dot-export
+
+  dot/format.rs:
+    primary: telemetry.dot-export
+
+  dot/metric.rs:
+    primary: telemetry.dot-export
+
+  dot/keys.rs:
+    primary: telemetry.dot-export
+
+  dot/frames.rs:
+    primary: telemetry.dot-export
+
+  dot/partnered.rs:
+    primary: telemetry.dot-export
+
+  dot/render.rs:
+    primary: telemetry.dot-export
+
+  dot/register.rs:
+    primary: telemetry.dot-export
+
+  dot/history.rs:
+    primary: telemetry.dot-export
+
+  dot/build.rs:
+    primary: telemetry.dot-export
+
+  dot/tests/format_tests.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  dot/tests/build_tests.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  dot/tests/history_tests.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  dot/tests/register_tests.rs:
+    primary: telemetry.dot-export
+    test_default_verify: telemetry.dot-export
+
+  dot/tests/format_proptest.rs:
+    primary: telemetry.dot-export
+    test_default_verify: verify.process.proptest
+
+  dot/tests/build_proptest.rs:
+    primary: telemetry.dot-export
+    test_default_verify: verify.process.proptest
+
+  dot/tests/history_proptest.rs:
+    primary: telemetry.dot-export
+    test_default_verify: verify.process.proptest
 
   dot_edge.rs:
     primary: telemetry.dot-export
@@ -46,6 +144,7 @@ files:
 
   dot_unify.rs:
     primary: telemetry.dot-export
+    test_default_verify: verify.process.proptest
     test_rules:
       - {substr: "", id: telemetry.dot-export}
 
@@ -68,6 +167,7 @@ files:
 
   channel_stats_tests.rs:
     primary: telemetry.channel-labels
+    test_default_verify: verify.process.proptest
     test_rules:
       - {substr: "", id: telemetry.channel-labels}
 
@@ -103,10 +203,46 @@ files:
       - {substr: wait_avail_index, id: actor.index-wait-truthful}
       - {substr: index_wait, id: actor.index-wait-round-robin}
 
+  steady_actor_shadow/tests/proptest_shadow.rs:
+    primary: actor.shadow-spotlight
+    test_default_verify: verify.process.proptest
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-truthful
+      - actor.index-wait-round-robin
+      - actor.index-wait-paired
+      - bundle.deprecated-bundle-waits
+      - graph.shutdown.veto
+    test_rules:
+      - {substr: wait_avail, id: actor.wait-avail-vacant}
+      - {substr: wait_vacant, id: actor.wait-avail-vacant}
+      - {substr: wait_avail_index, id: actor.index-wait-truthful}
+      - {substr: wait_vacant_index, id: actor.index-wait-round-robin}
+      - {substr: wait_avail_vacant, id: actor.index-wait-paired}
+      - {substr: bundle, id: bundle.deprecated-bundle-waits}
+      - {substr: vote_matrix, id: graph.shutdown.veto}
+      - {substr: shutdown, id: graph.request-shutdown}
+
   steady_actor_spotlight.rs:
     primary: actor.shadow-spotlight
     requirements:
       - actor.run-dispatcher
+
+  steady_actor_spotlight/spotlight_proptest.rs:
+    primary: actor.shadow-spotlight
+    test_default_verify: verify.process.proptest
+    requirements:
+      - actor.wait-avail-vacant
+      - actor.index-wait-round-robin
+      - graph.shutdown.veto
+      - graph.request-shutdown
+    test_rules:
+      - {substr: wait_avail, id: actor.wait-avail-vacant}
+      - {substr: wait_vacant, id: actor.wait-avail-vacant}
+      - {substr: wait_avail_index, id: actor.index-wait-round-robin}
+      - {substr: vote_matrix, id: graph.shutdown.veto}
+      - {substr: shutdown, id: graph.request-shutdown}
+      - {substr: relay_stats, id: actor.shadow-spotlight}
 
   core_tx_stream.rs:
     primary: channel.stream-dual-buffer
@@ -163,6 +299,7 @@ files:
       - channel.backpressure-never-drop
       - bundle.girth-const-generic
     test_rules:
+      - {substr: proptest, id: verify.process.proptest}
       - {substr: memory_usage, id: channel.memory-usage-telemetry}
       - {substr: bundle, id: bundle.girth-const-generic}
       - {substr: stream, id: channel.stream-dual-buffer}
@@ -177,32 +314,153 @@ files:
     primary: channel.default-capacity
     test_default_verify: channel.default-capacity
 
-  graph_liveliness.rs:
+  graph/mod.rs:
     primary: graph.for-testing
     requirements:
       - graph.shutdown.veto
+      - graph.shutdown.accept
       - graph.liveliness-voters
+
+  graph/identity.rs:
+    primary: graph.actor-identity
+
+  graph/liveliness.rs:
+    primary: graph.liveliness-voters
+    requirements:
+      - graph.shutdown.veto
+      - graph.shutdown.accept
+
+  graph/builder.rs:
+    primary: graph.for-testing
+
+  graph/shutdown.rs:
+    primary: graph.block-until-stopped
+
+  graph/shutdown_proptest.rs:
+    primary: graph.block-until-stopped
+    test_default_verify: verify.process.proptest
+    requirements:
+      - graph.shutdown.veto
+      - graph.shutdown.accept
+      - graph.request-shutdown
+      - testing.never-run-in-unit
     test_rules:
       - {substr: veto, id: graph.shutdown.veto}
-      - {substr: shutdown, id: graph.shutdown.accept}
-      - {substr: voter, id: graph.liveliness-voters}
+      - {substr: accept, id: graph.shutdown.accept}
+      - {substr: never_simulate, id: testing.never-run-in-unit}
+      - {substr: shutdown, id: graph.request-shutdown}
+
+  graph/graph.rs:
+    primary: graph.for-testing
+    requirements:
+      - graph.request-shutdown
+      - graph.block-until-stopped
+
+  graph_liveliness.rs:
+    primary: graph.for-testing
+
+  graph_liveliness/tests/liveliness_unit.rs:
+    primary: graph.liveliness-voters
+    test_default_verify: graph.liveliness-voters
+
+  graph_liveliness/tests/builder_unit.rs:
+    primary: graph.for-testing
+    test_default_verify: graph.for-testing
+
+  graph_liveliness/tests/shutdown_integration.rs:
+    primary: graph.shutdown.veto
+    test_default_verify: graph.shutdown.veto
+
+  graph_liveliness/tests/liveliness_proptest.rs:
+    primary: graph.block-until-stopped
+    test_default_verify: verify.process.proptest
 
   graph_testing.rs:
     primary: testing.graph-for-testing
+    test_default_verify: verify.process.proptest
+    requirements:
+      - graph.block-until-stopped
+      - testing.never-run-in-unit
     test_rules:
       - {substr: stage, id: testing.stage-manager-integration}
+      - {substr: puppet, id: testing.stage-manager-integration}
       - {substr: pipeline, id: testing.pipeline-worker-allowlist}
+      - {substr: shutdown, id: graph.block-until-stopped}
+      - {substr: never_simulate, id: testing.never-run-in-unit}
       - {substr: graph, id: testing.graph-for-testing}
+      - {substr: proptest, id: verify.process.proptest}
 
-  actor_builder.rs:
+  simulate_edge_proptest.rs:
+    primary: testing.sim-producer-close
+    test_default_verify: verify.process.proptest
+    requirements:
+      - testing.stage-manager-integration
+      - testing.never-run-in-unit
+      - graph.for-testing
+    test_rules:
+      - {substr: stage, id: testing.stage-manager-integration}
+      - {substr: never_simulate, id: testing.never-run-in-unit}
+      - {substr: close, id: testing.sim-producer-close}
+      - {substr: sim_rx, id: testing.sim-producer-close}
+      - {substr: sim_tx, id: testing.sim-producer-close}
+
+  runner.rs:
+    primary: graph.for-testing
+    requirements:
+      - testing.pipeline-worker-allowlist
+
+  runner_proptest.rs:
+    primary: graph.for-testing
+    test_default_verify: verify.process.proptest
+    requirements:
+      - testing.pipeline-worker-allowlist
+      - graph.block-until-stopped
+    test_rules:
+      - {substr: worker, id: testing.pipeline-worker-allowlist}
+      - {substr: shutdown, id: graph.block-until-stopped}
+      - {substr: proptest, id: verify.process.proptest}
+
+  actor_builder/mod.rs:
+    primary: actor.regeneration-survives
+
+  actor_builder/affinity.rs:
+    primary: actor.regeneration-survives
+    test_rules:
+      - {substr: core_balancer, id: actor.regeneration-survives}
+      - {substr: proptest, id: verify.process.proptest}
+
+  actor_builder/context.rs:
     primary: actor.regeneration-survives
     requirements:
       - testing.never-run-in-unit
+
+  actor_builder/troupe.rs:
+    primary: actor.regeneration-survives
+    requirements:
       - graph.panic-restart
     test_rules:
       - {substr: regeneration, id: actor.regeneration-survives}
       - {substr: panic, id: graph.panic-restart}
+
+  actor_builder/builder.rs:
+    primary: actor.regeneration-survives
+
+  actor_builder/spawn.rs:
+    primary: actor.regeneration-survives
+    requirements:
+      - graph.panic-restart
+    test_rules:
+      - {substr: regeneration, id: actor.regeneration-survives}
+      - {substr: panic, id: graph.panic-restart}
+
+  actor_builder/tests.rs:
+    primary: actor.regeneration-survives
+    test_default_verify: actor.regeneration-survives
+    test_rules:
+      - {substr: regeneration, id: actor.regeneration-survives}
+      - {substr: panic, id: graph.panic-restart}
       - {substr: troupe, id: graph.troupes}
+      - {substr: graph-for-testing, id: testing.graph-for-testing}
 
   actor_builder_units.rs:
     primary: actor.regeneration-survives
@@ -216,9 +474,11 @@ files:
 
   state_management.rs:
     primary: state.lock-init-once
+    test_default_verify: verify.process.proptest
     test_rules:
       - {substr: persistent, id: state.persistent-load}
       - {substr: clone, id: state.clone-shared}
+      - {substr: proptest, id: verify.process.proptest}
 
   simulate_edge.rs:
     primary: testing.sim-producer-close
@@ -234,13 +494,56 @@ files:
   lib.rs:
     primary: philosophy.structural-hierarchy
 
-  monitor_telemetry.rs:
+  types.rs:
+    primary: philosophy.structural-hierarchy
+    requirements:
+      - channel.internal-behavior-no-lazy
+
+  logging.rs:
+    primary: philosophy.structural-hierarchy
+
+  metrics.rs:
     primary: telemetry.prometheus-metrics
     requirements:
+      - channel.backpressure-never-drop
+    test_default_verify: verify.process.proptest
+    test_rules:
+      - {substr: stddev, id: verify.process.proptest}
+
+  monitor_telemetry.rs:
+    primary: telemetry.prometheus-metrics
+    test_default_verify: telemetry.prometheus-metrics
+    requirements:
       - actor.shadow-spotlight
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
+
+  monitor_telemetry_proptest.rs:
+    primary: telemetry.prometheus-metrics
+    test_default_verify: verify.process.proptest
+    requirements:
+      - actor.shadow-spotlight
+    test_rules:
+      - {substr: process_event, id: telemetry.prometheus-metrics}
+      - {substr: subtitle, id: telemetry.dot-export}
+      - {substr: proptest, id: verify.process.proptest}
+
+  proptest_support/mod.rs:
+    primary: verify.process.proptest
+    verb: impl
 
   telemetry/setup.rs:
     primary: telemetry.builtin-server
+    test_default_verify: telemetry.builtin-server
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
+
+  telemetry/setup_proptest.rs:
+    primary: telemetry.builtin-server
+    test_default_verify: verify.process.proptest
+    test_rules:
+      - {substr: backoff, id: telemetry.builtin-server}
+      - {substr: proptest, id: verify.process.proptest}
 
   telemetry/metrics_server.rs:
     primary: telemetry.builtin-server
@@ -249,6 +552,8 @@ files:
   telemetry/metrics_collector.rs:
     primary: telemetry.prometheus-metrics
     test_default_verify: telemetry.prometheus-metrics
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
 
   telemetry_window.rs:
     primary: telemetry.shutdown-complete
@@ -256,6 +561,8 @@ files:
   abstract_executor_async_std.rs:
     primary: platform.executor-features
     test_default_verify: platform.executor-features
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
 
   abstract_executor_nuclei.rs:
     primary: platform.executor-features
@@ -271,6 +578,7 @@ files:
 
   logging_util.rs:
     primary: philosophy.structural-hierarchy
+    test_default_verify: philosophy.structural-hierarchy
 
   expression_steady_eye.rs:
     primary: telemetry.dot-export
@@ -304,24 +612,58 @@ files:
     primary: distributed.aeron-uri
     requirements:
       - distributed.subscribe-publish
+    test_default_verify: distributed.aeron-uri
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
 
   distributed/aeron_channel_structs.rs:
     primary: distributed.aeron-uri
     test_default_verify: distributed.aeron-uri
+    test_rules:
+      - {substr: proptest, id: verify.process.proptest}
+      - {substr: media_driver, id: distributed.media-driver-testing}
 
   distributed/aeron_publish.rs:
     primary: distributed.subscribe-publish
+    test_default_verify: distributed.subscribe-publish
+    impl_patterns:
+      - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+    test_rules:
+      - {substr: never_simulate, id: testing.never-run-in-unit}
+      - {substr: internal, id: actor.internal-behavior-logic}
 
   distributed/aeron_publish_bundle.rs:
     primary: distributed.subscribe-publish
     requirements:
       - bundle.girth-const-generic
+    test_default_verify: distributed.subscribe-publish
+    impl_patterns:
+      - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+      - {substr: mock_sender_run, id: distributed.subscribe-publish, verb: impl}
+      - {substr: mock_receiver_run, id: distributed.subscribe-publish, verb: impl}
+    test_rules:
+      - {substr: mock_sender, id: distributed.subscribe-publish}
+      - {substr: mock_receiver, id: distributed.subscribe-publish}
+      - {substr: never_simulate, id: testing.never-run-in-unit}
 
   distributed/aeron_subscribe.rs:
     primary: distributed.subscribe-publish
+    test_default_verify: distributed.subscribe-publish
+    impl_patterns:
+      - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+      - {substr: poll_aeron_subscription, id: distributed.subscribe-publish, verb: impl}
+    test_rules:
+      - {substr: never_simulate, id: testing.never-run-in-unit}
+      - {substr: internal, id: actor.internal-behavior-logic}
 
   distributed/aeron_subscribe_bundle.rs:
     primary: distributed.subscribe-publish
+    test_default_verify: distributed.subscribe-publish
+    impl_patterns:
+      - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+    test_rules:
+      - {substr: never_simulate, id: testing.never-run-in-unit}
+      - {substr: bundle, id: bundle.girth-const-generic}
 
   distributed/aqueduct_builder.rs:
     primary: distributed.aqueduct-stream
@@ -330,6 +672,28 @@ files:
   distributed/aqueduct_stream.rs:
     primary: distributed.aqueduct-stream
     test_default_verify: distributed.aqueduct-stream
+    test_rules:
+      - {substr: fragment, id: stream.control-payload}
+      - {substr: girth, id: bundle.girth-const-generic}
+
+  distributed/aqueduct_stream_proptest.rs:
+    primary: distributed.aqueduct-stream
+    test_default_verify: verify.process.proptest
+    requirements:
+      - stream.control-payload
+    test_rules:
+      - {substr: ingress, id: stream.control-payload}
+      - {substr: egress, id: stream.control-payload}
+      - {substr: defrag, id: stream.control-payload}
+
+  distributed/aqueduct_stream_proptest.rs:
+    primary: distributed.aqueduct-stream
+    test_default_verify: verify.process.proptest
+    requirements:
+      - stream.control-payload
+    test_rules:
+      - {substr: ingress, id: distributed.aqueduct-stream}
+      - {substr: egress, id: distributed.aqueduct-stream}
 
   distributed/polling.rs:
     primary: distributed.media-driver-testing

@@ -1266,3 +1266,7 @@ mod tests {
         assert!(peeked.is_some());
     }
 }
+
+#[cfg(test)]
+#[path = "steady_actor_shadow/tests/mod.rs"]
+mod shadow_proptest_suite;

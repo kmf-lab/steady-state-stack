@@ -221,6 +221,7 @@ impl<T> PackedVecReader<T>
 // ss[related stream.control-payload]
 mod tests {
     use super::*;
+    use crate::ss_proptest;
     use bytes::BytesMut;
     // ss[related stream.control-payload]
     use log::trace;
@@ -332,5 +333,93 @@ mod tests {
         let mut buffer2 = BytesMut::new();
         writer.add_vec(&mut buffer2, &[11, 21, 30]);
         assert_eq!(writer.delta_write_count(), 1);
+    }
+
+    #[test]
+    // ss[verify stream.control-payload]
+    fn test_sync_data_forces_full_record() {
+        let mut writer: PackedVecWriter<i64> = PackedVecWriter {
+            previous: vec![1, 2, 3],
+            sync_required: Arc::new(AtomicBool::from(false)),
+            delta_write_count: 2,
+        };
+        writer.sync_data();
+        let mut buffer = BytesMut::new();
+        writer.add_vec(&mut buffer, &[4, 5, 6]);
+        assert_eq!(writer.delta_write_count(), 0);
+        let mut reader: PackedVecReader<i64> = PackedVecReader {
+            previous: vec![1, 2, 3],
+        };
+        let restored = reader
+            .restore_vec(&mut buffer.freeze())
+            .expect("full sync must restore");
+        assert_eq!(restored, vec![4, 5, 6]);
+    }
+
+    use proptest::prelude::*;
+
+    ss_proptest! {
+
+        /// Property: packed vector delta encoding round-trips when prior state is established.
+        #[test]
+        // ss[verify stream.control-payload]
+        // ss[verify verify.process.proptest]
+        fn proptest_packed_vec_roundtrip_delta(
+            prev in prop::collection::vec(-1000i64..1000, 1..16),
+            change_mask in prop::collection::vec(any::<bool>(), 1..16),
+        ) {
+            let next: Vec<i64> = prev
+                .iter()
+                .zip(change_mask.iter().cycle())
+                .map(|(p, &change)| if change { p.saturating_add(1) } else { *p })
+                .collect();
+            prop_assume!(next != prev);
+            let mut writer: PackedVecWriter<i64> = PackedVecWriter {
+                previous: prev.clone(),
+                sync_required: Arc::new(AtomicBool::from(false)),
+                delta_write_count: 0,
+            };
+            let mut reader: PackedVecReader<i64> = PackedVecReader { previous: prev };
+            let mut buffer = BytesMut::new();
+            writer.add_vec(&mut buffer, &next);
+            let restored = reader
+                .restore_vec(&mut buffer.freeze())
+                .expect("delta round-trip");
+            prop_assert_eq!(&restored, &next);
+        }
+
+        /// Property: full sync after `sync_data()` round-trips arbitrary vectors.
+        #[test]
+        // ss[verify stream.control-payload]
+        // ss[verify verify.process.proptest]
+        fn proptest_packed_vec_full_sync_roundtrip(
+            values in prop::collection::vec(-1000i64..1000, 1..32),
+        ) {
+            let mut writer: PackedVecWriter<i64> = PackedVecWriter::new();
+            writer.sync_data();
+            let mut reader: PackedVecReader<i64> = PackedVecReader { previous: values.clone() };
+            let mut buffer = BytesMut::new();
+            writer.add_vec(&mut buffer, &values);
+            let restored = reader
+                .restore_vec(&mut buffer.freeze())
+                .expect("full sync round-trip");
+            prop_assert_eq!(&restored, &values);
+        }
+
+        /// Property: consume_to_u64 reconstructs the original bit pattern.
+        #[test]
+        // ss[verify stream.control-payload]
+        // ss[verify verify.process.proptest]
+        fn proptest_consume_to_u64_roundtrip(bits in prop::collection::vec(any::<u8>().prop_map(|b| b & 1), 0..200)) {
+            let u64_values = PackedVecWriter::<i32>::consume_to_u64(&bits);
+            let mut reconstructed = Vec::with_capacity(bits.len());
+            for chunk in u64_values {
+                for i in 0..64 {
+                    reconstructed.push(((chunk >> i) & 1) as u8);
+                }
+            }
+            reconstructed.truncate(bits.len());
+            prop_assert_eq!(reconstructed, bits);
+        }
     }
 }
