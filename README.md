@@ -1,61 +1,88 @@
-# Steady State: Build Faster, Ship Sooner
+# Steady State
 
-**[Watch Our Intro Video](https://twitter.com/NathanTippy/status/1863433128674812398)**  
-*See Steady State in action—click now!*
+[![Leaderboard](https://my.kmf-lab.com/leaderboard/static/badge/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/kmf-lab/steady-state-stack)
+[![Dashboard](https://my.kmf-lab.com/leaderboard/static/badge/dashboard/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/dashboard?account=kmf-lab)
+[![Honor board](https://my.kmf-lab.com/leaderboard/static/badge/honor/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/honor/kmf-lab)
 
-Whether you’re automating factories, commanding robots, syncing IoT devices, or scaling cloud services, **Steady State** is your fast track to reliable,
-high-performance systems. Need a smart factory where machines and sensors sync quickly? Or a cloud app that handles millions of requests without flinching?
-Steady State nails concurrency, state management, and uptime—so you can innovate, not troubleshoot.
+Actor framework for long-running, low-latency Rust services — isolated actors, backpressured channels, supervisors, and live telemetry.
 
-## Why Steady State Stands Out
+**[Watch the intro](https://twitter.com/NathanTippy/status/1863433128674812398)**
 
-Steady State isn’t just a framework—it’s your edge. Here’s what it delivers:
+## What you get
 
-- **Ready to Roll**: Telemetry, prometheus, logging, distributed comms built-in.
-- **Lightning Fast**: Zero-copy processing and big buffers for top speed.
-- **Unbreakable**: Auto-recovery, reliable actor state, safe concurrency. Your app stays alive.
-- **Live Insights**: Real-time metrics to keep you in the loop.
-- **Pinpoint Timing**: Microsecond precision for workflows that can’t wait.
+- **Isolated actors** — private state, message passing, no shared-memory races
+- **Channels with backpressure** — async ring buffers; work waits instead of dropping
+- **Supervisors & restarts** — panic recovery with persistent actor state
+- **Telemetry & Prometheus** — live graphs and scrapeable metrics out of the box
+- **Graceful shutdown** — veto-based coordinated stop so in-flight work can finish
+- **Distributed pods** — Aeron for high-speed IPC/UDP between processes and machines
 
-This is a unified system designed to cut dev time and get you to market fast.
+Built for factories, robotics, IoT, and cloud services where uptime and timing matter.
 
-## Built for Speed
+## This repository
 
-Time matters, and Steady State delivers:
+Cargo workspace with:
 
-- **No Crate Chaos**: Everything you need, no library hunting.
-- **Launch Quick**: From MVP to scale-up, move without delays.
-- **Automate Smart**: Perfect for factories, makers, and startups... focus on building, not fixing.
+| Path | What it is |
+|------|------------|
+| [`core/`](core/) | The [`steady_state`](https://crates.io/crates/steady_state) library (published to crates.io) |
+| [`cargo-steady-state/`](cargo-steady-state/) | CLI / codegen helper |
+| [`docs/spec/`](docs/spec/README.md) | Normative requirements (Tracey / `ss[...]` traceability) |
 
-## What Can You Build?
+## Learn by building
 
-- **Factories & Robotics**: Automation control, fault tolerance, and monitoring to keep things running.
-- **Cloud Services**: Handle huge loads, zero stress.
-- **IoT & Distributed Systems**: Sync devices effortlessly, and compute on the edge.
-- **More**: Finance, gaming, makers... Steady State adapts.
+Work through the lessons in order — each builds on the last:
 
-![Real-Time Telemetry](core/simple-example.gif)  
-*See your system live with Steady State’s telemetry.*
+| Lesson | Repo | Focus |
+|--------|------|--------|
+| 1. Minimum | [steady-state-minimum](https://github.com/kmf-lab/steady-state-minimum) | Single actor, timing, shutdown |
+| 2. Standard | [steady-state-standard](https://github.com/kmf-lab/steady-state-standard) | Multi-actor pipeline, batching, telemetry |
+| 3. Robust | [steady-state-robust](https://github.com/kmf-lab/steady-state-robust) | Restarts, persistent state, peek-before-commit |
+| 4. Performant | [steady-state-performant](https://github.com/kmf-lab/steady-state-performant) | Large channels, double-buffering, zero-copy |
+| 5. Distributed | [steady-state-distributed](https://github.com/kmf-lab/steady-state-distributed) | Publisher/subscriber pods over Aeron |
 
-## Why You’ll Love It
+In-tree distributed example: [`core/examples/steady-state-distributed`](core/examples/steady-state-distributed).
 
-- **Easy Concurrency**: Multi-core power with isolated actors, easy maintenance.
-- **Smooth Shutdowns**: Graceful exits, clean orderly shutdowns for data safe.
-- **Instant Monitoring**: Prometheus-ready metrics, no fuss.
-- **Pro Testing**: Testing tools to ensure it all works.
+## Docs map
 
-## Let’s Shape the Future
+| Start here | Link |
+|------------|------|
+| Install & first actor | [docs/getting_started.md](docs/getting_started.md) |
+| Architecture TLDR | [steady_state_tldr.md](steady_state_tldr.md) |
+| Spec index | [docs/spec/README.md](docs/spec/README.md) |
+| Testing actors | [lesson-on-testing.md](lesson-on-testing.md) · [lesson-on-actor-testing.md](lesson-on-actor-testing.md) |
+| Bundles & index waits | [lesson-on-bundles.md](lesson-on-bundles.md) |
+| Verification (proptest, fuzz, mutants) | [lesson_on_proptest.md](lesson_on_proptest.md) · [lesson-on-fuzz-testing.md](lesson-on-fuzz-testing.md) · [lesson_on_mutations_testing.md](lesson_on_mutations_testing.md) |
 
-Factory automation, robotics, IoT, cloud, services... Steady State makes it simple. It’s serious for business and fun to use. Jump in, try it, and turbocharge your next project. Ready to ship faster?
+API docs: [docs.rs/steady_state](https://docs.rs/steady_state/0.2.13/steady_state/)
 
-## Specification
+## Install
 
-Normative framework requirements and Tracey traceability: **[docs/spec/README.md](docs/spec/README.md)**.
+```bash
+cargo add steady_state
+```
 
-## Get Started
+Or in `Cargo.toml`:
 
-1. **Begin Here**: Try [minimum example](https://github.com/kmf-lab/steady-state-minimum),[standard example](https://github.com/kmf-lab/steady-state-standard) then explore [robust](https://github.com/kmf-lab/steady-state-robust),[performant](https://github.com/kmf-lab/steady-state-performant) and [distributed](https://github.com/kmf-lab/steady-state-distributed).
-2. **Join In**: Shape it on [GitHub](https://github.com/kmf-lab/steady-state-stack).
-3. **Support Us**: Back the mission: [sponsor on GitHub](https://github.com/sponsors/kmf-lab).
+```toml
+[dependencies]
+steady_state = "0.2"
+```
 
-[**Sponsor Steady State**](https://github.com/sponsors/kmf-lab) | [**Dive In**](https://github.com/kmf-lab/steady-state-minimum)
+Default features include `exec_async_std`, built-in telemetry, and Prometheus metrics. See [getting started](docs/getting_started.md) for executor choices (Windows: use `exec_async_std`).
+
+Crate: [crates.io/crates/steady_state](https://crates.io/crates/steady_state)
+
+## Live telemetry
+
+![Real-time telemetry](core/simple-example.gif)
+
+*Actor graph and channel fill levels in the built-in telemetry UI.*
+
+## Contribute
+
+- [GitHub Discussions](https://github.com/kmf-lab/steady-state-stack/discussions)
+- Issues and PRs welcome on this repo
+- [Sponsor on GitHub](https://github.com/sponsors/kmf-lab)
+
+[**Sponsor Steady State**](https://github.com/sponsors/kmf-lab) · [**Start with minimum**](https://github.com/kmf-lab/steady-state-minimum)
