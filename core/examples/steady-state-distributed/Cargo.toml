@@ -1,0 +1,9 @@
+
+[workspace]
+members = [
+    "pod/publish",
+    "pod/subscribe",
+    "runner"
+]
+resolver = "2"
+

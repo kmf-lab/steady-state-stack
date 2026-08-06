@@ -1,0 +1,92 @@
+# Stage 1: Build Stage
+FROM alpine:3.18 AS builder
+
+ENV AERON_VERSION=1.48.0
+ENV AERON_SRC=/opt/aeron
+ENV BUILD_DIR=/build
+ENV CMAKE_VERSION=3.30.3
+
+# Install build-time dependencies, including kernel headers
+RUN apk add --no-cache \
+    git \
+    make \
+    gcc \
+    g++ \
+    musl-dev \
+    linux-headers \
+    libuuid \
+    libbsd \
+    zlib-dev \
+    openjdk17 \
+    file \
+    curl \
+    openssl-dev \
+    && mkdir -p $BUILD_DIR
+
+# Install CMake from source
+RUN curl -L https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}.tar.gz -o cmake.tar.gz && \
+    tar -xzf cmake.tar.gz && \
+    cd cmake-${CMAKE_VERSION} && \
+    ./bootstrap && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf cmake.tar.gz cmake-${CMAKE_VERSION}
+
+# Clone and build Aeron
+RUN git clone --depth 1 --branch $AERON_VERSION https://github.com/real-logic/aeron.git $AERON_SRC
+
+WORKDIR $AERON_SRC
+
+RUN cmake -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG -flto" -DCMAKE_EXE_LINKER_FLAGS="-flto" -S . -B $BUILD_DIR -DCMAKE_BUILD_TYPE=Release -DAERON_ENABLE_JAVA=OFF && \
+    cmake --build $BUILD_DIR --target aeronmd && \
+    cmake --build $BUILD_DIR --target basic_publisher basic_subscriber && \
+    cmake --build $BUILD_DIR --target streaming_publisher && \
+    strip $BUILD_DIR/binaries/aeronmd && \
+    strip $BUILD_DIR/binaries/streaming_publisher && \
+    strip $BUILD_DIR/binaries/basic_publisher && \
+    strip $BUILD_DIR/binaries/basic_subscriber
+
+# Stage 2: Runtime Image
+FROM alpine:3.18
+
+# Copy aeronmd and its required shared libraries
+COPY --from=builder /build /build
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    musl \
+    libuuid \
+    libbsd \
+    zlib \
+    coreutils
+
+# Configure sysctl settings
+RUN echo "net.core.rmem_max=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.core.wmem_max=4194304" | tee -a /etc/sysctl.conf && \
+    echo "fs.file-max=1048576" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_rmem_min=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_wmem_min=4194304" | tee -a /etc/sysctl.conf && \
+    echo "net.ipv4.udp_mem=8388608 12582912 16777216" | tee -a /etc/sysctl.conf && \
+    sysctl -p
+
+ENV AERON_DIR=/dev/shm/aeron-default
+ENV AERON_THREADING_MODE=DEDICATED
+ENV AERON_MEMORY_MAPPED_FILE_MODE=PERFORMANCE
+ENV AERON_MEDIA_DRIVER_THREAD_PRIORITY=10
+ENV AERON_TERM_BUFFER_PRE_ZERO=0
+ENV AERON_EVENT_LOG_FILENAME=/var/log/aeron.log
+ENV AERON_SENDER_IDLE_STRATEGY=backoff
+ENV AERON_CONDUCTOR_IDLE_STRATEGY=backoff
+ENV AERON_RECEIVER_IDLE_STRATEGY=backoff
+ENV AERON_USE_HUGE_PAGES=true
+ENV AERON_SOCKET_SO_RCVBUF=8388608
+ENV AERON_RCV_INITIAL_WINDOW_LENGTH=8388608
+ENV AERON_SOCKET_SO_SNDBUF=8388608
+
+ENV AERON_FLOW_CONTROL_STRATEGY=min
+ENV AERON_RCV_STATUS_MESSAGE_TIMEOUT=20000000
+ENV AERON_PUBLICATION_LINGER_TIMEOUT=5000000000
+
+
+cmd ["sh"]

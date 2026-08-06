@@ -1,0 +1,10 @@
+[package]
+name = "publish"
+version = "0.2.12"
+edition = "2024"
+
+[dependencies]
+steady_state = { git = "ssh://git@github.com/kmf-lab/steady-state-stack.git", branch = "main" }
+# steady_state = "0.2.12"
+
+clap = { version = "4.6", features = ["derive"] }
