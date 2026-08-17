@@ -7,7 +7,8 @@ All notable changes to this project are documented in this file.
 ### Telemetry viewer title
 
 - The builtin viewer title is **Live Telemetry** only after a successful recent `/graph.dot` pull. A failed pull keeps the last diagram and shows **Snapshot** (no “Live”). Initial placeholder remains **Loading…**.
-- Builtin DOT layout is tighter (`nodesep=.35`, `ranksep=1.4` via `DOT_NODESEP` / `DOT_RANKSEP`). Raise `DOT_RANKSEP` first if edge labels collide.
+- Builtin DOT layout is tighter (`nodesep=.35`, `ranksep=1.2` via `DOT_NODESEP` / `DOT_RANKSEP`). Raise `DOT_RANKSEP` first if edge labels collide.
+- Telemetry viewer uses uniform **contain-fit** to the browser viewport on each successful pull and on window resize (preserves manual zoom level across refreshes).
 
 ### Aeron publish wake
 

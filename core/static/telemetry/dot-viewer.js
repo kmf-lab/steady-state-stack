@@ -9,7 +9,6 @@ const ZOOM_DELTA = 40;
 //const ZOOM_FROM_CENTER = false;
 const ZOOM_FROM_CENTER = true;
 const ZOOM_MAX = 5000;
-const MAX_SCALE = 0.4;
 
 const speedMap = {
   'No refresh': 0,
@@ -25,12 +24,12 @@ const speedMap = {
 };
 
 let aspectRatio, diagram, dragDx, dragDy;
-let firstTime = true;
-let intervalToken, navHeight, originalWindowWidth;
+let fitBaseWidth = 0, fitBaseHeight = 0;
+let intervalToken, navHeight;
 let preview, speedArea, speedDropdown, speedMs, minRefreshRateMs = 0;
 let speedSpan, speedText, svg, svgRect, viewport, webworker;
 let zoomInBtn, zoomInBtnDisabled, zoomOutBtn, zoomOutBtnDisabled;
-let zoomCurrent = 100, zoomInitialScale = 1.0;
+let zoomCurrent = 100;
 
 const scroll = (x, y) => window.scrollTo(x, y);
 
@@ -45,6 +44,62 @@ const isVisible = element => element.style.visibility === 'visible';
 function setTelemetryTitle(text) {
   const el = getById('telemetryTitle');
   if (el) el.textContent = text;
+}
+
+/**
+ * Natural SVG size from viewBox, or layout rect after attributes are stripped.
+ */
+function getSvgNaturalSize(svgEl) {
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  if (vb && vb.width > 0 && vb.height > 0) {
+    return {width: vb.width, height: vb.height};
+  }
+  const rect = svgEl.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    return {width: rect.width, height: rect.height};
+  }
+  return null;
+}
+
+/**
+ * Uniform contain-fit to the viewport, then apply zoomCurrent (preserved on refresh).
+ */
+function fitDiagramToViewport() {
+  if (!svg) return;
+
+  const natural = getSvgNaturalSize(svg);
+  if (!natural) return;
+
+  const availW = window.innerWidth;
+  const availH = window.innerHeight - navHeight;
+  const scale = Math.min(availW / natural.width, availH / natural.height);
+
+  fitBaseWidth = natural.width * scale;
+  fitBaseHeight = natural.height * scale;
+  aspectRatio = natural.width / natural.height;
+
+  const zoomFactor = zoomCurrent / 100;
+  setStyle(diagram, 'width', px(fitBaseWidth * zoomFactor));
+  setStyle(diagram, 'height', px(fitBaseHeight * zoomFactor));
+
+  svgRect = svg.getBoundingClientRect();
+
+  const previewRect = preview.getBoundingClientRect();
+  setStyle(preview, 'height', px(Math.ceil(previewRect.width / aspectRatio)));
+
+  updateZoomButtons();
+  onResize();
+}
+
+function updateZoomButtons() {
+  if (!fitBaseWidth) return;
+  const newWidth = fitBaseWidth * zoomCurrent / 100;
+  const canZoomIn = zoomCurrent + ZOOM_DELTA <= ZOOM_MAX;
+  const canZoomOut = newWidth > fitBaseWidth + 1;
+  setDisplay(zoomInBtn, canZoomIn);
+  setDisplay(zoomInBtnDisabled, !canZoomIn);
+  setDisplay(zoomOutBtn, canZoomOut);
+  setDisplay(zoomOutBtnDisabled, !canZoomOut);
 }
 
 function onDrag(event) {
@@ -117,29 +172,7 @@ function onMessage(message) {
       }
 
       if (svg) {
-        svgRect = svg.getBoundingClientRect();
-        aspectRatio = svgRect.width / svgRect.height;
-        const previewRect = preview.getBoundingClientRect();
-        const newHeight = Math.ceil(previewRect.width / aspectRatio);
-        setStyle(preview, 'height', px(newHeight));
-      }
-
-      if (firstTime) {
-        firstTime = false;
-
-        const diagramRect = diagram.getBoundingClientRect();
-
-        // if diagram is taller than the window, then we zoom out
-        // if it is wider, ignore and just set it to original width
-        if(diagramRect.height > window.innerHeight) {
-           zoomInitialScale = MAX_SCALE;
-           originalWindowWidth *= zoomInitialScale;
-        }
-
-        setStyle(diagram, 'width', px(originalWindowWidth));
-
-        // Make the viewport start at the same size as the preview.
-        onResize();
+        fitDiagramToViewport();
       }
   });
 }
@@ -221,8 +254,8 @@ function onZoom(zoomIn) {
     }
   }
 
-  let newWidth = originalWindowWidth * zoomCurrent / 100;
-  let newHeight = newWidth / aspectRatio;
+  let newWidth = fitBaseWidth * zoomCurrent / 100;
+  let newHeight = fitBaseHeight * zoomCurrent / 100;
   let newX, newY;
 
   if (ZOOM_FROM_CENTER) {
@@ -244,13 +277,7 @@ function onZoom(zoomIn) {
   onResize();
   onScroll();
 
-  // Determine which zoom buttons should be displayed.
-  const canZoomIn = zoomCurrent + ZOOM_DELTA <= ZOOM_MAX;
-  const canZoomOut = newWidth > window.innerWidth * zoomInitialScale + 1;
-  setDisplay(zoomInBtn, canZoomIn);
-  setDisplay(zoomInBtnDisabled, !canZoomIn);
-  setDisplay(zoomOutBtn, canZoomOut);
-  setDisplay(zoomOutBtnDisabled, !canZoomOut);
+  updateZoomButtons();
 }
 
 const px = text => text + 'px';
@@ -391,8 +418,6 @@ window.onload = () => {
     return;
   }
 
-  originalWindowWidth = window.innerWidth;
-
   diagram = getById('diagram');
   preview = getById('preview');
   speedArea = getById('speedArea');
@@ -433,5 +458,8 @@ window.onload = () => {
 
 };
 
-window.onresize = onResize;
+window.onresize = () => {
+  if (svg) fitDiagramToViewport();
+  else onResize();
+};
 window.onscroll = onScroll;

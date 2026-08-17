@@ -80,7 +80,7 @@ pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 // ss[related telemetry.dot-export]
 pub(crate) const DOT_NODESEP: &str = ".35";
 /// Column gap for Graphviz `dot` (`rankdir=LR`). See `DOT_NODESEP`.
-pub(crate) const DOT_RANKSEP: &str = "1.4";
+pub(crate) const DOT_RANKSEP: &str = "1.2";
 
 /// Percent of border RGB mixed into actor node `fillcolor` (remainder is white). Tweak for a stronger or weaker tint.
 // ss[related telemetry.dot-export]
