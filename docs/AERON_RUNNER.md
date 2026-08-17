@@ -43,7 +43,7 @@ Before release sign-off or `SS_AERON_MATRIX=full`:
 docker restart aeronmd && sleep 15
 
 SS_AERON_GATE_C=1 SS_AERON_SCENARIO=ipc_single_one SS_AERON_REQUIRED=1 \
-  cargo test -p steady_state --features exec_async_std \
+  cargo test -p steady_state \
   --test aeron_integration_suite -- --nocapture
 ```
 

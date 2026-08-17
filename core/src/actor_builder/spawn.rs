@@ -328,5 +328,261 @@ mod spawn_proptest {
                 })
                 .expect("solo act spawn integration");
         }
+
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify platform.executor-features]
+        // ss[verify verify.process.proptest]
+        fn proptest_solo_ping_pong_channel_then_shutdown(
+            n in 1u8..6,
+            timeout_ms in 400u64..1_500,
+        ) {
+            use crate::SteadyRunner;
+            use std::thread::sleep;
+            use std::time::Duration;
+
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    let (tx, rx) = graph
+                        .channel_builder()
+                        .with_capacity(16)
+                        .build_channel::<u8>();
+                    graph.actor_builder().with_name("PING").build(
+                        move |ctx| {
+                            let tx = tx.clone();
+                            async move {
+                                let mut actor = ctx.into_spotlight([], [&tx]);
+                                let mut txg = tx.lock().await;
+                                for i in 0..n {
+                                    let _ = actor
+                                        .send_async(&mut txg, i, SendSaturation::AwaitForRoom)
+                                        .await;
+                                }
+                                txg.mark_closed();
+                                while actor.is_running(|| true) {
+                                    actor.wait_periodic(Duration::from_millis(5)).await;
+                                }
+                                Ok(())
+                            }
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.actor_builder().with_name("PONG").build(
+                        move |ctx| {
+                            let rx = rx.clone();
+                            async move {
+                                let mut actor = ctx.into_spotlight([&rx], []);
+                                let mut rxg = rx.lock().await;
+                                while actor.is_running(|| rxg.is_closed_and_empty()) {
+                                    let _clean = await_for_all!(actor.wait_avail(&mut rxg, 1));
+                                    let _ = actor.try_take(&mut rxg);
+                                }
+                                Ok(())
+                            }
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.start();
+                    sleep(Duration::from_millis(80));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("solo ping-pong");
+        }
+
+        #[test]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify platform.executor-features]
+        // ss[verify verify.process.proptest]
+        fn proptest_solo_panic_restarts_then_shutdown(timeout_ms in 400u64..1_500) {
+            use crate::SteadyRunner;
+            use std::sync::atomic::{AtomicU32, Ordering};
+            use std::sync::Arc;
+            use std::thread::sleep;
+            use std::time::Duration;
+
+            let gens = Arc::new(AtomicU32::new(0));
+            let gens_actor = gens.clone();
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    graph.actor_builder().with_name("PANIC_ONCE").build(
+                        move |ctx| {
+                            let gens_actor = gens_actor.clone();
+                            async move {
+                                gens_actor.store(ctx.regeneration, Ordering::SeqCst);
+                                if ctx.regeneration == 0 {
+                                    panic!("intentional first-generation panic");
+                                }
+                                let mut actor = ctx.into_spotlight([], []);
+                                while actor.is_running(|| true) {
+                                    actor.wait_periodic(Duration::from_millis(5)).await;
+                                }
+                                Ok(())
+                            }
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.start();
+                    sleep(Duration::from_millis(120));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("solo panic restart");
+            prop_assert!(gens.load(Ordering::SeqCst) >= 1);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "tokio"))]
+// ss[related platform.executor-features]
+mod tokio_reactor_tests {
+    use super::*;
+    use crate::SteadyRunner;
+    use proptest::prelude::*;
+    use std::rc::Rc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    #[test]
+    // ss[verify platform.executor-features]
+    fn tokio_net_loopback_on_current_thread_reactor() {
+        crate::core_exec::block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind");
+            let addr = listener.local_addr().expect("addr");
+            crate::core_exec::spawn_detached(async move {
+                let _ = tokio::net::TcpStream::connect(addr).await;
+            });
+            let _accepted = listener.accept().await.expect("accept");
+        });
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 4,
+            .. ProptestConfig::default()
+        })]
+
+        #[test]
+        // ss[verify platform.executor-features]
+        // ss[verify verify.process.proptest]
+        fn proptest_tokio_solo_nonsend_sleep(timeout_ms in 400u64..1_500) {
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    graph.actor_builder().with_name("TOKIO_SOLO").build(
+                        |ctx| async move {
+                            let local = Rc::new(7u8);
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                            let _ = *local;
+                            let mut actor = ctx.into_spotlight([], []);
+                            while actor.is_running(|| true) {
+                                actor.wait_periodic(Duration::from_millis(5)).await;
+                            }
+                            Ok(())
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.start();
+                    sleep(Duration::from_millis(80));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("tokio solo");
+        }
+
+        #[test]
+        // ss[verify platform.executor-features]
+        // ss[verify graph.troupes]
+        // ss[verify verify.process.proptest]
+        fn proptest_tokio_troupe_nonsend_sleep(timeout_ms in 400u64..1_500) {
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    let mut troupe = graph.actor_troupe().with_name("TokioTroupe");
+                    graph.actor_builder().with_name("TOKIO_TROUPE").build(
+                        |ctx| async move {
+                            let local = Rc::new(3u8);
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                            let _ = *local;
+                            let mut actor = ctx.into_spotlight([], []);
+                            while actor.is_running(|| true) {
+                                actor.wait_periodic(Duration::from_millis(5)).await;
+                            }
+                            Ok(())
+                        },
+                        ScheduleAs::MemberOf(&mut *troupe),
+                    );
+                    drop(troupe);
+                    assert!(graph.start_with_timeout(Duration::from_secs(10)));
+                    sleep(Duration::from_millis(80));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("tokio troupe");
+        }
+
+        #[test]
+        // ss[verify platform.executor-features]
+        // ss[verify actor.regeneration-survives]
+        // ss[verify verify.process.proptest]
+        fn proptest_tokio_solo_panic_restarts(timeout_ms in 400u64..1_500) {
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    graph.actor_builder().with_name("TOKIO_PANIC").build(
+                        |ctx| async move {
+                            if ctx.regeneration == 0 {
+                                panic!("tokio first-generation panic");
+                            }
+                            tokio::time::sleep(Duration::from_millis(1)).await;
+                            let mut actor = ctx.into_spotlight([], []);
+                            while actor.is_running(|| true) {
+                                actor.wait_periodic(Duration::from_millis(5)).await;
+                            }
+                            Ok(())
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.start();
+                    sleep(Duration::from_millis(120));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("tokio panic restart");
+        }
+
+        #[test]
+        // ss[verify platform.executor-features]
+        // ss[verify verify.process.proptest]
+        fn proptest_tokio_mixed_graph_shuts_down(timeout_ms in 400u64..1_500) {
+            SteadyRunner::test_build()
+                .run((), move |mut graph| {
+                    graph.actor_builder().with_name("PLAIN").build(
+                        |ctx| async move {
+                            let mut actor = ctx.into_spotlight([], []);
+                            while actor.is_running(|| true) {
+                                actor.wait_periodic(Duration::from_millis(5)).await;
+                            }
+                            Ok(())
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.actor_builder().with_name("TOKIO_MIX").build(
+                        |ctx| async move {
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                            let mut actor = ctx.into_spotlight([], []);
+                            while actor.is_running(|| true) {
+                                actor.wait_periodic(Duration::from_millis(5)).await;
+                            }
+                            Ok(())
+                        },
+                        ScheduleAs::SoloAct,
+                    );
+                    graph.start();
+                    sleep(Duration::from_millis(80));
+                    graph.request_shutdown();
+                    graph.block_until_stopped(Duration::from_millis(timeout_ms))
+                })
+                .expect("mixed tokio graph");
+        }
     }
 }

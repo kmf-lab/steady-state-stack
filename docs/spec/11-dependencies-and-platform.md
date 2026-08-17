@@ -16,15 +16,7 @@ ss[platform.ringbuf-pin]
 
 ss[platform.executor-features]
 
-Exactly one primary executor feature (`proactor_nuclei`, `proactor_tokio`, or `exec_async_std`) MUST be enabled per build graph.
-
-**Tier:** 0
-
----
-
-ss[platform.windows-async-std]
-
-Windows builds MUST use `exec_async_std` because io_uring is unavailable.
+The default build MUST drive actor futures with nestable `futures_lite::future::block_on` on the SOLO/TROUP OS thread. The optional `tokio` Cargo feature MUST only install a **current-thread** Tokio runtime inside that same `block_on` (I/O reactor on the pinned thread). It MUST NOT spawn actors onto a Tokio work-stealing pool and MUST NOT require `Send` on actor futures. Default `cargo tree -p steady_state` MUST NOT include `tokio`.
 
 **Tier:** 0
 
@@ -51,7 +43,6 @@ Aeron/aqueduct integration and `simulate_edge` MAY remain below strict coverage 
 | ID | Summary | Tier |
 |----|---------|------|
 | `platform.ringbuf-pin` | ringbuf 0.4 pin | 0 |
-| `platform.executor-features` | One executor feature | 0 |
-| `platform.windows-async-std` | Windows backend | 0 |
+| `platform.executor-features` | Bare-metal block_on; optional tokio reactor | 0 |
 | `platform.coverage-merge` | Merged LCOV | 1 |
 | `platform.aeron-out-of-scope-coverage` | Coverage exclusions | 2 |

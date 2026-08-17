@@ -126,30 +126,11 @@ mod graph_tests {
     use std::time::Duration;
     use steady_state::GraphBuilder;
 
-    #[async_std::test]
-     async fn test_graph_one() -> Result<(), Box<dyn std::error::Error>> {
-
+    #[test]
+    fn test_graph_one() -> Result<(), Box<dyn std::error::Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
-
-        
-           graph.start();
-    //     let mut guard = graph.sidechannel_director().await;
-    //     if let Some(plane) = guard.deref_mut() {
-    //
-    //         //  write your test here, send messages to edge nodes and get responses
-    //         let response = plane.node_call(Box::new(Tick { value: 42 }), "TickGenerator").await;
-    //         if let Some(msg) = response {
-    //             //TODO: confirm
-    //         }
-    //         Delay::new(Duration::from_millis(100)).await;  //wait for message to propagate
-    //         let response = plane.node_call(Box::new(()), "FinalConsumer").await;
-    //
-    //         //TODO: confirm
-    //
-    //     }
-    //     drop(guard);
-         graph.request_shutdown();
-         graph.block_until_stopped(Duration::from_secs(3))
-    
+        graph.start();
+        graph.request_shutdown();
+        graph.block_until_stopped(Duration::from_secs(3))
     }
 }

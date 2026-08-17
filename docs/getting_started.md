@@ -25,22 +25,15 @@ Add Steady State to your `Cargo.toml`:
 steady_state = "0.2"
 ```
 
-Enable one executor feature (choose the appropriate one for your platform):
+The default build uses **OS threads** (SOLO / TROUP) and `futures::executor::block_on` on those threads. No Tokio, nuclei, or async-std is required.
 
-| Feature              | Description                          |
-|----------------------|--------------------------------------|
-| `proactor_nuclei`    | Linux io_uring (high throughput)     |
-| `proactor_tokio`     | Cross‑platform Tokio backend         |
-| `exec_async_std`     | Lightweight async‑std backend        |
-
-Example:
+To use Tokio I/O types inside an actor (`tokio::net`, `tokio::time`), enable the optional feature. That puts a **current-thread Tokio reactor on your actor OS thread**; it does not put actors on a Tokio pool. Do not wrap the graph in `#[tokio::main]`.
 
 ```toml
 [dependencies]
-steady_state = { version = "0.2", features = ["proactor_nuclei"] }
+steady_state = { version = "0.2", features = ["tokio"] }
+tokio = { version = "1", features = ["net", "time", "io-util"] }
 ```
-
-> **Windows users**: Use `exec_async_std` because io_uring is not supported.
 
 ---
 
@@ -160,7 +153,7 @@ cargo run --example your_first_actor
 - **Forgot to lock channels** – Always call `.lock().await` at the beginning of `internal_behavior`.
 - **Used `run()` in unit tests** – Call `internal_behavior` directly instead (the `run` function enters simulated mode in test builds).
 - **Missing `mark_closed()`** – Always include `tx.mark_closed()` in your veto closure; otherwise the downstream actor may hang.
-- **Enabled both `proactor_nuclei` and `proactor_tokio`** – Only one executor feature should be enabled at a time.
+- **Wrapped the graph in `#[tokio::main]`** – Steady owns OS threads. Enabling `features = ["tokio"]` only installs a current-thread reactor on those threads.
 
 ---
 

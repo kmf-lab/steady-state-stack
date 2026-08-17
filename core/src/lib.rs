@@ -28,19 +28,6 @@
 
 #![warn(missing_docs)]
 
-// ss[impl platform.windows-async-std]
-// ss[verify platform.windows-async-std]
-#[cfg(all(windows, any(feature = "proactor_nuclei", feature = "proactor_tokio")))]
-compile_error!("The 'proactor_nuclei' and 'proactor_tokio' features are not supported on Windows due to upstream issues in the nuclei crate. Please use 'exec_async_std' instead.");
-
-/// Requires at least one executor feature to be enabled for the framework to function.
-// ss[impl platform.ringbuf-pin]
-// ss[verify platform.ringbuf-pin]
-// ss[impl platform.executor-features]
-// ss[verify platform.executor-features]
-#[cfg(not(any(feature = "proactor_nuclei", feature = "proactor_tokio", feature = "exec_async_std")))]
-compile_error!("Must enable one executor feature: 'proactor_nuclei', 'proactor_tokio', or 'exec_async_std'");
-
 /// Internal module for telemetry-related functionality.
 ///
 /// This module contains submodules for collecting, consuming, and setting up telemetry in the Steady State framework.
@@ -99,26 +86,17 @@ mod graph_liveliness;
 // ss[related philosophy.structural-hierarchy]
 mod loop_driver;
 
-/// Executor abstraction for Nuclei-based runtimes.
+/// Bare-metal executor (`futures::executor::block_on` on OS threads).
 ///
-/// Available when either the `proactor_nuclei` or `proactor_tokio` feature is enabled.
-#[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
+/// With the `tokio` feature, `block_on` uses a current-thread Tokio runtime on that same thread.
+// ss[impl platform.ringbuf-pin]
+// ss[verify platform.ringbuf-pin]
+// ss[impl platform.executor-features]
 // ss[related philosophy.structural-hierarchy]
-mod abstract_executor_nuclei;
+mod abstract_executor;
 
-#[cfg(any(feature = "proactor_nuclei", feature = "proactor_tokio"))]
 // ss[related philosophy.structural-hierarchy]
-pub(crate) use abstract_executor_nuclei::core_exec;
-
-/// Executor abstraction for the `async-std` runtime.
-///
-/// Available when the `exec_async_std` feature is enabled.
-#[cfg(all(feature = "exec_async_std", not(any(feature = "proactor_nuclei", feature = "proactor_tokio"))))]
-// ss[related philosophy.structural-hierarchy]
-mod abstract_executor_async_std;
-
-#[cfg(all(feature = "exec_async_std", not(any(feature = "proactor_nuclei", feature = "proactor_tokio"))))]
-pub(crate) use abstract_executor_async_std::core_exec;
+pub(crate) use abstract_executor::core_exec;
 
 /// Utilities for capturing panics during testing.
 ///
@@ -302,12 +280,6 @@ pub mod steady_actor_spotlight;
 /// used by both `SteadyActorShadow` and `SteadyActorSpotlight` to avoid code duplication.
 // ss[related philosophy.structural-hierarchy]
 mod steady_actor_core;
-
-/// Tests for executor abstractions.
-///
-/// This module contains tests for ensuring executor compatibility.
-// ss[related philosophy.structural-hierarchy]
-mod abstract_executor_tests;
 
 /// Utilities for managing concurrent execution of futures.
 ///

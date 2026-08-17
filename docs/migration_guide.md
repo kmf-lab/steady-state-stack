@@ -6,6 +6,12 @@
 
 ## Unreleased (current branch)
 
+### Threading / executor (breaking)
+
+- Remove Cargo features `exec_async_std`, `proactor_nuclei`, and `proactor_tokio`. The default crate uses OS-thread `block_on`.
+- Remove public `ProactorConfig` and `GraphBuilder::with_iouring_queue_length`.
+- To use Tokio I/O in an actor: `steady_state = { version = "0.2", features = ["tokio"] }`. That is a current-thread reactor on the actor's OS thread, not a Tokio pool.
+
 ### Dependencies
 
 - Keep **`ringbuf` 0.4.x** aligned with **`async-ringbuf` 0.3.5** — do not bump one without the other (`platform.ringbuf-pin`).

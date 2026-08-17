@@ -353,7 +353,7 @@ pub(crate) mod metric_collector_tests {
     use super::*;
     use proptest::prelude::*;
 
-    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    #[cfg(feature = "prometheus_metrics")]
     async fn run_cooperative_shutdown_stub(
         ctx: SteadyActorShadow,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -364,7 +364,7 @@ pub(crate) mod metric_collector_tests {
         Ok(())
     }
 
-    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    #[cfg(feature = "prometheus_metrics")]
     fn run_collector_graph_integration(
         build: impl FnOnce(&mut Graph) + Send + 'static,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -431,10 +431,7 @@ pub(crate) mod metric_collector_tests {
 
     #[test]
     // ss[verify telemetry.prometheus-metrics]
-    #[cfg(all(
-        feature = "exec_async_std",
-        feature = "prometheus_metrics"
-    ))]
+    #[cfg(feature = "prometheus_metrics")]
     fn collector_run_processes_node_def_from_registry() {
         use std::sync::Arc;
         use std::collections::VecDeque;
@@ -507,7 +504,7 @@ pub(crate) mod metric_collector_tests {
 
     #[test]
     // ss[verify telemetry.prometheus-metrics]
-    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    #[cfg(feature = "prometheus_metrics")]
     fn collector_emits_node_def_when_edge_diag_enabled() {
         use std::sync::Arc;
         use crate::graph_liveliness::ActorIdentity;

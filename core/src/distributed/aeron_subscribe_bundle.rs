@@ -500,7 +500,7 @@ mod aeron_subscribe_bundle_tests {
 mod aeron_subscribe_bundle_graph_tests {
     use std::time::Duration;
 
-    use async_std::task;
+    use futures_timer::Delay;
 
     use crate::distributed::aeron_channel_builder::AeronConfig;
     use crate::distributed::aeron_channel_structs::MediaType;
@@ -509,9 +509,11 @@ mod aeron_subscribe_bundle_graph_tests {
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron subscribe bundle: graph starts and stops without a live driver.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_subscribe_bundle_simulated_graph_stops_cleanly() {
+    fn test_subscribe_bundle_simulated_graph_stops_cleanly() {
+    crate::core_exec::block_on(async {
+
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -529,15 +531,18 @@ mod aeron_subscribe_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(15)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
-    }
+        });
+}
 
     /// Internal subscribe bundle path: shutdown during driver wait when no media driver is attached.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_subscribe_bundle_stops_during_driver_wait_without_driver() {
+    fn test_subscribe_bundle_stops_during_driver_wait_without_driver() {
+    crate::core_exec::block_on(async {
+
         let mut graph = GraphBuilder::for_testing().build(());
         if graph.aeron_media_driver().is_some() {
             eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
@@ -559,15 +564,18 @@ mod aeron_subscribe_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
-    }
+        });
+}
 
     /// Internal subscribe bundle path with closed ingress bundle.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_subscribe_bundle_internal_closed_ingress_stops_without_driver() {
+    fn test_subscribe_bundle_internal_closed_ingress_stops_without_driver() {
+    crate::core_exec::block_on(async {
+
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -588,8 +596,9 @@ mod aeron_subscribe_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(50)).await;
+        Delay::new(Duration::from_millis(50)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
-    }
+        });
+}
 }

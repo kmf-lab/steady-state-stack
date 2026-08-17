@@ -41,7 +41,6 @@ mod simple_graph_test {
         let mut graph = GraphBuilder::for_testing()
             .with_block_fail_fast()
             .with_telemtry_production_rate_ms(100)
-            .with_iouring_queue_length(8)
             .with_telemetry_metric_features(true)
             .build(());
 

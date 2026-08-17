@@ -25,20 +25,17 @@ ss_proptest! {
     // ss[verify graph.for-testing]
     // ss[verify verify.process.proptest]
     fn proptest_builder_option_chain(
-        queue_len in 16u32..512,
         rate_ms in MIN_MS_RATE..5_000,
         bundle_floor in 1usize..32,
         stack in 256usize..4_096,
     ) {
         let names: HashSet<&'static str> = ["WORKER", "LOGGER"].into_iter().collect();
         let builder = GraphBuilder::for_testing()
-            .with_iouring_queue_length(queue_len)
             .with_telemtry_production_rate_ms(rate_ms)
             .with_telemetry_colors("#111111", "#222222")
             .with_default_actor_stack_size(stack)
             .with_bundle_floor_size(bundle_floor)
             .with_test_pipeline_internal_behavior_names(names.clone());
-        prop_assert_eq!(builder.iouring_queue_length, queue_len);
         prop_assert_eq!(builder.telemtry_production_rate_ms, rate_ms);
         prop_assert_eq!(builder.bundle_floor_size, bundle_floor);
         prop_assert_eq!(builder.default_stack_size, Some(stack));

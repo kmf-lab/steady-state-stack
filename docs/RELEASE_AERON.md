@@ -100,5 +100,5 @@ Do **not** run `cargo llvm-cov test --tests` for coverage; use `scripts/run-llvm
 
 ```bash
 SS_AERON_FRESH_DRIVER=0 SS_AERON_SCENARIO=ipc_single_one \
-  cargo test -p steady_state --features exec_async_std --test aeron_integration_suite -- --nocapture
+  cargo test -p steady_state --test aeron_integration_suite -- --nocapture
 ```

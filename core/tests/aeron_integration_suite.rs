@@ -1,6 +1,6 @@
 //! Single-process serial Aeron pub/sub integration suite (one media driver session).
 //!
-//! Run: `cargo test -p steady_state --features exec_async_std --test aeron_integration_suite -- --nocapture`
+//! Run: `cargo test -p steady_state --test aeron_integration_suite -- --nocapture`
 //!
 //! Bisect one scenario: `SS_AERON_SCENARIO=ipc_single_ten cargo test ...`
 

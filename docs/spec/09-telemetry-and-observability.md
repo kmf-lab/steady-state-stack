@@ -46,6 +46,14 @@ Prometheus label suffix behavior for channel stats MUST remain stable for dashbo
 
 ---
 
+ss[telemetry.live-title]
+
+The builtin telemetry viewer title MUST start as a loading placeholder. It MUST show **Live Telemetry** only after a successful recent `/graph.dot` pull that produced SVG. A failed pull (HTTP error, network failure, or render error) MUST set the title to **Snapshot** with no occurrence of the word Live, and MUST NOT replace the last successfully rendered diagram.
+
+**Tier:** 1
+
+---
+
 ## Requirement index
 
 | ID | Summary | Tier |
@@ -55,3 +63,4 @@ Prometheus label suffix behavior for channel stats MUST remain stable for dashbo
 | `telemetry.dot-export` | DOT graphs | 1 |
 | `telemetry.shutdown-complete` | Stop telemetry | 1 |
 | `telemetry.channel-labels` | Label stability | 1 |
+| `telemetry.live-title` | Live vs Snapshot title | 1 |

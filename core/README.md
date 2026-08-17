@@ -15,15 +15,9 @@ steady_state = "0.2"
 cargo add steady_state
 ```
 
-**Default features:** `exec_async_std`, `telemetry_server_builtin`, `prometheus_metrics`, `core_display`, `core_affinity`.
+**Default features:** `telemetry_server_builtin`, `prometheus_metrics`, `core_display`, `core_affinity`.
 
-| Feature | When to use |
-|---------|-------------|
-| `exec_async_std` | Default / Windows (io_uring not available) |
-| `proactor_nuclei` | Linux io_uring, high throughput |
-| `proactor_tokio` | Tokio backend |
-
-Enable only one executor feature at a time. Full API: [docs.rs/steady_state](https://docs.rs/steady_state/0.2.13/steady_state/).
+Optional `tokio` puts a current-thread Tokio reactor on SOLO/TROUP OS threads (not a work-stealing pool). Full API: [docs.rs/steady_state](https://docs.rs/steady_state/0.2.13/steady_state/).
 
 ## Quick start
 

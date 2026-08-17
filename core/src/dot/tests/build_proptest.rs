@@ -201,6 +201,8 @@ ss_proptest! {
         };
         let dot = render_dot(&state);
         prop_assert!(dot.contains("digraph"));
+        prop_assert!(dot.contains("nodesep="));
+        prop_assert!(dot.contains("ranksep="));
     }
 
     /// Property: bundle floor size is reflected in edge grouping when multiple edges share endpoints.

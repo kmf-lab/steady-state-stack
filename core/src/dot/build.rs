@@ -18,7 +18,8 @@ use super::keys::{PartnerKey, PrimaryGroupKey};
 use super::partnered::PartneredEdge;
 use super::render::render_edge_internal;
 use super::{
-    BUNDLE_PEN_WIDTH, DotState, MAX_INLINE_AVG_FILL_LANES, PARTNER_BUNDLE_PEN_WIDTH,
+    BUNDLE_PEN_WIDTH, DOT_NODESEP, DOT_RANKSEP, DotState, MAX_INLINE_AVG_FILL_LANES,
+    PARTNER_BUNDLE_PEN_WIDTH,
 };
 
 /// Builds the DOT graph from the current state.
@@ -35,8 +36,12 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     dot_graph.put_slice("LR".as_bytes());
     dot_graph.put_slice(b";\n");
 
-    // Keep sidecars near with nodesep and ranksep spreads the rest out for label room.
-    dot_graph.put_slice(b"graph [nodesep=.5, ranksep=2.5];\n");
+    // Graphviz `dot` has no gravity; these two attributes are the layout tightness.
+    dot_graph.put_slice(b"graph [nodesep=");
+    dot_graph.put_slice(DOT_NODESEP.as_bytes());
+    dot_graph.put_slice(b", ranksep=");
+    dot_graph.put_slice(DOT_RANKSEP.as_bytes());
+    dot_graph.put_slice(b"];\n");
     dot_graph.put_slice(b"node [margin=0.1];\n"); // Gap around text inside the circle
 
     dot_graph.put_slice(b"node [style=filled, fillcolor=white, fontcolor=black];\n");

@@ -201,7 +201,7 @@ restart_via_binary() {
 
 post_restart_wire_settle() {
   echo "Post-restart wire settle (preflight smoke, up to ${POST_RESTART_SETTLE_SEC}s budget in driver sleep)..."
-  if ! cargo test -p steady_state --features exec_async_std \
+  if ! cargo test -p steady_state \
     --test aeron_preflight_smoke aeron_preflight_wire_settle -- --nocapture 2>&1 | tee -a "${LOG_FILE}"; then
     echo "WARN: post-restart wire preflight failed; suite may soft-skip or fail." >&2
     return 1
@@ -363,7 +363,7 @@ analyze_log_or_fail() {
 
 run_suite() {
   : > "${LOG_FILE}"
-  cargo test -p steady_state --features exec_async_std \
+  cargo test -p steady_state \
     --test aeron_integration_suite -- --nocapture 2>&1 | tee "${LOG_FILE}"
   return "${PIPESTATUS[0]}"
 }

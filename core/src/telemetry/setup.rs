@@ -688,7 +688,6 @@ mod tests {
 
     #[test]
     // ss[verify telemetry.builtin-server]
-    #[cfg(feature = "exec_async_std")]
     fn send_all_local_telemetry_async_accepts_empty_state() {
         use crate::graph_liveliness::ActorIdentity;
         let ident = ActorIdentity::new(7, "phase7_telemetry", None);
@@ -706,7 +705,6 @@ mod tests {
     #[test]
     // ss[verify telemetry.builtin-server]
     #[cfg(all(
-        feature = "exec_async_std",
         feature = "prometheus_metrics",
         feature = "telemetry_server_builtin"
     ))]
@@ -727,7 +725,7 @@ mod tests {
 
     #[test]
     // ss[verify telemetry.builtin-server]
-    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    #[cfg(feature = "prometheus_metrics")]
     fn construct_telemetry_channels_registers_collector_detail() {
         use crate::monitor::ChannelMetaData;
         use crate::GraphBuilder;
@@ -765,7 +763,7 @@ mod tests {
 
     #[test]
     // ss[verify telemetry.builtin-server]
-    #[cfg(all(feature = "exec_async_std", feature = "prometheus_metrics"))]
+    #[cfg(feature = "prometheus_metrics")]
     fn construct_telemetry_channels_zero_len_registers_actor_only() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("zero_channel_actor");

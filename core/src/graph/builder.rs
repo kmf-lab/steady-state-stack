@@ -1,7 +1,6 @@
 use super::deps::*;
 use super::graph::Graph;
 use super::liveliness::GraphLiveliness;
-use super::proactor::ProactorConfig;
 use super::shutdown::watch_shutdown;
 use super::state::GraphLivelinessState;
 use log::{debug, trace, warn};
@@ -17,14 +16,8 @@ pub struct GraphBuilder {
     pub(crate) is_for_testing: bool,
     /// Enables or disables telemetry metric features.
     pub(crate) telemetry_metric_features: bool,
-    /// Enables or disables the I/O driver.
-    pub(crate) enable_io_driver: bool,
     /// An optional backplane for testing side-channel communications.
     pub(crate) backplane: Option<StageManager>,
-    /// THE configuration for the proactor, if specified.
-    pub(crate) proactor_config: Option<ProactorConfig>,
-    /// THE queue length for I/O uring operations.
-    pub(crate) iouring_queue_length: u32,
     /// THE rate at which telemetry data is produced, in milliseconds.
     pub(crate) telemtry_production_rate_ms: u64,
     /// An optional hex color for the telemetry top bar.
@@ -72,10 +65,7 @@ impl GraphBuilder {
         GraphBuilder {
             is_for_testing: false,
             telemetry_metric_features: crate::steady_config::TELEMETRY_SERVER,
-            enable_io_driver: true,
             backplane: None,
-            proactor_config: Some(ProactorConfig::InterruptDriven),
-            iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: MIN_MS_RATE,
             telemetry_colors: None,
             shutdown_barrier: None,
@@ -101,10 +91,7 @@ impl GraphBuilder {
         GraphBuilder {
             is_for_testing: true,
             telemetry_metric_features: false,
-            enable_io_driver: false,
             backplane: Some(StageManager::default()),
-            proactor_config: Some(ProactorConfig::InterruptDriven),
-            iouring_queue_length: 1 << 5,
             telemtry_production_rate_ms: MIN_MS_RATE,
             telemetry_colors: None,
             shutdown_barrier: None,
@@ -124,24 +111,6 @@ impl GraphBuilder {
     ) -> Self {
         let mut result = self.clone();
         result.test_pipeline_internal_names = names;
-        result
-    }
-
-    /// Sets the queue length for I/O uring operations.
-    ///
-    /// This method adjusts the capacity for I/O operations, which may need to be increased for high workloads.
-    ///
-    /// # Arguments
-    ///
-    /// * `len` - THE desired queue length.
-    ///
-    /// # Returns
-    ///
-    /// A new `GraphBuilder` instance with the updated queue length.
-    // ss[related graph.for-testing]
-    pub fn with_iouring_queue_length(&self, len: u32) -> Self {
-        let mut result = self.clone();
-        result.iouring_queue_length = len;
         result
     }
 
@@ -264,9 +233,6 @@ impl GraphBuilder {
     pub fn with_telemetry_metric_features(&self, enable: bool) -> Self {
         let mut result = self.clone();
         result.telemetry_metric_features = enable;
-        if enable {
-            result.enable_io_driver = true;
-        }
         result
     }
 

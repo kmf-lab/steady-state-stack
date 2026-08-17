@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Telemetry viewer title
+
+- The builtin viewer title is **Live Telemetry** only after a successful recent `/graph.dot` pull. A failed pull keeps the last diagram and shows **Snapshot** (no “Live”). Initial placeholder remains **Loading…**.
+- Builtin DOT layout is tighter (`nodesep=.35`, `ranksep=1.4` via `DOT_NODESEP` / `DOT_RANKSEP`). Raise `DOT_RANKSEP` first if edge labels collide.
+
+### Aeron publish wake
+
+- Aeron publish actors wait for **one** egress item (plus a 10ms tick) instead of a large batch threshold, so single-frame IPC wire probes are not starved when the periodic timer is not the first to complete.
+
+### Threading / executor (breaking)
+
+- Actor futures are driven with nestable **`futures_lite::future::block_on`** on the SOLO/TROUP OS thread. Exclusive executor features **`exec_async_std`**, **`proactor_nuclei`**, and **`proactor_tokio`** are removed, along with **`ProactorConfig`** and **`GraphBuilder::with_iouring_queue_length`**.
+- Optional **`tokio`** feature installs a **current-thread** Tokio runtime inside `block_on` on that same thread (I/O reactor, not a work-stealing pool). Actors stay `!Send`-capable. Do not use `#[tokio::main]`. Default `cargo tree` does not include Tokio.
+
 ### Dependencies
 
 - **`ringbuf`** is pinned to **0.4.x** again so it matches **`async-ringbuf` 0.3.5** (same `ringbuf` trait graph). Using **ringbuf 0.5** alongside that `async-ringbuf` caused hundreds of `AsyncWrap` trait-bound errors in stream/channel code. **Do not bump one without the other** in the same change (see comments in `core/Cargo.toml`).

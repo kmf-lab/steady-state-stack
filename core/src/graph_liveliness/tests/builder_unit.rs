@@ -36,11 +36,9 @@ fn graph_builder_chain_sets_optional_fields() {
     let mut names = std::collections::HashSet::new();
     names.insert("PIPE");
     let b = GraphBuilder::for_testing()
-        .with_iouring_queue_length(64)
         .with_default_actor_stack_size(1_048_576)
         .with_block_fail_fast()
         .with_test_pipeline_internal_behavior_names(names);
-    assert_eq!(b.iouring_queue_length, 64);
     assert!(b.block_fail_fast);
     assert!(b.test_pipeline_internal_names.contains("PIPE"));
     let g = Graph::internal_new((), b);
@@ -127,10 +125,9 @@ fn graph_builder_build_returns_startable_graph() {
 
 #[test]
 // ss[verify graph.for-testing]
-fn graph_builder_telemetry_features_off_keeps_io_driver_disabled() {
+fn graph_builder_telemetry_features_off() {
     let b = GraphBuilder::for_testing().with_telemetry_metric_features(false);
     assert!(!b.telemetry_metric_features);
-    assert!(!b.enable_io_driver);
 }
 
 #[test]

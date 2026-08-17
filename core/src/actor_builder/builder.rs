@@ -559,11 +559,11 @@ impl ActorBuilder {
             let mut backplane = backplane.lock().await;
             if let Some(pb) = &mut *backplane {
                 let (shutdown_tx, shutdown_rx) = oneshot::channel();
-                core_exec::block_on(async move {
+                {
                     let mut v: MutexGuard<'_, Vec<Sender<()>>> =
                         oneshot_shutdown_vec_for_node.lock().await;
                     v.push(shutdown_tx);
-                });
+                }
                 pb.register_node(
                     immutable_identity.label,
                     steady_config::BACKPLANE_CAPACITY,

@@ -54,14 +54,14 @@ Full matrix release: `bash scripts/run-aeron-release-signoff.sh` or `./scripts/r
 
 ```bash
 # Canonical live suite (one process, ordered scenarios)
-cargo test -p steady_state --features exec_async_std \
+cargo test -p steady_state \
   --test aeron_integration_suite -- --nocapture
 
 # Or use the helper script (sets RUST_LOG=info)
 ./scripts/run-aeron-integration.sh
 
 # URI builder tests (no media driver required)
-cargo test -p steady_state --features exec_async_std --test aeron_integration_uri_contract
+cargo test -p steady_state --test aeron_integration_uri_contract
 ```
 
 **Do not** run multiple `aeron_integration_*` driver binaries in one `cargo test` invocation — `cargo test` orders test **binaries** alphabetically and they contend on one driver. Use only `aeron_integration_suite` for live Aeron.
@@ -146,7 +146,7 @@ Gate B coverage: `bash scripts/run-llvm-cov-release.sh` — **not** `cargo llvm-
 
 ```bash
 SS_AERON_FRESH_DRIVER=1 SS_AERON_SCENARIO=ipc_single_ten \
-  cargo test -p steady_state --features exec_async_std --test aeron_integration_suite -- --nocapture
+  cargo test -p steady_state --test aeron_integration_suite -- --nocapture
 ```
 
 Log grep targets: `Failed to add exclusive publication`, `Publication unavailable`, `new subscription registered`, `graph stopped uncleanly`.
@@ -155,10 +155,10 @@ Log grep targets: `Failed to add exclusive publication`, `Publication unavailabl
 
 ```bash
 # Terminal 1 — subscriber
-cargo run -p steady_state --features exec_async_std --example simple_aeron_subscriber
+cargo run -p steady_state --example simple_aeron_subscriber
 
 # Terminal 2 — publisher
-cargo run -p steady_state --features exec_async_std --example simple_aeron_publisher
+cargo run -p steady_state --example simple_aeron_publisher
 ```
 
 ### Reusable harness

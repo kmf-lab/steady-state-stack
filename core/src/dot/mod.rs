@@ -72,6 +72,16 @@ pub(crate) const BUNDLE_PEN_WIDTH: &str = "4";
 /// The pen width for bundles of partnered channels.
 pub(crate) const PARTNER_BUNDLE_PEN_WIDTH: &str = "2";
 
+/// Graphviz `dot` spacing (`rankdir=LR`). Smaller = tighter. This is not neato/fdp gravity.
+///
+/// `ranksep` is the column gap (the main pull-in). `nodesep` is the same-rank gap
+/// (keeps sidecar pairs from stacking). Old roomy values were `nodesep=.5`, `ranksep=2.5`
+/// so edge labels had space. If labels collide, raise `DOT_RANKSEP` first.
+// ss[related telemetry.dot-export]
+pub(crate) const DOT_NODESEP: &str = ".35";
+/// Column gap for Graphviz `dot` (`rankdir=LR`). See `DOT_NODESEP`.
+pub(crate) const DOT_RANKSEP: &str = "1.4";
+
 /// Percent of border RGB mixed into actor node `fillcolor` (remainder is white). Tweak for a stronger or weaker tint.
 // ss[related telemetry.dot-export]
 pub(crate) const ACTOR_FILL_TINT_PERCENT: u32 = 12;

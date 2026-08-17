@@ -69,7 +69,7 @@ Or in `Cargo.toml`:
 steady_state = "0.2"
 ```
 
-Default features include `exec_async_std`, built-in telemetry, and Prometheus metrics. See [getting started](docs/getting_started.md) for executor choices (Windows: use `exec_async_std`).
+Default features include built-in telemetry and Prometheus metrics. See [getting started](docs/getting_started.md) for the optional `tokio` current-thread reactor.
 
 Crate: [crates.io/crates/steady_state](https://crates.io/crates/steady_state)
 

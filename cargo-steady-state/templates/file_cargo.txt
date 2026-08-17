@@ -5,7 +5,7 @@ edition = "2024"
 [workspace]
 [dependencies]
 ## only for internal dev
-#steady_state     = { path = "../../../core", features = ["exec_async_std", "prometheus_metrics"], default-features = false }
+#steady_state     = { path = "../../../core", features = ["prometheus_metrics"], default-features = false }
 
 steady_state     = "0.2.13"
 clap             = { version = "4.5.31", features = ["derive"] }  # Use clap with derive feature
@@ -14,5 +14,4 @@ log              = "0.4.22"
 futures          = "0.3.31"
 
 [dev-dependencies]
-async-std        = {  version = "1.12.0", features = ["attributes"] }
 futures-timer    = "3.0.3"

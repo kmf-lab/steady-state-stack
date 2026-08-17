@@ -63,10 +63,10 @@ impl FrameHistory {
             runtime_config |= 2;
         } // twos bit is ether prometheus(1) or none(0)
 
-        #[cfg(feature = "proactor_tokio")]
+        #[cfg(feature = "tokio")]
         {
             runtime_config |= 4;
-        } // fours bit is ether tokio(1) or nuclei(0)
+        } // fours bit is tokio current-thread reactor on actor OS threads
 
         #[cfg(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))]
         {

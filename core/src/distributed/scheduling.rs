@@ -1,7 +1,7 @@
 // ss[related distributed.media-driver-testing]
+use futures_timer::Delay;
 use std::future::Future;
 use std::time::{Duration, Instant};
-use async_std::task;
 
 /// this implementation requires we never schedule for more than this in the future
 /// the reason for this is to enable shutdown signals to be detected so we can exit clean
@@ -87,7 +87,7 @@ where
             if earliest_time > now {
                 let dur = earliest_time - now;
                 assert!(dur.as_secs() < MAX_SLEEP_SECONDS);
-                task::sleep(dur).await;
+                Delay::new(dur).await;
             }
 
             // Execute the task's async function and get the next delay
@@ -104,48 +104,53 @@ where
 #[cfg(test)]
 // ss[related distributed.media-driver-testing]
 mod tests {
-    use std::sync::{Arc};
     use super::*;
-    // ss[related distributed.media-driver-testing]
+    use crate::core_exec;
+    use futures::lock::Mutex;
+    use futures_timer::Delay;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
-    use async_std::sync::Mutex;
-    use async_std::task;
 
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.media-driver-testing]
-    async fn test_perpetual_scheduler() {
-        let initial_delays = [Duration::from_millis(10), Duration::from_millis(20), Duration::from_millis(30)];
+    fn test_perpetual_scheduler() {
+        core_exec::block_on(async {
+            let initial_delays = [
+                Duration::from_millis(10),
+                Duration::from_millis(20),
+                Duration::from_millis(30),
+            ];
 
-        // Create a shared, mutable array of call counts
-        let call_counts = Arc::new(Mutex::new([0; 3]));
-        let call_counts_clone = call_counts.clone();
+            let call_counts = Arc::new(Mutex::new([0; 3]));
+            let call_counts_clone = call_counts.clone();
 
-        // Initialize the scheduler with a closure that clones the Arc for each call
-        let mut scheduler = PerpetualScheduler::new(initial_delays, move |idx| {
-            let call_counts_clone2 = call_counts_clone.clone();
-            async move {
-                let mut counts = call_counts_clone2.lock().await; // Lock the mutex asynchronously
-                counts[idx] += 1;
-                Duration::from_millis(50) // Reschedule every 50ms
-            }
+            let mut scheduler = PerpetualScheduler::new(initial_delays, move |idx| {
+                let call_counts_clone2 = call_counts_clone.clone();
+                async move {
+                    let mut counts = call_counts_clone2.lock().await;
+                    counts[idx] += 1;
+                    Duration::from_millis(50)
+                }
+            });
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let stop_clone = stop.clone();
+            core_exec::spawn_detached(async move {
+                let mut now = Instant::now();
+                while !stop_clone.load(Ordering::SeqCst) {
+                    now = scheduler.run_single_pass(now).await;
+                }
+            });
+
+            Delay::new(Duration::from_millis(250)).await;
+            stop.store(true, Ordering::SeqCst);
+            Delay::new(Duration::from_millis(80)).await;
+
+            let counts = call_counts.lock().await;
+            assert!(counts[0] > 0);
+            assert!(counts[1] > 0);
+            assert!(counts[2] > 0);
         });
-
-        // Run the scheduler in a background task
-        let handle = task::spawn(async move {
-            let mut now = Instant::now();
-            loop { //in production this loop would check for shutdown signal
-                now = scheduler.run_single_pass(now).await;
-            }
-        });
-
-        // Let the scheduler run briefly
-        task::sleep(Duration::from_millis(250)).await;
-        handle.cancel().await;
-
-        // Check the results
-        let counts = call_counts.lock().await;
-        assert!(counts[0] > 0);
-        assert!(counts[1] > 0);
-        assert!(counts[2] > 0);
     }
 }

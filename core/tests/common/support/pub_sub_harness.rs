@@ -181,7 +181,12 @@ pub fn suite_ipc_wire_probe(scenario: &str) -> AeronResult<()> {
     let mut graph = new_graph();
     let pipe = SinglePipe::wire(&mut graph, channel_ipc(), PREFLIGHT_PROBE_STREAM_ID);
     start_and_wait_running(scenario, &mut graph)?;
-    std::thread::sleep(PREFLIGHT_START_SETTLE);
+    let settle = if release_profile() {
+        Duration::from_secs(12)
+    } else {
+        PREFLIGHT_START_SETTLE
+    };
+    std::thread::sleep(settle);
     let result = wait_for_ipc_roundtrip_ready_with_timeout(scenario, &pipe, PREFLIGHT_WIRE_READY_TIMEOUT);
     if result.is_ok() {
         drain_egress_before_shutdown(&pipe);

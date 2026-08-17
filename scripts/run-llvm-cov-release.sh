@@ -14,8 +14,8 @@ if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
   exit 1
 fi
 
-FEATURES_A="exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics"
-FEATURES_B="proactor_nuclei,telemetry_server_cdn"
+FEATURES_A="telemetry_server_builtin,core_affinity,core_display,prometheus_metrics"
+FEATURES_B="tokio,telemetry_server_cdn"
 
 echo "llvm-cov pass A (${FEATURES_A}): lib + aeron_integration_uri_contract..."
 echo "  Do not use 'cargo llvm-cov test --tests' — that runs live aeron_integration_suite (Gate C)."

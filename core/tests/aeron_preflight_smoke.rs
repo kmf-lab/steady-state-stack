@@ -1,6 +1,6 @@
 //! Minimal live-driver wire probe for script post-restart settle (Gate C).
 //!
-//! Run: `cargo test -p steady_state --features exec_async_std --test aeron_preflight_smoke -- --nocapture`
+//! Run: `cargo test -p steady_state --test aeron_preflight_smoke -- --nocapture`
 
 mod common;
 

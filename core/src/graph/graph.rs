@@ -2,7 +2,6 @@ use super::deps::*;
 use super::builder::GraphBuilder;
 use super::identity::ActorIdentity;
 use super::liveliness::GraphLiveliness;
-use super::proactor::ProactorConfig;
 use super::shutdown::{effective_block_until_stopped_timeout, watch_shutdown};
 use super::state::GraphLivelinessState;
 use super::testing_guard::StageManagerGuard;
@@ -81,7 +80,12 @@ impl Graph {
     // ss[related graph.for-testing]
     // ss[impl distributed.media-driver-testing]
     pub(crate) fn aeron_init_timeouts(for_tests: bool) -> (Duration, Duration) {
-        if for_tests {
+        // Gate C live-driver tests still use `GraphBuilder::for_testing()` (no telemetry),
+        // but a 2s CNC wait is too short after a media-driver restart.
+        let gate_c = std::env::var("SS_AERON_GATE_C")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if for_tests && !gate_c {
             (Duration::from_secs(2), Duration::from_millis(100))
         } else {
             (Duration::from_secs(60), Duration::from_millis(50))
@@ -314,7 +318,7 @@ impl Graph {
                 use futures_util::FutureExt;
                 futures::select! {
                     _ = wait_on.fuse() => {},
-                    _ = async_std::task::sleep(timeout).fuse() => {},
+                    _ = futures_timer::Delay::new(timeout).fuse() => {},
                 }
             });
         }
@@ -342,12 +346,6 @@ impl Graph {
     /// A new `Graph` instance ready for use.
     // ss[related graph.for-testing]
     pub fn internal_new<A: Any + Send + Sync>(args: A, builder: GraphBuilder) -> Graph {
-        let proactor_config = if let Some(config) = builder.proactor_config {
-            config
-        } else {
-            ProactorConfig::InterruptDriven
-        };
-        core_exec::init(builder.enable_io_driver, proactor_config, builder.iouring_queue_length);
         let channel_count = Arc::new(AtomicUsize::new(0));
         let actor_count = Arc::new(AtomicUsize::new(0));
         let actor_catalog = Arc::new(RwLock::new(Vec::new()));

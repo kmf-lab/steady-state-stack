@@ -70,12 +70,14 @@ function onDrag(event) {
 }
 
 function onMessage(message) {
+  // Live Telemetry only after ok:true + SVG; otherwise Snapshot and keep last diagram.
   const data = message.data;
-  const ok = typeof data === 'object' && data !== null ? data.ok : true;
-  const svgText = typeof data === 'string' ? data : data.svg;
+  // Missing or non-true ok is a failed pull — never default to Live.
+  const ok = typeof data === 'object' && data !== null && data.ok === true;
+  const svgText = typeof data === 'object' && data !== null ? data.svg : undefined;
 
-  if (!ok) {
-    setTelemetryTitle('Old Telemetry');
+  if (!ok || typeof svgText !== 'string') {
+    setTelemetryTitle('Snapshot');
     return;
   }
   setTelemetryTitle('Live Telemetry');

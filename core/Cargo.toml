@@ -25,13 +25,10 @@ unwrap_used = "deny" # forbid use of unwrap
 
 
 [features]
-default = ["exec_async_std", "telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"]
-    # Use the nuclei async runtime (proactor_? exclusive one or the other) (default)
-proactor_nuclei = ["dep:nuclei", "nuclei?/async-exec", "nuclei?/iouring"]
-# Use the tokio async runtime (proactor_? exclusive one or the other)
-proactor_tokio = ["dep:nuclei", "nuclei?/tokio", "nuclei?/iouring"]
+default = ["telemetry_server_builtin", "prometheus_metrics", "core_display", "core_affinity"]
 
-exec_async_std = ["async-std"]  # works
+# Optional current-thread Tokio reactor on SOLO/TROUP OS threads (not a work-stealing pool).
+tokio = ["dep:tokio"]
 
 # provide prometheus compatible pullable metrics
 prometheus_metrics = [] # (default)
@@ -64,13 +61,12 @@ telemetry_on_telemetry = []
 #webrtc         = ["dachannel"]
 
 [package.metadata.docs.rs]
-features = ["exec_async_std"]
+features = []
 no-default-features = true
 # Ensure 'telemetry_server_cdn' or 'telemetry_server_builtin' or 'prometheus_metrics' are not listed here since docs.rs does not support it
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
-async-std        = { version = "1.13", optional = true, features = ["default"]}
 ringbuf          = "0.4"  # MUST stay on 0.4.x while async-ringbuf = 0.3.5 (same trait graph); do not bump to 0.5 without upgrading async-ringbuf in the same PR
 async-ringbuf    = "=0.3.5"  # pinned: 0.3.6+ may pull ringbuf 0.5 and break AsyncWrap trait coherence with sync channels
 log              = "0.4"  # common logging traits
@@ -125,6 +121,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bincode = "2.0"
 futures-lite = "2.6"
+tokio            = { version = "1", optional = true, default-features = false, features = ["rt", "time", "net"] }
 #futures-lite = "2.6.0"
 #backtrace = "0.3.74"
 #async-trait = "0.1.88"
@@ -136,10 +133,6 @@ libc = { version = "0.2", optional = true }
 # Dependencies for Windows
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", optional = true, features = ["winbase", "processthreadsapi"] }
-
-# Dependencies for non-Windows systems (Linux, macOS, etc.)
-[target.'cfg(not(windows))'.dependencies]
-nuclei = { version = "0.4.4", optional = true } # foundational proactive runtime
 
 
 # Release Notes::
@@ -273,7 +266,6 @@ path = "examples/simple_aeron_subscriber/main.rs"
 
 
 [dev-dependencies]
-async-std        = {  version = "1.13", features = ["attributes"] }  # for async unit testing only,
 proptest         = "1.10"
 rand_distr       = "0.5" # for random number generation
 rand             = "0.9" # for random number generation

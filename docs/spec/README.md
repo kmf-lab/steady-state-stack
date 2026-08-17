@@ -153,8 +153,7 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `tooling.cargo-capacity-driven` | CapacityDriven driver blocks | 10 |
 | `tooling.cargo-index-wait-deferred` | Index wait codegen deferred | 10 |
 | `platform.ringbuf-pin` | ringbuf 0.4 pin | 11 |
-| `platform.executor-features` | One executor feature | 11 |
-| `platform.windows-async-std` | Windows backend | 11 |
+| `platform.executor-features` | Bare-metal block_on; optional tokio reactor | 11 |
 
 ---
 
@@ -168,6 +167,7 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `bundle.deprecated-bundle-waits` | 1 | 04 |
 | `graph.actor-identity` | 1 | 05 |
 | `telemetry.prometheus-metrics` | 1 | 09 |
+| `telemetry.live-title` | 1 | 09 |
 | `verify.process.nextest` | 1 | 12 |
 | `tooling.cargo-capacity-driven` | 1 | 10 |
 | `tooling.cargo-index-wait-deferred` | 1 | 10 |

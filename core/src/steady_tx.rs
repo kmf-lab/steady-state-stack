@@ -586,8 +586,10 @@ mod steady_lazy_tests {
     }
 
     // ss[verify bundle.index-wait-readiness]
-    #[async_std::test]
-    async fn test_steady_rx_bundle_wait_avail_index() {
+    #[test]
+    fn test_steady_rx_bundle_wait_avail_index() {
+    crate::core_exec::block_on(async {
+
         use crate::SteadyRxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (tx0, rx0) = b0.build_channel::<i32>();
@@ -598,11 +600,14 @@ mod steady_lazy_tests {
         let bundle: SteadyRxBundle<i32, 2> = Arc::new([rx0.clone(), rx1.clone()]);
         let idx = bundle.wait_avail_index(&[1, 1]).await;
         assert!(idx == 0 || idx == 1);
-    }
+        });
+}
 
     // ss[verify channel.backpressure-never-drop]
-    #[async_std::test]
-    async fn test_steady_tx_bundle_wait_vacant_index() {
+    #[test]
+    fn test_steady_tx_bundle_wait_vacant_index() {
+    crate::core_exec::block_on(async {
+
         use crate::SteadyTxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (tx0, _rx0) = b0.build_channel::<i32>();
@@ -611,7 +616,8 @@ mod steady_lazy_tests {
         let bundle: SteadyTxBundle<i32, 2> = Arc::new([tx0.clone(), tx1.clone()]);
         let idx = bundle.wait_vacant_index(&[1, 1]).await;
         assert!(idx == 0 || idx == 1);
-    }
+        });
+}
 
     use proptest::prelude::*;
     use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};

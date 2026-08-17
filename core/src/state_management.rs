@@ -266,8 +266,10 @@ mod state_management_tests {
     // ss[verify state.lock-init-once]
     // ss[verify state.steady-state-persistence]
     // ss[verify state.try-lock-sync]
-    #[async_std::test]
-    async fn test_basic_state() {
+    #[test]
+    fn test_basic_state() {
+    crate::core_exec::block_on(async {
+
         let state = new_state::<i32>();
         // Test that try_lock_sync fails before initialization
         assert!(state.try_lock_sync().is_none());
@@ -279,11 +281,14 @@ mod state_management_tests {
             let guard = state.try_lock_sync().unwrap();
             assert_eq!(*guard, 42);
         }
-    }
+        });
+}
 
     // ss[verify state.clone-shared]
-    #[async_std::test]
-    async fn test_cloning_shared_state() {
+    #[test]
+    fn test_cloning_shared_state() {
+    crate::core_exec::block_on(async {
+
         let state1 = new_state::<i32>();
         {
             let guard = state1.lock(|| 10).await;
@@ -298,11 +303,14 @@ mod state_management_tests {
             let guard = state1.lock(|| 0).await;
             assert_eq!(*guard, 20);
         }
-    }
+        });
+}
 
     // ss[verify state.persistent-load]
-    #[async_std::test]
-    async fn test_persistent_state_load() {
+    #[test]
+    fn test_persistent_state_load() {
+    crate::core_exec::block_on(async {
+
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("state.json");
         let initial_state = MyState { value: 100 };
@@ -314,12 +322,15 @@ mod state_management_tests {
             let guard = state.lock(|| MyState { value: 0 }).await;
             assert_eq!(*guard, MyState { value: 100 });
         }
-    }
+        });
+}
 
     // ss[verify state.save-on-drop]
     // ss[verify state.on-drop-hook]
-    #[async_std::test]
-    async fn test_persistent_state_save() {
+    #[test]
+    fn test_persistent_state_save() {
+    crate::core_exec::block_on(async {
+
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("state.json");
 
@@ -333,11 +344,14 @@ mod state_management_tests {
         let reader = BufReader::new(file);
         let saved_state: MyState = serde_json::from_reader(reader).unwrap();
         assert_eq!(saved_state, MyState { value: 200 });
-    }
+        });
+}
 
     // ss[verify state.persistent-load]
-    #[async_std::test]
-    async fn test_persistent_state_no_file() {
+    #[test]
+    fn test_persistent_state_no_file() {
+    crate::core_exec::block_on(async {
+
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("nonexistent.json");
 
@@ -346,11 +360,14 @@ mod state_management_tests {
             let guard = state.lock(|| MyState { value: 50 }).await;
             assert_eq!(*guard, MyState { value: 50 });
         }
-    }
+        });
+}
 
     // ss[verify state.persistent-load]
-    #[async_std::test]
-    async fn test_persistent_state_invalid_file() {
+    #[test]
+    fn test_persistent_state_invalid_file() {
+    crate::core_exec::block_on(async {
+
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("invalid.json");
         std::fs::write(&file_path, "invalid json").unwrap();
@@ -360,7 +377,8 @@ mod state_management_tests {
             let guard = state.lock(|| MyState { value: 75 }).await;
             assert_eq!(*guard, MyState { value: 75 });
         }
-    }
+        });
+}
 
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseError;
@@ -375,7 +393,7 @@ mod state_management_tests {
         let expected = value.clone();
         {
             let state = new_persistent_state::<T, _>(&file_path);
-            async_std::task::block_on(async {
+            crate::core_exec::block_on(async {
                 let mut guard = state.lock(|| expected.clone()).await;
                 *guard = expected.clone();
             });
@@ -444,7 +462,7 @@ mod state_management_tests {
             let file_path = dir.path().join("state.json");
             std::fs::write(&file_path, garbage).expect("write garbage");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -457,7 +475,7 @@ mod state_management_tests {
         // ss[verify verify.process.proptest]
         fn proptest_non_persistent_persist_is_noop(value: i32) {
             let state = new_state::<MyState>();
-            async_std::task::block_on(async {
+            crate::core_exec::block_on(async {
                 let mut guard = state.lock(|| MyState { value: 0 }).await;
                 guard.value = value;
                 guard.persist().await.expect("persist noop");
@@ -477,7 +495,7 @@ mod state_management_tests {
             let body = format!(r#"{{"not_value":{init_value},"label":"{extra}"}}"#);
             std::fs::write(&file_path, body).expect("write wrong shape");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -490,15 +508,15 @@ mod state_management_tests {
         // ss[verify verify.process.proptest]
         fn proptest_cloned_state_shares_value(a: i32, b: i32) {
             let state1 = new_state::<i32>();
-            async_std::task::block_on(async {
+            crate::core_exec::block_on(async {
                 let _ = state1.lock(|| a).await;
             });
             let state2 = state1.clone();
-            async_std::task::block_on(async {
+            crate::core_exec::block_on(async {
                 let mut guard = state2.lock(|| 0).await;
                 *guard = b;
             });
-            let read = async_std::task::block_on(async { *state1.lock(|| 0).await });
+            let read = crate::core_exec::block_on(async { *state1.lock(|| 0).await });
             prop_assert_eq!(read, b);
         }
 
@@ -511,7 +529,7 @@ mod state_management_tests {
             let file_path = dir.path().join("state.json");
             std::fs::write(&file_path, "").expect("write empty");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -531,7 +549,7 @@ mod state_management_tests {
             let body = format!(r#"{{"value":{init_value},"extra":"{prefix}"#);
             std::fs::write(&file_path, body).expect("write truncated");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -552,7 +570,7 @@ mod state_management_tests {
             let file = File::create(&file_path).expect("create");
             serde_json::to_writer(file, &on_disk).expect("write");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -569,7 +587,7 @@ mod state_management_tests {
             let dir = tempdir().expect("tempdir");
             let file_path = dir.path().join("state.json");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            async_std::task::block_on(async {
+            crate::core_exec::block_on(async {
                 let mut guard = state.lock(|| MyState { value: 0 }).await;
                 guard.value = value;
                 guard.persist().await.expect("persist");
@@ -602,7 +620,7 @@ mod state_management_tests {
             let body = format!(r#"{{"value":"{label}"}}"#);
             std::fs::write(&file_path, body).expect("write mismatched type");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -618,7 +636,7 @@ mod state_management_tests {
             let file_path = dir.path().join("state.json");
             std::fs::write(&file_path, "null").expect("write null");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -638,7 +656,7 @@ mod state_management_tests {
             let body = format!(r#"[{{"value":{init_value}}},{{"value":{extra}}}]"#);
             std::fs::write(&file_path, body).expect("write array");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -652,7 +670,7 @@ mod state_management_tests {
         fn proptest_persistent_state_persist_directory_fails(value in -500i32..500) {
             let dir = tempdir().expect("tempdir");
             let state = new_persistent_state::<MyState, _>(dir.path());
-            let err = async_std::task::block_on(async {
+            let err = crate::core_exec::block_on(async {
                 let mut guard = state.lock(|| MyState { value: 0 }).await;
                 guard.value = value;
                 guard.persist().await
@@ -669,7 +687,7 @@ mod state_management_tests {
             let file_path = dir.path().join("state.json");
             std::fs::write(&file_path, r#"{}"#).expect("write empty object");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -685,7 +703,7 @@ mod state_management_tests {
             let file_path = dir.path().join("state.json");
             std::fs::write(&file_path, r#"{"value":true}"#).expect("write bool");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -705,7 +723,7 @@ mod state_management_tests {
             let body = format!(r#"{{"value":{fractional}}}"#);
             std::fs::write(&file_path, body).expect("write float");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -725,7 +743,7 @@ mod state_management_tests {
             let body = format!(r#"{{"value":"{disk_digits}"}}"#);
             std::fs::write(&file_path, body).expect("write numeric string");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: init_value }).await;
                 guard.value
             });
@@ -749,7 +767,7 @@ mod state_management_tests {
             .to_string();
             std::fs::write(&file_path, body).expect("write extra fields");
             let state = new_persistent_state::<MyState, _>(&file_path);
-            let got = async_std::task::block_on(async {
+            let got = crate::core_exec::block_on(async {
                 let guard = state.lock(|| MyState { value: 0 }).await;
                 guard.value
             });

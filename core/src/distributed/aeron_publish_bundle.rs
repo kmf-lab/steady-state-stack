@@ -235,8 +235,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 
     info!("running: '{:?}' all publications in place", actor.identity().label);
 
-    // Threshold for waiting on messages; set to 1/16th of capacity to balance latency and throughput.
-    let wait_for = rx.capacity() / 16;
+    // Wake on the first message per tick; 10ms periodic still batches under load.
+    let wait_for = 1;
     let in_channels = 1;
 
     // ss[impl distributed.subscribe-publish]
@@ -244,7 +244,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
         // Wait for either a periodic tick or available messages, optimizing CPU usage.
         #[allow(deprecated)]
         let _clean = await_for_any!(
-            actor.wait_periodic(Duration::from_millis(500)),
+            actor.wait_periodic(Duration::from_millis(10)),
             actor.wait_avail_bundle(&mut rx, wait_for, in_channels)
         );
 
@@ -461,7 +461,7 @@ pub(crate) mod aeron_publish_bundle_tests {
 mod aeron_publish_bundle_graph_tests {
     use std::time::Duration;
 
-    use async_std::task;
+    use futures_timer::Delay;
 
     use crate::distributed::aeron_channel_builder::AeronConfig;
     use crate::distributed::aeron_channel_structs::MediaType;
@@ -472,9 +472,11 @@ mod aeron_publish_bundle_graph_tests {
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron publish bundle: graph starts and stops without a live driver.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_publish_bundle_simulated_graph_stops_cleanly() {
+    fn test_publish_bundle_simulated_graph_stops_cleanly() {
+    crate::core_exec::block_on(async {
+
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -492,16 +494,19 @@ mod aeron_publish_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(15)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
-    }
+        });
+}
 
     /// Internal publish bundle path: shutdown during driver wait when no media driver is attached.
-    #[async_std::test]
+    #[test]
     #[ignore] //broken until we can get more time to look into this
     // ss[verify distributed.subscribe-publish]
-    async fn test_publish_bundle_stops_during_driver_wait_without_driver() {
+    fn test_publish_bundle_stops_during_driver_wait_without_driver() {
+    crate::core_exec::block_on(async {
+
         let mut graph = GraphBuilder::for_testing().build(());
         if graph.aeron_media_driver().is_some() {
             eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
@@ -523,15 +528,18 @@ mod aeron_publish_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
-    }
+        });
+}
 
     /// Internal publish bundle path with closed egress bundle.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_publish_bundle_internal_closed_egress_stops_without_driver() {
+    fn test_publish_bundle_internal_closed_egress_stops_without_driver() {
+    crate::core_exec::block_on(async {
+
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -550,15 +558,18 @@ mod aeron_publish_bundle_graph_tests {
             SoloAct,
         );
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(50)).await;
+        Delay::new(Duration::from_millis(50)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
-    }
+        });
+}
 
     /// Exercises `mock_sender_run` internal loop without requiring Aeron registration.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_mock_sender_run_graph_stops_cleanly() {
+    fn test_mock_sender_run_graph_stops_cleanly() {
+    crate::core_exec::block_on(async {
+
         use super::aeron_publish_bundle_tests::mock_sender_run;
 
         const GIRTH: usize = 1;
@@ -574,12 +585,15 @@ mod aeron_publish_bundle_graph_tests {
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
-    }
+        });
+}
 
     /// Exercises `mock_receiver_run` with a pre-closed empty ingress bundle (no channel advance).
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_mock_receiver_run_graph_stops_cleanly() {
+    fn test_mock_receiver_run_graph_stops_cleanly() {
+    crate::core_exec::block_on(async {
+
         use super::aeron_publish_bundle_tests::mock_receiver_run;
 
         const GIRTH: usize = 1;
@@ -596,12 +610,15 @@ mod aeron_publish_bundle_graph_tests {
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
-    }
+        });
+}
 
     /// Exercises `mock_receiver_run` with prefilled ingress before shutdown.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_mock_receiver_run_with_prefilled_ingress_stops() {
+    fn test_mock_receiver_run_with_prefilled_ingress_stops() {
+    crate::core_exec::block_on(async {
+
         use super::aeron_publish_bundle_tests::mock_receiver_run;
 
         const GIRTH: usize = 1;
@@ -616,15 +633,18 @@ mod aeron_publish_bundle_graph_tests {
             .never_simulate(true)
             .build(move |context| mock_receiver_run::<GIRTH>(context, rx_bundle.clone()), SoloAct);
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(20)).is_ok());
-    }
+        });
+}
 
     /// Internal publish bundle with mock sender neighbor: graph stops during driver wait without driver.
-    #[async_std::test]
+    #[test]
     // ss[verify distributed.subscribe-publish]
-    async fn test_publish_bundle_internal_with_mock_sender_stops_without_driver() {
+    fn test_publish_bundle_internal_with_mock_sender_stops_without_driver() {
+    crate::core_exec::block_on(async {
+
         use super::aeron_publish_bundle_tests::mock_sender_run;
 
         let mut graph = GraphBuilder::for_testing().build(());
@@ -654,8 +674,9 @@ mod aeron_publish_bundle_graph_tests {
             .never_simulate(true)
             .build(move |context| mock_sender_run::<GIRTH>(context, tx_bundle.clone()), SoloAct);
         assert!(graph.start_with_timeout(Duration::from_secs(10)));
-        task::sleep(Duration::from_millis(100)).await;
+        Delay::new(Duration::from_millis(100)).await;
         graph.request_shutdown();
         assert!(graph.block_until_stopped(Duration::from_secs(25)).is_ok());
-    }
+        });
+}
 }

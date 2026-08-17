@@ -886,10 +886,12 @@ mod tests {
         core_exec::block_on(shadow.yield_now());
     }
 
-    #[async_std::test]
+    #[test]
     // ss[verify actor.index-wait-truthful]
     // ss[verify bundle.index-wait-readiness]
-    async fn test_shadow_wait_avail_index_direct() {
+    fn test_shadow_wait_avail_index_direct() {
+    crate::core_exec::block_on(async {
+
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(5).build_channel::<i32>();
         if let Some(mut t) = tx.clone().try_lock() {
@@ -903,11 +905,14 @@ mod tests {
             shadow.wait_avail_index(&mut rx_bundle, &[1]).await
         };
         assert_eq!(idx, Some(0));
-    }
+        });
+}
 
     // ss[verify actor.index-wait-paired]
-    #[async_std::test]
-    async fn test_shadow_wait_avail_vacant_index_direct() {
+    #[test]
+    fn test_shadow_wait_avail_vacant_index_direct() {
+    crate::core_exec::block_on(async {
+
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(4).build_channel::<i32>();
         if let Some(mut t) = tx.clone().try_lock() {
@@ -926,7 +931,8 @@ mod tests {
                 .await
         };
         assert_eq!(idx, Some(0));
-    }
+        });
+}
 
     #[test]
     // ss[verify actor.shadow-spotlight]

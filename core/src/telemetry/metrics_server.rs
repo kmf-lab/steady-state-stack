@@ -520,6 +520,7 @@ const CONTENT_DOT_VIEWER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 // ss[related telemetry.builtin-server]
+// ss[impl telemetry.live-title]
 const CONTENT_DOT_VIEWER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/dot-viewer.js.gz"))
 } else {
@@ -546,6 +547,7 @@ const CONTENT_WEBWORKER_JS_B64: & [u8] = &[];
 #[allow(dead_code)]
 #[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
 // ss[related telemetry.builtin-server]
+// ss[impl telemetry.live-title]
 const CONTENT_WEBWORKER_JS_GZ: & [u8] = if steady_config::TELEMETRY_SERVER {
     include_bytes!(concat!(env!("OUT_DIR"), "/webworker.js.gz"))
 } else {
@@ -930,19 +932,30 @@ mod http_telemetry_tests {
                 validate_path(&addr, Some("'1 sec': 1000,"), "dot-viewer.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
+                // ss[verify telemetry.live-title]
                 validate_path(&addr, Some("setTelemetryTitle"), "dot-viewer.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, Some("Old Telemetry"), "dot-viewer.js");
+                // ss[verify telemetry.live-title]
+                validate_path(&addr, Some("Live Telemetry"), "dot-viewer.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                // ss[verify telemetry.live-title]
+                validate_path(&addr, Some("Snapshot"), "dot-viewer.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                // ss[verify telemetry.live-title]
+                validate_path(&addr, Some("ok: true"), "webworker.js");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                // ss[verify telemetry.live-title]
+                validate_path(&addr, Some("ok: false"), "webworker.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("refresh_rate_ms"), "config");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("pendingUrl"), "webworker.js");
-                print!(".");
-                #[cfg(feature = "telemetry_server_builtin")]
-                validate_path(&addr, Some("ok: true"), "webworker.js");
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, Some("this.importScripts('viz-lite.js');"), "webworker.js");

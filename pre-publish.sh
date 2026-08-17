@@ -19,17 +19,31 @@ fi
 
 
 # Check for unwanted crates in a single cargo tree call to save time
-unwanted_crates="tokio actix rocket warp"
-cargo_tree_output=$(cargo tree)
+# Tokio is allowed only behind `--features tokio` (current-thread reactor on OS threads).
+unwanted_crates="actix rocket warp"
+cargo_tree_output=$(cargo tree -p steady_state)
 for crate in $unwanted_crates; do
     if echo "$cargo_tree_output" | grep -q "$crate"; then
         echo "Error: '$crate' crate found in the Cargo project."
-        cargo tree | -B 15 '$crate'
+        cargo tree -p steady_state | grep -B 15 "$crate"
         exit 1
     else
         echo "Success: No '$crate' crate found in the Cargo project."
     fi
 done
+if echo "$cargo_tree_output" | grep -q "tokio"; then
+    echo "Error: 'tokio' crate found in the default (no tokio feature) cargo tree."
+    cargo tree -p steady_state | grep -B 15 tokio
+    exit 1
+else
+    echo "Success: No tokio in default cargo tree."
+fi
+if ! cargo tree -p steady_state --features tokio | grep -q tokio; then
+    echo "Error: enabling --features tokio did not pull in tokio."
+    exit 1
+else
+    echo "Success: --features tokio pulls in tokio."
+fi
 
 # Run tests with optimized threads
 # Adjust RUST_TEST_THREADS based on your system's core count for optimal performance (e.g., number of physical cores)
@@ -135,7 +149,7 @@ bash scripts/run-llvm-cov-release.sh
 
 
 
-# cargo llvm-cov nextest --no-default-features -F exec_async_std,telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
+# cargo llvm-cov nextest --no-default-features -F telemetry_server_builtin,core_affinity,core_display,prometheus_metrics
 #echo "To generate coverage report: cargo llvm-cov --html --output-dir coverage/"
 
 echo "cargo tree"

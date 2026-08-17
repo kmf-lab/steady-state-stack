@@ -48,8 +48,6 @@ fn run_post_restart_preflight_smoke() -> Result<(), String> {
             "test",
             "-p",
             "steady_state",
-            "--features",
-            "exec_async_std",
             "--test",
             "aeron_preflight_smoke",
             "aeron_preflight_wire_settle",

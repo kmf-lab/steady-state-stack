@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-FEATURES="${SS_AERON_EXAMPLE_FEATURES:-exec_async_std}"
+FEATURES="${SS_AERON_EXAMPLE_FEATURES:-}"
 TIMEOUT_SEC="${SS_AERON_EXAMPLE_TIMEOUT_SEC:-45}"
 SUB_LOG="${SS_AERON_EXAMPLE_SUB_LOG:-/tmp/aeron-example-subscriber.log}"
 PUB_LOG="${SS_AERON_EXAMPLE_PUB_LOG:-/tmp/aeron-example-publisher.log}"
@@ -36,8 +36,13 @@ if ! media_driver_available; then
 fi
 
 echo "Building examples..."
-cargo build -q -p steady_state --features "${FEATURES}" \
-  --example simple_aeron_subscriber --example simple_aeron_publisher
+if [[ -n "${FEATURES}" ]]; then
+  cargo build -q -p steady_state --features "${FEATURES}" \
+    --example simple_aeron_subscriber --example simple_aeron_publisher
+else
+  cargo build -q -p steady_state \
+    --example simple_aeron_subscriber --example simple_aeron_publisher
+fi
 
 SUB_BIN="${ROOT}/target/debug/examples/simple_aeron_subscriber"
 PUB_BIN="${ROOT}/target/debug/examples/simple_aeron_publisher"

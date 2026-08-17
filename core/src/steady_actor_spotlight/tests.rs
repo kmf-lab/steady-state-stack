@@ -98,9 +98,11 @@ fn test_simple_monitor_build() {
 }
 
 /// Integration smoke: relay stats flush through a real testing graph channel.
-#[async_std::test]
+#[test]
 // ss[verify philosophy.single-wake-up]
-async fn test_relay_stats_tx_rx_custom() {
+fn test_relay_stats_tx_rx_custom() {
+    crate::core_exec::block_on(async {
+
     let _ = logging_util::steady_logger::initialize();
 
     let mut graph = GraphBuilder::for_testing().build("");
@@ -150,12 +152,15 @@ async fn test_relay_stats_tx_rx_custom() {
     if let Some(ref mut rx) = monitor.telemetry.send_rx {
         assert_eq!(rx.count[rxd.local_monitor_index], 0);
     }
+    });
 }
 
 /// Integration smoke: batch relay stats through testing graph wiring.
-#[async_std::test]
+#[test]
 // ss[verify philosophy.single-wake-up]
-async fn test_relay_stats_tx_rx_batch() {
+fn test_relay_stats_tx_rx_batch() {
+    crate::core_exec::block_on(async {
+
     let _ = logging_util::steady_logger::initialize();
 
     let mut graph = GraphBuilder::for_testing().build("");
@@ -205,5 +210,6 @@ async fn test_relay_stats_tx_rx_batch() {
     if let Some(ref mut rx) = monitor.telemetry.send_rx {
         assert_eq!(rx.count[rxd.local_monitor_index], 0);
     }
+    });
 }
 

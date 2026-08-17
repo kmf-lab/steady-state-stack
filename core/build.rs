@@ -29,7 +29,7 @@
 //! ### Features
 //! - `telemetry_server_builtin`: Embeds the telemetry server in the binary (offline-capable).
 //! - `telemetry_server_cdn`: Uses a CDN for viz.js (smaller binary; needs internet in the browser).
-//! - `telemetry_history`, `proactor_*`, etc.: See `Cargo.toml`.
+//! - `telemetry_history`, optional `tokio` current-thread reactor, etc.: See `Cargo.toml`.
 
 // ss[impl platform.ringbuf-pin]
 use std::env;
