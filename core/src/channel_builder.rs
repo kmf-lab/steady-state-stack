@@ -320,11 +320,29 @@ impl ChannelBuilder {
     }
 
     /**
-     * Enables the display of memory usage in telemetry outputs.
+     * Enables reserved buffer memory display in telemetry and the DOT graph.
+     *
+     * When enabled, the channel's **configured maximum** footprint is shown:
+     * `capacity × size_of::<T>()` (not live occupancy). This value is recorded at
+     * build time and exposed programmatically via [`Tx::width`](crate::steady_tx::Tx::width)
+     * and [`Tx::memory_bytes`](crate::steady_tx::Tx::memory_bytes) (or the Rx equivalents)
+     * after locking the established channel.
+     *
+     * **DOT graph display:**
+     * - Single channel — edge label gains a `Memory: …B` line.
+     * - Partnered channels (`with_partner`) — merged edge header shows the **combined**
+     *   footprint of all lanes (e.g. `stream [0] (1KB)`); per-lane footprints appear in
+     *   the tooltip.
+     * - Bundles — bundle header shows the **summed** footprint of every edge in the bundle;
+     *   the same total appears in the bundle tooltip.
+     *
+     * **Caveat:** footprint is the reserved ring-buffer maximum. It does not include
+     * bookkeeping overhead, telemetry structures, or heap payloads behind pointer-sized
+     * types (e.g. `Box<[u8]>`).
      *
      * # Returns
      *
-     * a new `ChannelBuilder` instance with memory usage display enabled.
+     * A new `ChannelBuilder` instance with memory usage display enabled.
      */
     // ss[impl channel.memory-usage-telemetry]
     pub fn with_memory_usage(&self) -> Self {

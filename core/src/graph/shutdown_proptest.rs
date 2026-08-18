@@ -182,6 +182,31 @@ ss_proptest! {
         prop_assert_eq!(rs.read().state.clone(), GraphLivelinessState::StoppedUncleanly);
     }
 
+    /// Property: partial yes-votes that never reach unanimity time out as unclean.
+    #[test]
+    // ss[verify graph.shutdown.veto]
+    // ss[verify graph.block-until-stopped]
+    // ss[verify verify.process.proptest]
+    fn proptest_watch_shutdown_partial_votes_timeout_unclean(
+        voters in 3usize..10,
+        yes_offset in 0usize..8,
+    ) {
+        let yes_votes = 1 + (yes_offset % (voters - 1)); // in 1..=voters-1
+        prop_assert!(yes_votes < voters);
+        let rs = new_liveliness(voters);
+        setup_stop_requested(&rs, voters, yes_votes);
+        let started = Instant::now() - Duration::from_secs(2);
+        let err = watch_shutdown(
+            Duration::from_millis(1),
+            started,
+            rs.clone(),
+            Duration::from_millis(1),
+        )
+        .expect_err("partial votes must not clean-stop");
+        prop_assert!(err.to_string().contains("uncleanly"));
+        prop_assert_eq!(rs.read().state.clone(), GraphLivelinessState::StoppedUncleanly);
+    }
+
     /// Property: pre-seeded unanimous ballots reach Stopped without waiting on actors.
     #[test]
     // ss[verify graph.shutdown.accept]

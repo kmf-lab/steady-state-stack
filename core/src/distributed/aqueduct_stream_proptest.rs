@@ -96,4 +96,29 @@ ss_proptest! {
         prop_assert_eq!(by_ref.session_id, by_box.session_id);
         prop_assert_eq!(box_payload.as_ref(), payload.as_slice());
     }
+
+    /// Property: stream memory_bytes() sums control and payload ring buffers on Tx and Rx.
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_memory_bytes_combines_buffers(
+        capacity in 1usize..64,
+        bytes_per_item in 1usize..16,
+    ) {
+        use std::mem::size_of;
+        use crate::graph::GraphBuilder;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(capacity);
+        let (lazy_tx, lazy_rx) = cb.build_stream::<StreamEgress>(bytes_per_item);
+        let stream_tx = lazy_tx.clone();
+        let stream_rx = lazy_rx.clone();
+        let tx_guard = crate::core_exec::block_on(stream_tx.lock());
+        let rx_guard = crate::core_exec::block_on(stream_rx.lock());
+        let (ctrl_cap, payload_cap) = tx_guard.capacity();
+        let ctrl_width = size_of::<StreamEgress>();
+        prop_assert_eq!(payload_cap, capacity * bytes_per_item);
+        let expected = ctrl_cap * ctrl_width + payload_cap;
+        prop_assert_eq!(tx_guard.memory_bytes(), expected);
+        prop_assert_eq!(rx_guard.memory_bytes(), expected);
+    }
 }

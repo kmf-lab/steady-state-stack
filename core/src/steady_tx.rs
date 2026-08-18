@@ -122,6 +122,40 @@ impl<T> Tx<T> {
         self.shared_capacity()
     }
 
+    /// Returns the byte width of one slot in this channel's ring buffer.
+    ///
+    /// Recorded once at channel build time as `size_of::<T>()` and constant for the
+    /// channel's lifetime. Pair with [`Self::capacity`] to compute the reserved buffer
+    /// footprint via [`Self::memory_bytes`].
+    ///
+    /// To show this footprint in the DOT telemetry graph, enable
+    /// [`ChannelBuilder::with_memory_usage`](crate::channel_builder::ChannelBuilder::with_memory_usage)
+    /// when building the channel.
+    ///
+    /// # Returns
+    /// Bytes per message slot.
+    // ss[impl channel.memory-usage-telemetry]
+    pub fn width(&self) -> usize {
+        self.channel_meta_data.meta_data.type_byte_count
+    }
+
+    /// Returns the **reserved** ring-buffer memory for this channel (not live occupancy).
+    ///
+    /// Computed as `capacity() × width()` — the maximum bytes reserved for queued
+    /// messages when the channel is established. This excludes ring-buffer bookkeeping,
+    /// telemetry structures, and heap payloads behind pointer-sized types (e.g.
+    /// `Box<[u8]>`).
+    ///
+    /// For DOT display, use [`ChannelBuilder::with_memory_usage`](crate::channel_builder::ChannelBuilder::with_memory_usage).
+    /// For multi-lane rollups, see [`SteadyTxBundleTrait::memory_bytes`].
+    ///
+    /// # Returns
+    /// Reserved buffer footprint in bytes.
+    // ss[impl channel.memory-usage-telemetry]
+    pub fn memory_bytes(&self) -> usize {
+        self.capacity() * self.width()
+    }
+
     /// Logs a warning when the channel reaches full capacity, with rate-limiting applied.
     ///
     /// This internal method issues a warning when the channel cannot accept additional messages, but only if sufficient time has passed since the last warning to avoid overwhelming the log. It includes details such as the actor's identity and message type for context.
@@ -374,6 +408,20 @@ pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
     /// and does not apply monitor round-robin state.
     // ss[related channel.backpressure-never-drop]
     fn wait_vacant_index(&self, vacant_counts: &[usize]) -> impl std::future::Future<Output = usize>;
+
+    /// Returns the total reserved memory footprint of all channels in the bundle.
+    ///
+    /// Sums `capacity() × width()` across every lane — the same per-lane formula as
+    /// [`Tx::memory_bytes`](Tx::memory_bytes), rolled up for capacity planning:
+    ///
+    /// ```ignore
+    /// let total = bundle.memory_bytes(); // lane0_cap×8 + lane1_cap×8 + …
+    /// ```
+    ///
+    /// # Returns
+    /// Combined reserved buffer footprint in bytes.
+    // ss[impl channel.memory-usage-telemetry]
+    fn memory_bytes(&self) -> usize;
 }
 
 // ss[related channel.backpressure-never-drop]
@@ -449,6 +497,16 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
 
         let (result, _index, _remaining) = select_all(index_futures).await;
         result
+    }
+
+    // ss[impl channel.memory-usage-telemetry]
+    fn memory_bytes(&self) -> usize {
+        self.iter()
+            .map(|tx| {
+                let meta = TxMetaDataProvider::meta_data(tx);
+                meta.capacity * meta.type_byte_count
+            })
+            .sum()
     }
 }
 
@@ -629,6 +687,33 @@ mod steady_lazy_tests {
         assert!(idx == 0 || idx == 1);
         });
 }
+
+    /// Tests the `width()` and `memory_bytes()` accessors on an established Tx.
+    // ss[verify channel.memory-usage-telemetry]
+    #[test]
+    fn test_tx_width_and_memory_bytes() {
+        let builder = ChannelBuilder::default().with_capacity(10);
+        let (tx_lazy, _rx_lazy) = builder.build_channel::<u32>();
+        let tx = tx_lazy.clone();
+        let ste_tx = core_exec::block_on(tx.lock());
+        assert_eq!(ste_tx.width(), 4, "u32 width must be 4 bytes");
+        assert_eq!(ste_tx.capacity(), 10);
+        assert_eq!(ste_tx.memory_bytes(), 40, "memory must be capacity × width");
+    }
+
+    /// Tests the bundle-level `memory_bytes()` rollup across lanes.
+    // ss[verify channel.memory-usage-telemetry]
+    #[test]
+    fn test_tx_bundle_memory_bytes() {
+        use crate::SteadyTxBundleTrait;
+        let b0 = ChannelBuilder::default().with_capacity(4);
+        let (tx0, _rx0) = b0.build_channel::<u64>();
+        let b1 = ChannelBuilder::default().with_capacity(8);
+        let (tx1, _rx1) = b1.build_channel::<u64>();
+        let bundle: SteadyTxBundle<u64, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+        // lane0: 4 × 8 = 32, lane1: 8 × 8 = 64 → 96 total
+        assert_eq!(bundle.memory_bytes(), 96);
+    }
 
     use proptest::prelude::*;
     use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
@@ -826,6 +911,49 @@ mod steady_lazy_tests {
                 Ok::<(), TestCaseError>(())
             })
             .expect("async property");
+        }
+
+        /// Property: width() and memory_bytes() match build-time metadata for Tx.
+        #[test]
+        // ss[verify channel.memory-usage-telemetry]
+        // ss[verify verify.process.proptest]
+        fn proptest_tx_width_and_memory_bytes(cap in capacity()) {
+            use std::mem::size_of;
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx_lazy, _rx_lazy) = builder.build_channel::<u64>();
+            let tx = tx_lazy.clone();
+            core_exec::block_on(async {
+                let ste_tx = tx.lock().await;
+                let expected_width = size_of::<u64>();
+                prop_assert_eq!(ste_tx.width(), expected_width);
+                prop_assert_eq!(ste_tx.capacity(), cap);
+                prop_assert_eq!(ste_tx.memory_bytes(), cap * expected_width);
+                Ok::<(), TestCaseError>(())
+            })
+            .expect("async property");
+        }
+
+        /// Property: bundle memory_bytes() equals the sum of per-lane capacity × width.
+        #[test]
+        // ss[verify channel.memory-usage-telemetry]
+        // ss[verify verify.process.proptest]
+        fn proptest_tx_bundle_memory_bytes_is_lane_sum(
+            caps in prop::collection::vec(capacity(), 4),
+        ) {
+            use crate::SteadyTxBundleTrait;
+            use std::mem::size_of;
+            let b0 = ChannelBuilder::default().with_capacity(caps[0]);
+            let (tx0, _rx0) = b0.build_channel::<u64>();
+            let b1 = ChannelBuilder::default().with_capacity(caps[1]);
+            let (tx1, _rx1) = b1.build_channel::<u64>();
+            let b2 = ChannelBuilder::default().with_capacity(caps[2]);
+            let (tx2, _rx2) = b2.build_channel::<u64>();
+            let b3 = ChannelBuilder::default().with_capacity(caps[3]);
+            let (tx3, _rx3) = b3.build_channel::<u64>();
+            let bundle: SteadyTxBundle<u64, 4> =
+                Arc::new([tx0.clone(), tx1.clone(), tx2.clone(), tx3.clone()]);
+            let expected = caps.iter().map(|c| c * size_of::<u64>()).sum::<usize>();
+            prop_assert_eq!(bundle.memory_bytes(), expected);
         }
     }
 }

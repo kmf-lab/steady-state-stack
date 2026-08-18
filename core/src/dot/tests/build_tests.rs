@@ -1212,3 +1212,148 @@ fn test_node_compute_refresh_full_busy_when_await_zero() {
     node.compute_and_refresh(actor_status);
     assert_eq!(node.work_info, Some((1024, 100)));
 }
+
+/// Builds a minimal two-node `DotState` wrapping the given edges for memory display tests.
+fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
+    let from = ActorName::new("from", None);
+    let to = ActorName::new("to", None);
+    let mk_node = |name: ActorName| Node {
+        id: Some(name),
+        color: "grey",
+        pen_width: NODE_PEN_WIDTH,
+        stats_computer: ActorStatsComputer::default(),
+        display_label: name.name.to_string(),
+        dot_subtitle: None,
+        tooltip: String::new(),
+        metric_text: String::new(),
+        remote_details: None,
+        thread_info_cache: None,
+        total_count_restarts: 0,
+        bool_stalled: false,
+        work_info: None,
+    };
+    DotState {
+        nodes: vec![mk_node(from), mk_node(to)],
+        edges,
+        seq: 0,
+        telemetry_colors: None,
+        refresh_rate_ms: 40,
+        bundle_floor_size,
+    }
+}
+
+/// Builds one edge with memory display enabled: capacity 100 × 8-byte items = 800B.
+fn memory_edge(id: usize, partner: Option<&'static str>, bundle_index: Option<usize>) -> Edge {
+    let mut stats = ChannelStatsComputer::default();
+    stats.capacity = 100;
+    stats.type_byte_count = 8;
+    stats.memory_footprint = 100 * 8;
+    stats.show_memory = true;
+    Edge {
+        id,
+        from: Some(ActorName::new("from", None)),
+        to: Some(ActorName::new("to", None)),
+        color: "green",
+        sidecar: false,
+        pen_width: "1".to_string(),
+        saturation_score: 0.0,
+        ctl_labels: vec![],
+        stats_computer: stats,
+        display_label: String::new(),
+        metric_text: String::new(),
+        partner,
+        bundle_index,
+        ..Default::default()
+    }
+}
+
+/// Single plain channel with `show_memory` must show its footprint on the edge label.
+#[test]
+// ss[verify telemetry.dot-export]
+// ss[verify channel.memory-usage-telemetry]
+fn test_single_edge_shows_memory_on_label() {
+    let state = memory_test_state(vec![memory_edge(0, None, None)], 4);
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        dot.contains("Memory: 800B"),
+        "single edge label must show memory footprint, got:\n{dot}"
+    );
+}
+
+/// Single plain channel without `show_memory` must NOT show memory.
+#[test]
+// ss[verify telemetry.dot-export]
+// ss[verify channel.memory-usage-telemetry]
+fn test_single_edge_omits_memory_when_disabled() {
+    let mut edge = memory_edge(0, None, None);
+    edge.stats_computer.show_memory = false;
+    let state = memory_test_state(vec![edge], 4);
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        !dot.contains("Memory:"),
+        "memory must be hidden when show_memory is false, got:\n{dot}"
+    );
+}
+
+/// Small partner group: header shows combined footprint; tooltip shows per-lane memory.
+#[test]
+// ss[verify telemetry.dot-export]
+// ss[verify channel.memory-usage-telemetry]
+fn test_partner_group_memory_combined_and_per_lane() {
+    // Two lanes sharing partner+bundle_index merge into one partner edge.
+    // Each lane: 100 × 8B = 800B → combined 1.6K (1600B).
+    let edges = vec![
+        memory_edge(0, Some("stream"), Some(0)),
+        memory_edge(1, Some("stream"), Some(0)),
+    ];
+    let state = memory_test_state(edges, 8); // floor above 2 → rendered as a single partner edge
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        dot.contains("stream [0] (1KB)"),
+        "partner header must show combined memory (1600B compresses to 1KB), got:\n{dot}"
+    );
+    // Per-lane breakdown appears in the tooltip (800B per lane).
+    let lane_memory_count = dot.matches("Memory: 800B").count();
+    assert!(
+        lane_memory_count >= 2,
+        "tooltip must show per-lane memory for both lanes (found {lane_memory_count}):\n{dot}"
+    );
+}
+
+/// Bundle of partnered edges ≥ floor: header and tooltip show summed memory.
+#[test]
+// ss[verify telemetry.dot-export]
+// ss[verify channel.memory-usage-telemetry]
+fn test_bundle_memory_header_and_tooltip() {
+    // 4 partner groups (bundle_index 0..3), each 2 lanes → 8 edges, 8 × 800B = 6.4K.
+    let mut edges = Vec::new();
+    let mut id = 0;
+    for bi in 0..4 {
+        for _lane in 0..2 {
+            edges.push(memory_edge(id, Some("P"), Some(bi)));
+            id += 1;
+        }
+    }
+    let state = memory_test_state(edges, 2); // 4 groups ≥ floor 2 → bundle render
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        dot.contains("P: 4x (6KB)"),
+        "bundle header must show summed memory (6400B compresses to 6KB), got:\n{dot}"
+    );
+    assert!(
+        dot.contains("Memory: 6KB"),
+        "bundle tooltip must show summed memory, got:\n{dot}"
+    );
+}

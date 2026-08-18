@@ -144,6 +144,51 @@ mod channel_stats_tests {
             }
         }
 
+        /// Property: avg fill is absent when the channel is not configured to show it.
+        #[test]
+        // ss[verify telemetry.channel-labels]
+        // ss[verify verify.process.proptest]
+        fn proptest_avg_filled_none_when_not_shown(
+            capacity in 1usize..10_000,
+            runner in 1u128..10_000_000,
+        ) {
+            let c = ChannelStatsComputer {
+                capacity,
+                show_avg_filled: false,
+                current_filled: Some(ChannelBlock {
+                    histogram: None,
+                    runner,
+                    sum_of_squares: 0,
+                }),
+                ..Default::default()
+            };
+            prop_assert!(c.avg_filled_whole_percent().is_none());
+        }
+
+        /// Property: init() derives memory_footprint and show_memory from channel meta.
+        #[test]
+        // ss[verify channel.memory-usage-telemetry]
+        // ss[verify verify.process.proptest]
+        fn proptest_memory_footprint_from_meta(
+            capacity in 1usize..10_000,
+            type_byte_count in 1usize..4096,
+            show_memory in any::<bool>(),
+        ) {
+            let mut meta = (*mock_meta()).clone();
+            meta.capacity = capacity;
+            meta.type_byte_count = type_byte_count;
+            meta.show_memory = show_memory;
+            let mut computer = ChannelStatsComputer::default();
+            computer.init(
+                &Arc::new(meta),
+                ActorName::new("src", None),
+                ActorName::new("dst", None),
+                1000,
+            );
+            prop_assert_eq!(computer.memory_footprint, capacity * type_byte_count);
+            prop_assert_eq!(computer.show_memory, show_memory);
+        }
+
         /// Property: bundle rollup total_consumed equals sum of per-lane deltas.
         #[test]
         // ss[verify telemetry.channel-labels]

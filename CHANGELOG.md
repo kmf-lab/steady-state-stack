@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Builtin DOT layout is tighter (`nodesep=.35`, `ranksep=1.2` via `DOT_NODESEP` / `DOT_RANKSEP`). Raise `DOT_RANKSEP` first if edge labels collide.
 - Telemetry viewer uses uniform **contain-fit** to the browser viewport on each successful pull and on window resize (preserves manual zoom level across refreshes).
 - Actors that share a base name with distinct suffixes (`with_name_and_suffix`) are packed into one Graphviz column via `{rank=same}` for tighter LR layout.
+- `connects_sidecar()` also uses `{rank=same}` (by design). Ranks are transitive: combining a sidecar on one instance of a shared name can pull the sidecar partner into that column — choose names and sidecar edges so the diagram stays readable.
 
 ### Aeron publish wake
 
@@ -29,6 +30,7 @@ All notable changes to this project are documented in this file.
 - **Goal:** Raise merged `llvm-cov` coverage incrementally (Tier 1/2 tests below); do **not** treat full **Aeron** / **aqueduct** stacks or huge **spotlight/shadow** surfaces as release blockers without dedicated CI (e.g. media driver jobs).
 - **Interpretation:** When comparing totals, use the **same** two feature-set runs as `pre-publish.sh` and **merge** LCOVs; a single default `cargo llvm-cov -p steady_state` total will not match release-style numbers. Install the **`lcov`** package locally to run `lcov` / `genhtml` merge steps (`merged.lcov`, `coverage_html/`).
 - **Out of scope for strict thresholds (unless policy changes):** `distributed/aeron_*`, deep **aqueduct** integration, **`test_panic_capture`** (panic harness), and **`simulate_edge`** — low or noisy coverage there is expected without extra infrastructure or exclusions.
+- **Gate B (merged, 2026-08-18):** `scripts/run-llvm-cov-release.sh` → **82.1%** lines (17028 / 20751), **66.0%** functions (8237 / 12482). Informational; Aeron/spotlight/panic-harness remain waived.
 
 ### `SteadyActor` index waits
 
@@ -40,6 +42,7 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Additional **`ss_proptest!`** coverage: DOT same-name + sidecar `{rank=same}` coexistence, partial-vote unclean shutdown, `split_bundle` partitions, channel avg-fill when not shown.
 - **Verification gates:** Gate A (`cargo nextest --profile ci-unit`), Gate B (`scripts/run-llvm-cov-release.sh`), Gate C (`scripts/run-aeron-integration.sh`); live `aeron_integration_suite` excluded from default nextest/llvm-cov.
 - **Aeron release:** full-matrix sign-off via `scripts/run-aeron-release-signoff.sh` (≥17 `PASS [` scenarios); flake gate `scripts/run-aeron-flake-check.sh`; self-hosted CI job in `.github/workflows/aeron-integration.yml` (labels `self-hosted`, `aeron`); runner setup in `docs/AERON_RUNNER.md`.
 - **Aeron Gate C reliability:** `suite_in_process_warmup` after script smoke (in-process wire proof); bundle lane wire retries + lane-0 warmup; `aeron_subscribe_bundle` connection bootstrap poll; harness contract tests.

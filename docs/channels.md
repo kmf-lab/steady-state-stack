@@ -153,6 +153,45 @@ channel_builder
 
 These metrics appear in the DOT graph (edge labels) and in Prometheus output.
 
+### Memory Usage Display
+
+A channel's **reserved buffer memory** can be shown in the DOT graph by opting in at build time:
+
+```rust
+let (tx, rx) = channel_builder
+    .with_capacity(256)
+    .with_memory_usage()          // Show buffer memory in telemetry
+    .build_channel::<Packet>();
+```
+
+The footprint is computed as `capacity × size_of::<T>()`:
+
+- **Capacity** — max items in the ring buffer (`with_capacity`).
+- **Width** — bytes per slot (`size_of::<T>()` for the message type).
+- **Footprint** — `capacity × width` — the reserved bytes for the channel's buffer.
+
+Where it appears in the DOT graph:
+
+- **Single channel** — the edge label gains a `Memory: …B` line.
+- **Partnered channels** (`with_partner`) — the merged edge header shows the **combined** footprint of all lanes (e.g. `stream [0] (1KB)`).
+- **Bundles** — the bundle header shows the **summed** footprint of every edge in the bundle (e.g. `Bundle: 4x (6KB)`); the same total appears in the bundle tooltip, and per-lane footprints appear in the per-channel tooltip lines.
+
+### Querying Memory in Code
+
+Established channels expose the same values programmatically (after locking):
+
+```rust
+let tx = tx.lock().await;
+let width = tx.width();          // bytes per slot (size_of::<T>())
+let bytes = tx.memory_bytes();   // capacity() × width()
+```
+
+Bundles provide a summed rollup across all lanes via `SteadyTxBundleTrait::memory_bytes()` / `SteadyRxBundleTrait::memory_bytes()`.
+
+Stream channels (`StreamTx` / `StreamRx`) expose `memory_bytes()` that combines **both** ring buffers: control (`capacity × size_of::<T>()`) plus payload (`capacity × bytes_per_item`).
+
+> **Note:** the footprint is the *configured maximum* (`capacity × size_of::<T>()`), not a live allocation measurement. It does not include ring-buffer bookkeeping, telemetry structures, or heap payloads behind pointer-sized types (e.g. `Box<[u8]>`).
+
 To see telemetry on a channel, you must **enable telemetry features** in the graph:
 
 ```rust

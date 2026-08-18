@@ -775,6 +775,23 @@ impl<T: StreamControlItem> StreamTx<T> {
         (self.control_channel.capacity(), self.payload_channel.capacity())
     }
 
+    /// Returns the combined **reserved** memory of this stream's dual ring buffers.
+    ///
+    /// Stream channels allocate two separate buffers at build time:
+    /// - **Control** — `control_capacity × size_of::<T>()` for `StreamEgress` metadata slots.
+    /// - **Payload** — `control_capacity × bytes_per_item` raw `u8` bytes for message bodies.
+    ///
+    /// This method sums both footprints (same formula as
+    /// [`Tx::memory_bytes`](crate::steady_tx::Tx::memory_bytes) on each sub-channel).
+    /// It reports the configured maximum, not live occupancy.
+    ///
+    /// # Returns
+    /// Total reserved buffer footprint in bytes.
+    // ss[impl channel.memory-usage-telemetry]
+    pub fn memory_bytes(&self) -> usize {
+        self.control_channel.memory_bytes() + self.payload_channel.memory_bytes()
+    }
+
     /// Flushes ready defragmented messages to the control and payload channels, returning the number of messages and bytes processed.
     // ss[related distributed.aqueduct-stream]
     pub(crate) fn fragment_flush_ready<C: SteadyActor>(&mut self, actor: &mut C) -> (u32, u32) {
@@ -915,6 +932,23 @@ impl<T: StreamControlItem> StreamRx<T> {
     // ss[related distributed.aqueduct-stream]
     pub fn capacity(&mut self) -> usize {
         self.control_channel.capacity()
+    }
+
+    /// Returns the combined **reserved** memory of this stream's dual ring buffers.
+    ///
+    /// Stream channels allocate two separate buffers at build time:
+    /// - **Control** — `control_capacity × size_of::<T>()` for ingress metadata slots.
+    /// - **Payload** — `control_capacity × bytes_per_item` raw `u8` bytes for message bodies.
+    ///
+    /// This method sums both footprints (same formula as
+    /// [`Rx::memory_bytes`](crate::steady_rx::Rx::memory_bytes) on each sub-channel).
+    /// It reports the configured maximum, not live occupancy.
+    ///
+    /// # Returns
+    /// Total reserved buffer footprint in bytes.
+    // ss[impl channel.memory-usage-telemetry]
+    pub fn memory_bytes(&self) -> usize {
+        self.control_channel.memory_bytes() + self.payload_channel.memory_bytes()
     }
 
     /// Returns the number of available units in the control and payload channels.
@@ -1608,6 +1642,23 @@ mod extra_stream_tests {
         assert_eq!(rx_bundle.len(), GIRTH);
         assert_eq!(tx_bundle.control_meta_data().len(), GIRTH);
         assert_eq!(rx_bundle.payload_meta_data().len(), GIRTH);
+    }
+
+    /// Tests combined `memory_bytes()` on an established stream Tx.
+    // ss[verify channel.memory-usage-telemetry]
+    #[test]
+    fn test_stream_tx_memory_bytes() {
+        use std::mem::size_of;
+        let mut graph = GraphBuilder::for_testing().build(());
+        let cb = graph.channel_builder().with_capacity(10);
+        let (lazy_tx, _lazy_rx) = cb.build_stream::<StreamEgress>(4);
+        let stream_tx = lazy_tx.clone();
+        let guard = crate::core_exec::block_on(stream_tx.lock());
+        let (ctrl_cap, payload_cap) = guard.capacity();
+        assert_eq!(ctrl_cap, 10);
+        assert_eq!(payload_cap, 40); // 10 × 4 bytes_per_item
+        let expected = ctrl_cap * size_of::<StreamEgress>() + payload_cap;
+        assert_eq!(guard.memory_bytes(), expected);
     }
 
 }

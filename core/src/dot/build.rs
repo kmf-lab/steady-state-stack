@@ -26,8 +26,13 @@ use super::{
 /// Emit `{rank=same}` for each base actor name that has two or more instances.
 ///
 /// Under `rankdir=LR`, Graphviz places same-rank nodes in one column. Actors created with
-/// `with_name_and_suffix("Worker", i)` share a column without a new builder API. Sidecar
-/// `{rank=same}` blocks from `connects_sidecar()` are unchanged and may coexist.
+/// `with_name_and_suffix("Worker", i)` share a column without a new builder API.
+///
+/// `connects_sidecar()` also emits pairwise `{rank=same}` (same mechanism, intentional).
+/// Graphviz ranks are **transitive**: if a sidecar edge ties one sibling into another actor,
+/// that partner can join the shared-name column. Using code owns naming and which edges are
+/// sidecar so the diagram stays readable — Steady State will not exclude sidecar endpoints
+/// from same-name groups.
 fn emit_same_name_rank_columns(dot_graph: &mut BytesMut, state: &DotState) {
     let mut by_name: BTreeMap<&'static str, Vec<ActorName>> = BTreeMap::new();
     for node in state.nodes.iter().filter(|n| n.id.is_some()) {
@@ -211,7 +216,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             if !short_type.is_empty() {
                 type_list.push(short_type);
             }
-            sub_capacities.push(e.stats_computer.capacity);
+                sub_capacities.push(e.stats_computer.capacity);
             sub_totals.push(e.stats_computer.total_consumed);
             memory_footprint += e.stats_computer.memory_footprint;
             show_memory |= e.stats_computer.show_memory;
@@ -232,6 +237,15 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                     e.stats_computer.capacity as u128,
                     &mut tooltip,
                 );
+                // Per-lane memory footprint when the channel opted into memory display
+                if e.stats_computer.show_memory {
+                    tooltip.push_str("\n Memory: ");
+                    crate::channel_stats_labels::format_compressed_u128(
+                        e.stats_computer.memory_footprint as u128,
+                        &mut tooltip,
+                    );
+                    tooltip.push('B');
+                }
                 // FIX: Show Total (cumulative) on tooltip to match edge label
                 tooltip.push_str("\n Total: ");
                 crate::channel_stats_labels::format_compressed_u128(
@@ -375,6 +389,17 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
             // This ensures avg_rate and other dynamic metrics are preserved on the label
             summary_label = format!("{}\n{}", partner_info, summary_label.trim_end_matches('\n'));
+        } else if edges.len() == 1 && show_memory {
+            // Single, non-partnered channel opted into memory display: append its
+            // reserved buffer footprint to the edge label, matching the partnered
+            // header format `(N B)`.
+            let mut mem_info = String::from("Memory: ");
+            crate::channel_stats_labels::format_compressed_u128(
+                memory_footprint as u128,
+                &mut mem_info,
+            );
+            mem_info.push('B');
+            summary_label = format!("{}\n{}", summary_label.trim_end_matches('\n'), mem_info);
         }
 
         // FIX: Always show the total(s) on the edge label itself, not just in the tooltip.
@@ -497,6 +522,7 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
             let mut total_memory = 0usize;
             let mut show_mem = false;
+            let mut bundle_memory_line = String::new();
 
             for pe in edges {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
@@ -523,6 +549,15 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                     &mut header,
                 );
                 header.push_str("B)");
+                // Mirror the bundle memory total in the tooltip so users can see it on hover
+                bundle_memory_line = format!(
+                    "Memory: {}B",
+                    {
+                        let mut s = String::new();
+                        crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut s);
+                        s
+                    }
+                );
             }
             // FIX: Show comma-separated totals for each partner type in the bundle, not a single aggregated total
             if edges[0].show_total {
@@ -585,6 +620,11 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                     bundle_tooltip.push_str("\\n");
                     bundle_tooltip.push_str(first_line);
                 }
+            }
+            // Surface the summed memory footprint in the tooltip as well as the header
+            if !bundle_memory_line.is_empty() {
+                bundle_tooltip.push_str("\\n");
+                bundle_tooltip.push_str(&bundle_memory_line);
             }
 
             if total_channels > MAX_INLINE_AVG_FILL_LANES {

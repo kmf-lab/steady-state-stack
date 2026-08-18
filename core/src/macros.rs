@@ -464,3 +464,48 @@ mod macros_tests {
         assert_eq!(bundle.len(), 2);
     }
 }
+
+#[cfg(test)]
+// ss[related bundle.split-macro]
+mod macros_proptest {
+    use super::*;
+    use crate::channel_builder::ChannelBuilder;
+    use crate::ss_proptest;
+    use proptest::prelude::*;
+
+    ss_proptest! {
+        /// Property: split_bundle 2+2 on a four-lane lazy TX bundle preserves total length.
+        #[test]
+        // ss[verify bundle.split-macro]
+        // ss[verify verify.process.proptest]
+        fn proptest_split_bundle_four_lane_partitions(cap in 1usize..8) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (t0, _) = builder.build_channel::<u8>();
+            let (t1, _) = builder.build_channel::<u8>();
+            let (t2, _) = builder.build_channel::<u8>();
+            let (t3, _) = builder.build_channel::<u8>();
+            let bundle = steady_tx_bundle([t0, t1, t2, t3]);
+            let (a, b) = split_bundle!(bundle, 2, 2);
+            prop_assert_eq!(a.len() + b.len(), 4);
+            prop_assert_eq!(a.len(), 2);
+            prop_assert_eq!(b.len(), 2);
+        }
+
+        /// Property: split_bundle 1+3 partitions a four-lane bundle without dropping lanes.
+        #[test]
+        // ss[verify bundle.split-macro]
+        // ss[verify verify.process.proptest]
+        fn proptest_split_bundle_one_plus_three(cap in 1usize..8) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (t0, _) = builder.build_channel::<u8>();
+            let (t1, _) = builder.build_channel::<u8>();
+            let (t2, _) = builder.build_channel::<u8>();
+            let (t3, _) = builder.build_channel::<u8>();
+            let bundle = steady_tx_bundle([t0, t1, t2, t3]);
+            let (a, b) = split_bundle!(bundle, 1, 3);
+            prop_assert_eq!(a.len(), 1);
+            prop_assert_eq!(b.len(), 3);
+            prop_assert_eq!(a.len() + b.len(), 4);
+        }
+    }
+}

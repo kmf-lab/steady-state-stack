@@ -1,7 +1,7 @@
 [package]
 name = "steady_state"   # rename from sss
-version = "0.2.13"
-documentation = "https://docs.rs/steady_state/0.2.13/steady_state/"
+version = "0.3.0"
+documentation = "https://docs.rs/steady_state/0.3.0/steady_state/"
 authors = ["Nathan Tippy <nathan@tippy.name>"]
 edition = "2024"
 description = "Framework for building long running low latency actor based services on Linux. Provides visual telemetry to watch data flows between actors. Uses Erlang style supervisors to defend against panics and uses non blocking async ringbuffers for inter actor communication."
@@ -133,65 +133,6 @@ libc = { version = "0.2", optional = true }
 # Dependencies for Windows
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", optional = true, features = ["winbase", "processthreadsapi"] }
-
-
-# Release Notes::
-# 0.1.0 - one year aniversary (12/04/24) relase single machine
-#         75% function test coverage
-#      Transparency
-#          Built in visual telemetry at 25fps (just open a browser)
-#          Prometheus Metrics for channels and actors
-#          Graphiz copatible .dot file for new project generation
-#          Metrics with Avg, StdDev, and Percentiles
-#          Color alert triggers for CPU and Message rates
-#      Effeciency
-#          High thoughput ringbuffer channels not blocking either end
-#          Batch processing for channel messages
-#          Work driven async actors without polling
-#          Core affinity optimization and NUMA-friendly channels
-#          Thread teaming to map actor graphs to available cores
-#      Reliability
-#          Erlang style panic recovery with durable state
-#          Non blocking async ringbuffers
-#          Clean deterministic orderly shutdown
-#          Peek and 'Take after process' for lossless messaging
-#          Unit testing for both Actors and Graphs
-# 0.1.1 -  Januay 2025
-#          Send trait NO LONGER required for actors !! Use more of your favorite crates.
-#
-# 0.1.2 -  02/02/25
-#          Removed confusing macro now use  context.into_monitor(
-#          Updated to new Clap with integrated declaritive type checking
-#          More unified methods for both streams and channels
-#          Upgrade to edition = "2024"
-#
-# 0.1.3 -  04/01/25
-#          Added async-std for windows support
-#          Added aeron power script for windows
-#          Added new Test Enums and Macros to simplify actors
-#
-# 0.2.0 - 06/25/25
-#          Distributed actors via aqueducts
-#          Aeron for routing_service
-#          Streams - double buffered and zero copy
-#          Better method names
-#          Tutorial Lessons
-#          DLQ showstopper detection
-#          Testing framework for single actors
-#          Testing framework for entire application graph
-
-#  Future Roadmap
-#          Add MQTT for routing_service
-#          Add NATS for routing_service
-#          Add ROS2 for routing_service
-#          New module for http 1,2 and 3
-#          History/Log recording for relplay and review
-#          Optimizing Thread Scheduler
-#          IOUring
-#          bps on telemetry
-
-
-
 
 
 [dependencies.libc]

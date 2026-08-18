@@ -8,3 +8,4 @@ cc 9371e6c9765b72862323a8af446a1ee719c48ce0952a9c8e728827ccdaa18847 # shrinks to
 cc e584ce975becc2eaa9d9db0c5a8a782bb19abb290e1e7a68fec5bb6d62152789 # shrinks to cap = 2, expected = 0
 cc 8eeb2c4f36f064d5282cb8e524eec9c00ba4fa4ef2c53bf979d10c3a2b95aacd # shrinks to cap = 2, lane = 0, value = 0
 cc c61e0e347b057be758eacd6b3e19b9db7fde975a438ee00354a15d1a76e318e5 # shrinks to timeout_ms = 84
+cc d6139f4b4e41ee7f9e5801d817f0ba6ceb5cc891c03a3e0caa0f66b53d5e99fa # shrinks to cap = 2

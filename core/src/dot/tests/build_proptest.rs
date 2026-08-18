@@ -55,6 +55,12 @@ fn make_edge(id: usize, from: ActorName, to: ActorName, label: &str) -> Edge {
     }
 }
 
+fn make_sidecar_edge(id: usize, from: ActorName, to: ActorName, label: &str) -> Edge {
+    let mut edge = make_edge(id, from, to, label);
+    edge.sidecar = true;
+    edge
+}
+
 fn render_dot(state: &DotState) -> String {
     let mut frames = test_dot_frames();
     build_dot(state, &mut frames);
@@ -70,6 +76,52 @@ fn valid_edge_count(edges: &[Edge]) -> usize {
 
 fn count_arrows(dot: &str) -> usize {
     dot.matches(" -> ").count()
+}
+
+fn make_memory_nodes() -> Vec<Node> {
+    vec![
+        make_node("from", None, "from"),
+        make_node("to", None, "to"),
+    ]
+}
+
+/// Builds an edge with a known memory footprint (`type_byte_count = 1`, `capacity = footprint`).
+fn make_memory_edge(
+    id: usize,
+    footprint: usize,
+    show_memory: bool,
+    partner: Option<&'static str>,
+    bundle_index: Option<usize>,
+) -> Edge {
+    let from = ActorName::new("from", None);
+    let to = ActorName::new("to", None);
+    let mut stats = ChannelStatsComputer::default();
+    stats.capacity = footprint;
+    stats.type_byte_count = 1;
+    stats.memory_footprint = footprint;
+    stats.show_memory = show_memory;
+    Edge {
+        id,
+        from: Some(from),
+        to: Some(to),
+        color: "green",
+        sidecar: false,
+        pen_width: EDGE_PEN_WIDTH.to_string(),
+        saturation_score: 0.0,
+        ctl_labels: vec![],
+        stats_computer: stats,
+        display_label: String::new(),
+        metric_text: String::new(),
+        partner,
+        bundle_index,
+        ..Default::default()
+    }
+}
+
+fn compressed_bytes(val: u128) -> String {
+    let mut s = String::new();
+    crate::channel_stats_labels::format_compressed_u128(val, &mut s);
+    format!("{s}B")
 }
 
 ss_proptest! {
@@ -247,6 +299,58 @@ ss_proptest! {
         }
     }
 
+    /// Property: same-name column and sidecar both emit `{rank=same}` (caller owns transitive merge).
+    #[test]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_build_dot_sidecar_and_same_name_both_emit_rank_same(
+        worker_count in 2usize..=4usize,
+    ) {
+        let mut nodes: Vec<Node> = (0..worker_count)
+            .map(|i| make_node("Worker", Some(i), &format!("Worker{i}")))
+            .collect();
+        nodes.push(make_node("Feedback", None, "Feedback"));
+        let worker0 = ActorName::new("Worker", Some(0));
+        let feedback = ActorName::new("Feedback", None);
+        let edges = vec![make_sidecar_edge(0, worker0, feedback, "side")];
+        let state = DotState {
+            nodes,
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+        let dot = render_dot(&state);
+
+        let name_rank = dot
+            .lines()
+            .find(|l| l.starts_with("{rank=same;") && l.contains("Worker0") && l.contains(&format!("Worker{}", worker_count - 1)))
+            .expect("same-name rank=same block");
+        for i in 0..worker_count {
+            prop_assert!(
+                name_rank.contains(&format!("\"Worker{i}\"")),
+                "Worker{i} missing from name rank: {name_rank}"
+            );
+        }
+
+        let side_rank = dot
+            .lines()
+            .find(|l| {
+                l.starts_with("{rank=same;")
+                    && l.contains("\"Worker0\"")
+                    && l.contains("\"Feedback\"")
+            })
+            .expect("sidecar rank=same block");
+        prop_assert!(
+            side_rank.contains("\"Worker0\"") && side_rank.contains("\"Feedback\""),
+            "sidecar rank incomplete: {side_rank}"
+        );
+        // Both mechanisms present — transitive Graphviz merge is expected / caller-owned.
+        let rank_blocks = dot.matches("{rank=same;").count();
+        prop_assert!(rank_blocks >= 2, "expected >=2 rank=same blocks, got {rank_blocks}");
+    }
+
     /// Property: bundle floor size is reflected in edge grouping when multiple edges share endpoints.
     #[test]
     // ss[verify telemetry.dot-export]
@@ -276,5 +380,155 @@ ss_proptest! {
         prop_assert!(dot.contains("digraph"));
         prop_assert!(dot.contains("\"from\""));
         prop_assert!(dot.contains("\"to\""));
+    }
+
+    /// Property: single-edge DOT shows Memory line only when show_memory is enabled.
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_single_edge_memory_gating(
+        show_memory in any::<bool>(),
+        footprint in 1usize..100_000,
+    ) {
+        let edge = make_memory_edge(0, footprint, show_memory, None, None);
+        let state = DotState {
+            nodes: make_memory_nodes(),
+            edges: vec![edge],
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+        let dot = render_dot(&state);
+        prop_assert_eq!(dot.contains("Memory:"), show_memory);
+    }
+
+    /// Property: partnered lanes show combined memory in the partner header.
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_partner_memory_is_sum(
+        lane_count in 2usize..=4,
+        footprints in prop::collection::vec(1usize..50_000, 2..=4),
+    ) {
+        let lanes = lane_count.min(footprints.len());
+        let footprints: Vec<usize> = footprints.into_iter().take(lanes).collect();
+        let sum = footprints.iter().sum::<usize>();
+        let mut edges = Vec::new();
+        for (i, fp) in footprints.iter().enumerate() {
+            edges.push(make_memory_edge(i, *fp, true, Some("stream"), Some(0)));
+        }
+        let state = DotState {
+            nodes: make_memory_nodes(),
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 8,
+        };
+        let dot = render_dot(&state);
+        let expected = compressed_bytes(sum as u128);
+        prop_assert!(
+            dot.contains(&format!("stream [0] ({expected})")),
+            "partner header missing combined memory {expected}:\n{dot}"
+        );
+    }
+
+    /// Property: bundled partner groups show summed memory in header and tooltip.
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_bundle_memory_is_sum(
+        group_count in 2usize..=4,
+        lanes_per_group in 1usize..=2,
+        footprint in 100usize..50_000,
+    ) {
+        let total_edges = group_count * lanes_per_group;
+        let total = footprint * total_edges;
+        let mut edges = Vec::new();
+        let mut id = 0;
+        for bi in 0..group_count {
+            for _ in 0..lanes_per_group {
+                // Uniform footprint per edge so partner groups share the same
+                // PrimaryGroupKey sub_capacities and render as one bundle.
+                edges.push(make_memory_edge(id, footprint, true, Some("P"), Some(bi)));
+                id += 1;
+            }
+        }
+        let state = DotState {
+            nodes: make_memory_nodes(),
+            edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 2,
+        };
+        let dot = render_dot(&state);
+        let expected = compressed_bytes(total as u128);
+        prop_assert!(
+            dot.contains(&format!("P: {group_count}x ({expected})")),
+            "bundle header missing summed memory:\n{dot}"
+        );
+        prop_assert!(
+            dot.contains(&format!("Memory: {expected}")),
+            "bundle tooltip missing summed memory:\n{dot}"
+        );
+    }
+
+    /// Property: partner and bundle rollups omit memory when show_memory is disabled.
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_memory_hidden_in_rollup_when_disabled(
+        lane_count in 2usize..=4,
+        group_count in 2usize..=4,
+    ) {
+        let partner_edges: Vec<Edge> = (0..lane_count)
+            .map(|i| make_memory_edge(i, 8000, false, Some("stream"), Some(0)))
+            .collect();
+        let partner_state = DotState {
+            nodes: make_memory_nodes(),
+            edges: partner_edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 8,
+        };
+        let partner_dot = render_dot(&partner_state);
+        prop_assert!(!partner_dot.contains("Memory:"));
+        let partner_line = partner_dot
+            .lines()
+            .find(|l| l.contains("stream [0]"))
+            .unwrap_or("");
+        prop_assert!(
+            !partner_line.contains("B)"),
+            "partner header leaked memory:\n{partner_dot}"
+        );
+
+        let bundle_edges: Vec<Edge> = (0..group_count)
+            .map(|bi| make_memory_edge(bi, 8000, false, Some("P"), Some(bi)))
+            .collect();
+        let bundle_state = DotState {
+            nodes: make_memory_nodes(),
+            edges: bundle_edges,
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 2,
+        };
+        let bundle_dot = render_dot(&bundle_state);
+        prop_assert!(!bundle_dot.contains("Memory:"));
+        let header_line = bundle_dot
+            .lines()
+            .find(|l| l.contains(&format!("P: {group_count}x")))
+            .unwrap_or("");
+        prop_assert!(
+            !header_line.contains("B)"),
+            "bundle header leaked memory:\n{bundle_dot}"
+        );
     }
 }
