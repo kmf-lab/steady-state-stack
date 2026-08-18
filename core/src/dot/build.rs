@@ -2,10 +2,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 
-use bytes::BufMut;
+use bytes::{BufMut, BytesMut};
 
 use crate::channel_stats::FilledVisualMode;
 use crate::dot_edge::Edge;
+use crate::ActorName;
 
 use super::colors::{actor_fillcolor_hex_into, color_to_rgb};
 use super::escape::escape_node_tooltip_text;
@@ -21,6 +22,48 @@ use super::{
     BUNDLE_PEN_WIDTH, DOT_NODESEP, DOT_RANKSEP, DotState, MAX_INLINE_AVG_FILL_LANES,
     PARTNER_BUNDLE_PEN_WIDTH,
 };
+
+/// Emit `{rank=same}` for each base actor name that has two or more instances.
+///
+/// Under `rankdir=LR`, Graphviz places same-rank nodes in one column. Actors created with
+/// `with_name_and_suffix("Worker", i)` share a column without a new builder API. Sidecar
+/// `{rank=same}` blocks from `connects_sidecar()` are unchanged and may coexist.
+fn emit_same_name_rank_columns(dot_graph: &mut BytesMut, state: &DotState) {
+    let mut by_name: BTreeMap<&'static str, Vec<ActorName>> = BTreeMap::new();
+    for node in state.nodes.iter().filter(|n| n.id.is_some()) {
+        if let Some(id) = node.id {
+            by_name.entry(id.name).or_default().push(id);
+        }
+    }
+    for (_name, mut members) in by_name {
+        if members.len() < 2 {
+            continue;
+        }
+        // Stable order: Some(suffix) ascending, then suffix-less names.
+        members.sort_by(|a, b| match (a.suffix, b.suffix) {
+            (Some(x), Some(y)) => x.cmp(&y),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+        // Deduplicate identical ActorName entries if the node list ever repeats an id.
+        members.dedup();
+        if members.len() < 2 {
+            continue;
+        }
+
+        dot_graph.put_slice(b"{rank=same;");
+        for m in &members {
+            dot_graph.put_slice(b" \"");
+            dot_graph.put_slice(m.name.as_bytes());
+            if let Some(s) = m.suffix {
+                dot_graph.put_slice(itoa::Buffer::new().format(s).as_bytes());
+            }
+            dot_graph.put_slice(b"\"");
+        }
+        dot_graph.put_slice(b"}\n");
+    }
+}
 
 /// Builds the DOT graph from the current state.
 ///
@@ -105,6 +148,9 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             };
             dot_graph.put_slice(b"];\n");
         });
+
+    // Same base name + distinct suffixes → one LR column (tighter packing).
+    emit_same_name_rank_columns(dot_graph, state);
 
     // Stage 1: Partnering
     let mut partner_groups: BTreeMap<PartnerKey, Vec<&Edge>> = BTreeMap::new();

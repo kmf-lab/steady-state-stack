@@ -46,6 +46,124 @@ fn test_node_compute_and_refresh() {
     assert_eq!(node.pen_width, NODE_PEN_WIDTH);
 }
 
+#[test]
+// ss[verify telemetry.dot-export]
+fn test_same_base_name_suffixes_share_rank_column() {
+    let state = DotState {
+        nodes: vec![
+            Node {
+                id: Some(ActorName::new("Worker", Some(0))),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "Worker0".to_string(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            },
+            Node {
+                id: Some(ActorName::new("Worker", Some(1))),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "Worker1".to_string(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            },
+            Node {
+                id: Some(ActorName::new("Worker", Some(2))),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "Worker2".to_string(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            },
+        ],
+        edges: vec![],
+        seq: 0,
+        telemetry_colors: None,
+        refresh_rate_ms: 40,
+        bundle_floor_size: 4,
+    };
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        dot.contains("{rank=same; \"Worker0\" \"Worker1\" \"Worker2\"}"),
+        "expected same-name column rank block, got:\n{dot}"
+    );
+}
+
+#[test]
+// ss[verify telemetry.dot-export]
+fn test_distinct_base_names_do_not_emit_name_rank_column() {
+    let state = DotState {
+        nodes: vec![
+            Node {
+                id: Some(ActorName::new("alpha", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "alpha".to_string(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            },
+            Node {
+                id: Some(ActorName::new("beta", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: "beta".to_string(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                work_info: None,
+            },
+        ],
+        edges: vec![],
+        seq: 0,
+        telemetry_colors: None,
+        refresh_rate_ms: 40,
+        bundle_floor_size: 4,
+    };
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        !dot.contains("{rank=same;"),
+        "distinct base names must not emit name-group rank=same, got:\n{dot}"
+    );
+}
 
 #[test]
 // ss[verify telemetry.dot-export]

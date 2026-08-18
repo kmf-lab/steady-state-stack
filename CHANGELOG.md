@@ -9,6 +9,7 @@ All notable changes to this project are documented in this file.
 - The builtin viewer title is **Live Telemetry** only after a successful recent `/graph.dot` pull. A failed pull keeps the last diagram and shows **Snapshot** (no “Live”). Initial placeholder remains **Loading…**.
 - Builtin DOT layout is tighter (`nodesep=.35`, `ranksep=1.2` via `DOT_NODESEP` / `DOT_RANKSEP`). Raise `DOT_RANKSEP` first if edge labels collide.
 - Telemetry viewer uses uniform **contain-fit** to the browser viewport on each successful pull and on window resize (preserves manual zoom level across refreshes).
+- Actors that share a base name with distinct suffixes (`with_name_and_suffix`) are packed into one Graphviz column via `{rank=same}` for tighter LR layout.
 
 ### Aeron publish wake
 

@@ -205,6 +205,48 @@ ss_proptest! {
         prop_assert!(dot.contains("ranksep="));
     }
 
+    /// Property: two or more nodes sharing a base name emit one {rank=same} column block.
+    #[test]
+    // ss[verify telemetry.dot-export]
+    // ss[verify verify.process.proptest]
+    fn proptest_build_dot_same_name_suffixes_share_column(
+        count in 2usize..=5usize,
+    ) {
+        let nodes: Vec<Node> = (0..count)
+            .map(|i| make_node("Worker", Some(i), &format!("Worker{i}")))
+            .collect();
+        let state = DotState {
+            nodes,
+            edges: vec![],
+            seq: 0,
+            telemetry_colors: None,
+            refresh_rate_ms: 40,
+            bundle_floor_size: 4,
+        };
+        let dot = render_dot(&state);
+        prop_assert!(
+            dot.contains("{rank=same;"),
+            "missing rank=same for shared base name:\n{dot}"
+        );
+        for i in 0..count {
+            prop_assert!(
+                dot.contains(&format!("\"Worker{i}\"")),
+                "missing Worker{i} in:\n{dot}"
+            );
+        }
+        // All Worker ids appear in a single rank=same line.
+        let rank_line = dot
+            .lines()
+            .find(|l| l.starts_with("{rank=same;") && l.contains("Worker0"))
+            .expect("rank=same line with Worker0");
+        for i in 0..count {
+            prop_assert!(
+                rank_line.contains(&format!("\"Worker{i}\"")),
+                "Worker{i} missing from rank line {rank_line}"
+            );
+        }
+    }
+
     /// Property: bundle floor size is reflected in edge grouping when multiple edges share endpoints.
     #[test]
     // ss[verify telemetry.dot-export]
