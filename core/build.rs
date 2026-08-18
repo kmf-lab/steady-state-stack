@@ -142,7 +142,14 @@ fn main() {
         };
 
         let index_gz_out = out_dir.join(OUT_INDEX_HTML_GZ);
-        let index_needs_gzip = should_write || !index_gz_out.exists();
+        // The rendered static/telemetry/index.html is shared across per-feature-set build
+        // instances, each with its own OUT_DIR. Another instance may have already updated the
+        // shared file (should_write == false) while THIS instance's gz is still stale, so
+        // content comparison alone is insufficient: also recompress when the template is
+        // newer than our cached gz.
+        let index_needs_gzip = should_write
+            || !index_gz_out.exists()
+            || source_newer_than_gz(Path::new("templates/index.html.txt"), &index_gz_out);
 
         // Only write and gzip if necessary
         if should_write {
@@ -172,7 +179,10 @@ fn main() {
         };
 
         let webworker_gz_out = out_dir.join(OUT_WEBWORKER_JS_GZ);
-        let webworker_needs_gzip = should_write || !webworker_gz_out.exists();
+        // Same cross-instance staleness hazard as index.html above.
+        let webworker_needs_gzip = should_write
+            || !webworker_gz_out.exists()
+            || source_newer_than_gz(Path::new("templates/webworker.js.txt"), &webworker_gz_out);
 
         // Only write and gzip if necessary
         if should_write {
