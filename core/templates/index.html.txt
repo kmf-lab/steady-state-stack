@@ -20,6 +20,7 @@
             <span id="speedSpan"></span>
             <span>&#9660;</span>
           </div>
+          <img id="downloadBtn" class="disabled" src="images/download.png" title="Download">
         </div>
       </div>
       <div id="nav2">
@@ -42,6 +43,11 @@
       <div class="speed60000">1 min</div>
       <div class="speed1200000">20 min</div>
       <div class="speed3600000">1 hour</div>
+    </div>
+
+    <div id="downloadDropdown" class="dropdown">
+      <div class="downloadDot">DOT source (.dot)</div>
+      <div class="downloadSvg">SVG diagram (.svg)</div>
     </div>
 
     <div id="diagram">

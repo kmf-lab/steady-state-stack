@@ -630,6 +630,15 @@ const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = "";
 // ss[related telemetry.builtin-server]
 const CONTENT_ZOOM_OUT_ICON_DISABLED_SVG: &str = if steady_config::TELEMETRY_SERVER { include_str!("../../static/telemetry/images/zoom-out-icon-disabled.svg") } else { "" };
 
+#[allow(dead_code)]
+#[cfg(any(docsrs, not(any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin"))))]
+// ss[related telemetry.builtin-server]
+const CONTENT_DOWNLOAD_ICON_PNG: & [u8] = &[];
+#[allow(dead_code)]
+#[cfg(all(not(docsrs), any(feature = "telemetry_server_cdn", feature = "telemetry_server_builtin")))]
+// ss[related telemetry.builtin-server]
+const CONTENT_DOWNLOAD_ICON_PNG: & [u8] = if steady_config::TELEMETRY_SERVER { include_bytes!("../../static/telemetry/images/download.png") } else { &[] };
+
 //   pub trait AsyncWriteExt: AsyncWrite   for the .read
 //   pub trait AsyncReadExt: AsyncRead     for the .write_all
 
@@ -795,6 +804,11 @@ where
                     stream.write_all(b"\r\n\r\n").await?;
                     stream.write_all(data).await?;
                 }
+            } else if path.as_bytes()[8].eq(&b'd') { // "/images/download.png"
+                stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/png\r\nContent-Length: ", cors_header).as_bytes()).await?;
+                stream.write_all(itoa::Buffer::new().format(CONTENT_DOWNLOAD_ICON_PNG.len()).as_bytes()).await?;
+                stream.write_all(b"\r\n\r\n").await?;
+                stream.write_all(CONTENT_DOWNLOAD_ICON_PNG).await?;
             } else if path.len().ge(&22) { // "/images/preview-icon.svg"
                 stream.write_all(format!("HTTP/1.1 200 OK\r\n{}Content-Type: image/svg+xml\r\nContent-Length: ", cors_header).as_bytes()).await?;
                 stream.write_all(itoa::Buffer::new().format(CONTENT_PREVIEW_ICON_GZ.len()).as_bytes()).await?;
@@ -998,6 +1012,9 @@ mod http_telemetry_tests {
                 print!(".");
                 #[cfg(feature = "telemetry_server_builtin")]
                 validate_path(&addr, None, "images/zoom-out-icon-disabled.svg");
+                print!(".");
+                #[cfg(feature = "telemetry_server_builtin")]
+                validate_path(&addr, None, "images/download.png");
                 print!(".");
 
             } else {
@@ -1286,6 +1303,7 @@ mod handle_request_logic_tests {
             "/images/user-icon.svg",
             "/images/preview-icon.svg",
             "/images/spinner.gif",
+            "/images/download.png",
             "/webworker.js",
             "/dot-viewer.css",
             "/dot-viewer.js",

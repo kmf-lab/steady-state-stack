@@ -113,6 +113,20 @@ nav > div {
   width: 110px;
 }
 
+#downloadBtn {
+  cursor: pointer;
+}
+
+#downloadBtn.disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+#downloadDropdown {
+  position: fixed;
+  width: 180px;
+}
+
 #speedSpan {
   font-size: 20px;
   margin: 0 10px;

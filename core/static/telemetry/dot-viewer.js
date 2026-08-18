@@ -28,6 +28,8 @@ let fitBaseWidth = 0, fitBaseHeight = 0;
 let intervalToken, navHeight;
 let preview, speedArea, speedDropdown, speedMs, minRefreshRateMs = 0;
 let speedSpan, speedText, svg, svgRect, viewport, webworker;
+let downloadBtn, downloadDropdown;
+let lastDot, lastSvg, lastSuccessAt;
 let zoomInBtn, zoomInBtnDisabled, zoomOutBtn, zoomOutBtnDisabled;
 let zoomCurrent = 100;
 
@@ -59,6 +61,20 @@ function getSvgNaturalSize(svgEl) {
     return {width: rect.width, height: rect.height};
   }
   return null;
+}
+
+/**
+ * Triggers a browser download of in-memory text content.
+ */
+function downloadBlob(text, filename, mime) {
+  const url = URL.createObjectURL(new Blob([text], {type: mime}));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -102,6 +118,16 @@ function updateZoomButtons() {
   setDisplay(zoomOutBtnDisabled, !canZoomOut);
 }
 
+function onDownloadDropdown(event) {
+  if (downloadBtn.className.indexOf('disabled') !== -1) return;
+  toggleVisibility(downloadDropdown);
+  if (isVisible(downloadDropdown)) {
+    const record = downloadBtn.getBoundingClientRect();
+    setStyle(downloadDropdown, 'left', px(record.x + record.width - 180));
+  }
+  event.stopPropagation();
+}
+
 function onDrag(event) {
   const previewRect = preview.getBoundingClientRect();
   const viewportRect = viewport.getBoundingClientRect();
@@ -132,10 +158,17 @@ function onMessage(message) {
   const svgText = typeof data === 'object' && data !== null ? data.svg : undefined;
 
   if (!ok || typeof svgText !== 'string') {
-    setTelemetryTitle('Snapshot');
+    // Pinned to the last successful pull; only a failure before any
+    // success falls back to the discovery moment.
+    const when = lastSuccessAt || new Date();
+    setTelemetryTitle('Snapshot at ' + toLocalIsoWithTz(when));
     return;
   }
   setTelemetryTitle('Live Telemetry');
+  lastSuccessAt = new Date();
+  lastSvg = svgText;
+  if (typeof data.dot === 'string') lastDot = data.dot;
+  if (downloadBtn) removeClass(downloadBtn, 'disabled');
 
   // Use requestAnimationFrame to avoid blocking the UI thread
   window.requestAnimationFrame(() => {
@@ -367,6 +400,24 @@ function togglePreview() {
 const toggleVisibility = element =>
   isVisible(element) ? hide(element) : show(element);
 
+/**
+ * Local time as ISO-8601 with numeric timezone offset,
+ * e.g. 2026-08-18T09:40:05-05:00 (toISOString is UTC-only).
+ */
+function toLocalIsoWithTz(date) {
+  const pad = n => String(n).padStart(2, '0');
+  const offsetMin = -date.getTimezoneOffset(); // getTimezoneOffset() sign is inverted
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  return date.getFullYear()
+    + '-' + pad(date.getMonth() + 1)
+    + '-' + pad(date.getDate())
+    + 'T' + pad(date.getHours())
+    + ':' + pad(date.getMinutes())
+    + ':' + pad(date.getSeconds())
+    + sign + pad(Math.floor(abs / 60)) + ':' + pad(abs % 60);
+}
+
 function fetchConfig() {
   return fetch('/config')
     .then(response => {
@@ -425,6 +476,8 @@ window.onload = () => {
   speedSpan = getById('speedSpan');
   speedSpan.textContent = 'Initializing...';
   viewport = getById('viewport');
+  downloadBtn = getById('downloadBtn');
+  downloadDropdown = getById('downloadDropdown');
   zoomInBtn = getById('zoomInBtn');
   zoomInBtnDisabled = getById('zoomInBtnDisabled');
   zoomOutBtn = getById('zoomOutBtn');
@@ -441,9 +494,22 @@ window.onload = () => {
 
   speedDropdown.onclick = event => setSpeed(event.target.textContent);
 
+  downloadBtn.onclick = onDownloadDropdown;
+
+  downloadDropdown.onclick = event => {
+    event.stopPropagation();
+    hide(downloadDropdown);
+    if (event.target.className.indexOf('downloadDot') !== -1) {
+      if (lastDot) downloadBlob(lastDot, 'steady-telemetry.dot', 'text/plain');
+    } else if (event.target.className.indexOf('downloadSvg') !== -1) {
+      if (lastSvg) downloadBlob(lastSvg, 'steady-telemetry.svg', 'image/svg+xml');
+    }
+  };
+
   // Hide all dropdowns on a click outside them.
   window.onclick = () => {
     hide(speedDropdown);
+    hide(downloadDropdown);
   };
 
   zoomInBtn.onclick = () => onZoom(true);

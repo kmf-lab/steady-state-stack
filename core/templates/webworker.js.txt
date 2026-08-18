@@ -20,7 +20,7 @@ async function processQueue() {
       }
       const dot = await response.text();
       const svg = Viz(dot, {format: 'svg', engine: 'dot'});
-      this.postMessage({ok: true, svg: svg});
+      this.postMessage({ok: true, svg: svg, dot: dot});
     } catch (e) {
       // Failed pull: viewer must show Snapshot and keep the last SVG.
       console.log('dotUrl', dotUrl);

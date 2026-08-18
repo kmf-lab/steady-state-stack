@@ -11,6 +11,7 @@ const BATCH_SIZE: usize = 1000;
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub(crate) struct InternalState {
     pub(crate) last_approval: Option<ApprovedWidgets>,
+    pub(crate) total_consumed: u64,
     buffer: [ApprovedWidgets; BATCH_SIZE]
 }
 
@@ -18,6 +19,7 @@ impl InternalState {
     pub fn new() -> Self {
         InternalState {
             last_approval: None,
+            total_consumed: 0,
             buffer: [ApprovedWidgets { approved_count: 0, original_count: 0 }; BATCH_SIZE]
         }
     }
@@ -56,6 +58,8 @@ pub(crate) async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx
             for item in buf[..count].iter() {
                 state.last_approval = Some(item.to_owned());
             }
+            state.total_consumed += count as u64;
+            actor.set_dot_display_text(Some(&format!("Total: {}", state.total_consumed)));
             //based on the channel capacity this will send batched updates so most calls do nothing.
             actor.relay_stats_smartly();
 
@@ -79,6 +83,7 @@ mod consumer_tests {
             .with_capacity(BATCH_SIZE).build_channel();
 
         let state = Arc::new(Mutex::new(InternalState::new()));
+        let state_check = state.clone();
 
         graph.actor_builder()
             .with_name("UnitTest")
@@ -90,7 +95,11 @@ mod consumer_tests {
         let test_data: Vec<ApprovedWidgets> = (0..BATCH_SIZE).map(|i| ApprovedWidgets { original_count: 0, approved_count: i as u64 }).collect();
         approved_widget_tx_out.testing_send_all(test_data, true);
 
-        graph.block_until_stopped(Duration::from_secs(240))
+        graph.block_until_stopped(Duration::from_secs(240))?;
+
+        let final_state = state_check.try_lock().expect("state lock after shutdown");
+        assert_eq!(final_state.total_consumed, BATCH_SIZE as u64);
+        Ok(())
 
     }
 
