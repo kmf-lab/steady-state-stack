@@ -24,15 +24,15 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
     }
 }
 
-#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_of: usize, rx: SteadyRx<Packet>, tx: SteadyTxBundle<Packet, { GIRTH }>) -> Result<(), Box<dyn Error>> {
     
 
-    let mut rx = rx.lock().await;
-    let mut tx = tx.lock().await;
+    let mut rx = rx.acquire_guard().await;
+    let mut tx = tx.acquire_guard().await;
 
     let count = rx.capacity()/4;
     let tx_girth = tx.len();
+    let vacant_counts = vec![count/2; tx_girth];
 
     while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {
 
@@ -40,7 +40,7 @@ async fn internal_behavior<C: SteadyActor, const GIRTH:usize>(mut actor: C, one_
         let _clean = await_for_all_or_proceed_upon!(
             actor.wait_periodic(Duration::from_millis(40)),
             actor.wait_avail(&mut rx,2),
-            actor.wait_vacant_bundle(&mut tx,count/2,tx_girth)
+            async { actor.wait_vacant_index(&mut tx, &vacant_counts).await.is_some() }
         );
        // info!("router b");
 

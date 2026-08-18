@@ -24,7 +24,7 @@ pub async fn run(actor: SteadyActorShadow, print_signal_tx: SteadyTx<PrintSignal
 async fn internal_behavior<A: SteadyActor>(mut actor: A
                                            , print_signal_tx: SteadyTx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    let mut print_signal_tx = print_signal_tx.lock().await;
+    let mut print_signal_tx = print_signal_tx.acquire_guard().await;
     let mut tick = 0;
     while actor.is_running(&mut || i!(print_signal_tx.mark_closed())) {
          let clean = await_for_any!(actor.wait_periodic(Duration::from_secs(2)));

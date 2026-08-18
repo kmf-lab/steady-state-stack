@@ -15,9 +15,8 @@ pub async fn run<const GIRTH: usize>(context: SteadyActorShadow
     }
 }
 
-#[allow(deprecated)] // Stream bundle readiness; index waits differ from `ready_channels` bundle semantics.
 async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(mut actor: C, tx: SteadyStreamTxBundle<StreamEgress, GIRTH>) -> Result<(), Box<dyn Error>> {
-    let mut tx = tx.lock().await;
+    let mut tx = tx.acquire_guard().await;
 
     warn!("called run");
 
@@ -34,8 +33,8 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(mut actor: C, tx:
         let data_size = 8;
         let vacant_bytes = vacant_items * data_size;
 // TODO: wrwrite to take (i,p) as a group.
-        let _clean = await_for_all!(actor.wait_vacant_bundle(&mut tx
-                                       , (vacant_items, vacant_bytes), 1));
+        let _lane = actor.wait_vacant_index(&mut tx
+                                       , &[(vacant_items, vacant_bytes); GIRTH]).await;
 
 
         let mut remaining = TEST_ITEMS;

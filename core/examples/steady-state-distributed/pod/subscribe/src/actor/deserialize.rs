@@ -64,17 +64,17 @@ async fn internal_behavior<A: SteadyActor>(
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
     // Lock and extract the two input streams.
-    let mut input = input.lock().await;
+    let mut input = input.acquire_guard().await;
     let mut rx_generator = input.remove(1); // Generator stream (index 1)
     let mut rx_heartbeat = input.remove(0); // Heartbeat stream (index 0)
     drop(input);            //#!#//
 
     // Lock output channels for sending deserialized data.
-    let mut tx_heartbeat = heartbeat.lock().await;
-    let mut tx_generator = generator.lock().await;
+    let mut tx_heartbeat = heartbeat.acquire_guard().await;
+    let mut tx_generator = generator.acquire_guard().await;
 
     // Initialize or access persistent state.
-    let mut state = state.lock(|| DeserializeState {
+    let mut state = state.acquire_guard(|| DeserializeState {
         shutdown_count: 0,
         next_heartbeat: 0,
         next_generator: 0,

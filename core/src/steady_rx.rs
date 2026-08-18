@@ -651,16 +651,28 @@ impl<T: Send + Sync> RxMetaDataProvider for Arc<Mutex<Rx<T>>> {
 /// Trait defining the required methods for a steady receiver bundle.
 // ss[related philosophy.zero-copy-discipline]
 pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
-    /// Locks all receivers in the bundle.
+    /// Acquires the guards for all receivers in the bundle.
     ///
     /// This method prepares all receivers for synchronized access, returning a future that resolves
-    /// when all locks are acquired.
+    /// when every guard is bound. Hold the guards for the life of the actor (guard-first,
+    /// bind-all-at-entry); on panic they are dropped and the rings retain their messages.
     ///
     /// # Returns
-    /// A future resolving to a collection of mutex guards for the receivers.
+    /// A future resolving to a collection of channel guards for the receivers.
     // ss[impl philosophy.lock-first-contract]
     // ss[impl actor.lock-first.channels]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>>;
+
+    /// Guard-first alias for [`SteadyRxBundleTrait::lock`] — the preferred spelling.
+    ///
+    /// Identical future and semantics; only the vocabulary changes. Steady says
+    /// "acquire the guard", not "lock", because this is not a mutex critical section:
+    /// guards are held across `.await` for the actor's lifetime.
+    // ss[impl philosophy.lock-first-contract]
+    // ss[impl actor.lock-first.channels]
+    fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
+        self.lock()
+    }
 
     /// Retrieves metadata for all receivers in the bundle.
     ///

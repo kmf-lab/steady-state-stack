@@ -60,10 +60,10 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Lock the persistent state for this actor. If this is the first run, initialize
     // the state with a count of zero. If this is a restart, the previous state is restored.
-    let mut state = state.lock(|| HeartbeatState { count: 0 }).await;
+    let mut state = state.acquire_guard(|| HeartbeatState { count: 0 }).await;
 
     // Lock the output channel for exclusive access during heartbeat sending.
-    let mut heartbeat_tx = heartbeat_tx.lock().await;
+    let mut heartbeat_tx = heartbeat_tx.acquire_guard().await;
 
     // Main loop: continue running as long as the actor system is active and the
     // output channel is open. The closure passed to `is_running` will close the

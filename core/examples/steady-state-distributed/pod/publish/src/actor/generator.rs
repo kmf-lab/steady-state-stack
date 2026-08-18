@@ -71,13 +71,13 @@ async fn internal_behavior<A: SteadyActor>(
     // and the expected number of units per beat.
     let final_total = beats * EXPECTED_UNITS_PER_BEAT;
 
-    // Lock the output channel for exclusive access during message generation.
-    let mut generated = generated.lock().await;
+    // Acquire the guard on the output channel for this actor instance.
+    let mut generated = generated.acquire_guard().await;
 
-    // Lock the persistent state for this actor. If this is the first run, initialize
+    // Acquire the guard on the persistent state for this actor. If this is the first run, initialize
     // the state with zero messages generated. If this is a restart, the previous state
     // is restored automatically.
-    let mut state = state.lock(|| GeneratorState {
+    let mut state = state.acquire_guard(|| GeneratorState {
         total_generated: 0,
     }).await;
 

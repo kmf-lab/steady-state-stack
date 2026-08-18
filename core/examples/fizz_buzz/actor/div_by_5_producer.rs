@@ -24,7 +24,7 @@ const STEP_SIZE: u64 = 5;
 async fn internal_behavior<A: SteadyActor>(mut actor: A
                                            , numbers_tx: SteadyTx<NumberMessage>) -> Result<(),Box<dyn Error>> {
 
-    let mut numbers_tx = numbers_tx.lock().await;
+    let mut numbers_tx = numbers_tx.acquire_guard().await;
 
     let mut buffer:[NumberMessage; BATCH_SIZE] = [NumberMessage::default(); BATCH_SIZE];
     let mut index:u64 = 0;

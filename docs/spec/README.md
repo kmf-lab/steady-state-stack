@@ -98,7 +98,7 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `philosophy.mechanical-sympathy` | Hardware-aware design | 01 |
 | `philosophy.pull-reactor` | Intent-driven progress | 01 |
 | `philosophy.structural-hierarchy` | run vs internal_behavior | 01 |
-| `philosophy.lock-first-contract` | Lock once at entry | 01 |
+| `philosophy.lock-first-contract` | Guard-first: bind once at entry | 01 |
 | `philosophy.cooperative-liveliness` | Negotiated shutdown | 01 |
 | `philosophy.lazy-to-established` | Lazy → established | 01 |
 | `philosophy.single-wake-up` | Consolidated awaits | 01 |
@@ -106,7 +106,7 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `philosophy.explicit-ownership` | Graph owns topology | 01 |
 | `actor.run-dispatcher` | Shadow → spotlight | 02 |
 | `actor.internal-behavior-logic` | Domain hot path | 02 |
-| `actor.lock-first.channels` | Lock at behavior entry | 02 |
+| `actor.lock-first.channels` | Acquire guard at behavior entry | 02 |
 | `actor.is-running-loop` | is_running semantics | 02 |
 | `actor.shutdown-veto` | Veto closure | 02 |
 | `actor.regeneration-survives` | Restart, no data loss | 02 |

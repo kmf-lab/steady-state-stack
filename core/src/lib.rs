@@ -403,6 +403,7 @@ mod dot_edge;
 mod dot_node;
 
 mod types;
+mod guard_ext;
 mod logging;
 mod metrics;
 mod runner;
@@ -435,6 +436,7 @@ pub use crate::macros::steady_tx_bundle_active;
 pub use crate::yield_now::yield_now;
 
 pub use types::*;
+pub use guard_ext::SteadyChannelExt;
 pub use logging::*;
 pub use metrics::*;
 pub use runner::SteadyRunner;

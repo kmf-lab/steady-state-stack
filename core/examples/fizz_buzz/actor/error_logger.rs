@@ -22,7 +22,7 @@ pub async fn run(actor: SteadyActorShadow
 async fn internal_behavior<A: SteadyActor>(mut actor: A
                                            , errors_rx: SteadyRx<ErrorMessage>) -> Result<(),Box<dyn Error>> {
 
-    let mut errors_rx = errors_rx.lock().await;
+    let mut errors_rx = errors_rx.acquire_guard().await;
 
     while actor.is_running(&mut || i!(errors_rx.is_closed_and_empty())) {
 

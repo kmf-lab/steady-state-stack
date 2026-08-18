@@ -20,8 +20,8 @@ pub async fn run(actor: SteadyActorShadow, rx: SteadyRx<Packet>, state: SteadySt
 }
 
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, state: SteadyState<ProcessorState>) -> Result<(), Box<dyn Error>> {
-    let mut state = state.lock(|| ProcessorState { count: 0 }).await;
-    let mut rx = rx.lock().await;
+    let mut state = state.acquire_guard(|| ProcessorState { count: 0 }).await;
+    let mut rx = rx.acquire_guard().await;
     while actor.is_running(|| rx.is_closed_and_empty()) {
         await_for_all!(actor.wait_avail(&mut rx, 1));
         while let Some(packet) = actor.try_take(&mut rx) {

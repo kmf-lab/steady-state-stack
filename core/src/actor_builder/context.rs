@@ -130,13 +130,21 @@ impl<T: ?Sized> NonSendWrapper<T> {
         }
     }
 
-    /// Asynchronously locks the inner value, providing a mutex guard.
+    /// Asynchronously acquires the guard on the inner value.
     ///
     /// # Returns
     ///
     /// A `MutexGuard` for accessing the inner value.
     // ss[related actor.regeneration-survives]
     pub async fn lock(&self) -> MutexGuard<'_, T> {
+        self.inner.lock().await
+    }
+
+    /// Guard-first alias for [`NonSendWrapper::lock`] — the preferred spelling.
+    ///
+    /// Identical guard and semantics; only the vocabulary changes.
+    // ss[related actor.regeneration-survives]
+    pub async fn acquire_guard(&self) -> MutexGuard<'_, T> {
         self.inner.lock().await
     }
 

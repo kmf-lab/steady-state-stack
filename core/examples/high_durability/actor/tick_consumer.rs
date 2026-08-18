@@ -30,8 +30,8 @@ async fn internal_behavior<C: SteadyActor>(mut actor: C, ticks_rx: SteadyRx<Tick
     let _cli_args = actor.args::<Args>();
 
     // lock the channels for use in this instance
-    let mut ticks_rx = ticks_rx.lock().await;
-    let mut tick_counts_tx = tick_counts_tx.lock().await;
+    let mut ticks_rx = ticks_rx.acquire_guard().await;
+    let mut tick_counts_tx = tick_counts_tx.acquire_guard().await;
     let mut buffer = [Tick::default(); 1000];
 
     // start 'is running' loop so we detect shutdown an exit clean

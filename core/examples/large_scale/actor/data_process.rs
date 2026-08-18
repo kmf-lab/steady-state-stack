@@ -22,8 +22,8 @@ pub async fn run(context: SteadyActorShadow
 
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Packet>, tx: SteadyTx<Packet>) -> Result<(), Box<dyn Error>> {
 
-    let mut rx = rx.lock().await;
-    let mut tx = tx.lock().await;
+    let mut rx = rx.acquire_guard().await;
+    let mut tx = tx.acquire_guard().await;
 
     let count = rx.capacity().min(tx.capacity()) / 2;
     while actor.is_running(&mut || rx.is_closed_and_empty() && tx.mark_closed()) {

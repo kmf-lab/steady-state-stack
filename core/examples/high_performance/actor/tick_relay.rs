@@ -23,8 +23,8 @@ pub async fn run(context: SteadyActorShadow
 
 async fn internal_behavior<A: SteadyActor>(mut actor: A, ticks_rx: SteadyRx<Tick>, ticks_tx: SteadyTx<Tick>) -> Result<(), Box<dyn Error>> {
     let _cli_args = actor.args::<Args>();
-    let mut ticks_rx_lock = ticks_rx.lock().await;
-    let mut ticks_tx_lock = ticks_tx.lock().await;
+    let mut ticks_rx_lock = ticks_rx.acquire_guard().await;
+    let mut ticks_tx_lock = ticks_tx.acquire_guard().await;
     let mut buffer = [Tick::default(); BATCH];
 
     while actor.is_running(&mut || ticks_rx_lock.is_closed_and_empty() && ticks_tx_lock.mark_closed()) {

@@ -69,11 +69,11 @@ async fn internal_behavior<A: SteadyActor>(
     let expected_total = beats * VALUES_PER_HEARTBEAT;
 
     // Lock the input channel for exclusive access during message processing.
-    let mut rx = rx.lock().await;
+    let mut rx = rx.acquire_guard().await;
 
     // Lock the persistent state for this actor. If this is the first run, initialize
     // the state with zeroed counters and a batch size based on channel capacity.
-    let mut state = state.lock(|| LoggerState {
+    let mut state = state.acquire_guard(|| LoggerState {
         messages_logged: 0,
         batch_size: rx.capacity() / 2,
         fizz_count: 0,

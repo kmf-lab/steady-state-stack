@@ -58,12 +58,12 @@ async fn internal_behavior<A: SteadyActor>(
     logger: SteadyTx<FizzBuzzMessage>,
     state: SteadyState<WorkerState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut heartbeat = heartbeat.lock().await;
-    let mut generator = generator.lock().await;
-    let mut logger = logger.lock().await;
+    let mut heartbeat = heartbeat.acquire_guard().await;
+    let mut generator = generator.acquire_guard().await;
+    let mut logger = logger.acquire_guard().await;
 
     let mut state = state
-        .lock(|| WorkerState {
+        .acquire_guard(|| WorkerState {
             heartbeats_processed: 0,
             values_processed: 0,
             audit_position: 0,

@@ -39,7 +39,9 @@ pub(crate) async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx
     let _args = actor.args::<Args>(); //or you can turbo fish here to get your args
     //trace!("running {:?} {:?}",context.id(),context.name());
 
-    let mut rx = rx.lock().await;
+    let mut rx = rx.acquire_guard().await;
+    // NOTE: `state` here is a genuine `futures_util::lock::Mutex` over app state
+    // (shared with main), not a Steady channel — `.lock().await` is correct for it.
     let mut state = state.lock().await;
 
     //predicate which affirms or denies the shutdown request

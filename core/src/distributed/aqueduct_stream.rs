@@ -105,8 +105,16 @@ pub type SteadyStreamTxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamTx<T>; G
 /// Trait providing methods for interacting with a bundle of receiver streams.
 // ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamRxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
-    /// Acquires locks for all receivers in the bundle, returning a future that resolves when all locks are obtained.
+    /// Acquires the guards for all receivers in the bundle, returning a future that resolves when every guard is bound.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>>;
+
+    /// Guard-first alias for [`SteadyStreamRxBundleTrait::lock`] — the preferred spelling.
+    ///
+    /// Identical future and semantics; only the vocabulary changes. Hold the guards for the
+    /// life of the actor; this is not a mutex critical section.
+    fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>> {
+        self.lock()
+    }
 
     /// Retrieves metadata for the control channels of all receivers in the bundle.
     // ss[related distributed.aqueduct-stream]
@@ -151,8 +159,16 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 /// Trait providing methods for interacting with a bundle of transmitter streams.
 // ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamTxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
-    /// Acquires locks for all transmitters in the bundle, returning a future that resolves when all locks are obtained.
+    /// Acquires the guards for all transmitters in the bundle, returning a future that resolves when every guard is bound.
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>>;
+
+    /// Guard-first alias for [`SteadyStreamTxBundleTrait::lock`] — the preferred spelling.
+    ///
+    /// Identical future and semantics; only the vocabulary changes. Hold the guards for the
+    /// life of the actor; this is not a mutex critical section.
+    fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>> {
+        self.lock()
+    }
 
     /// Retrieves metadata for the control channels of all transmitters in the bundle.
     // ss[related distributed.aqueduct-stream]

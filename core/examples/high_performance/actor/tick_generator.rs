@@ -24,19 +24,18 @@ pub async fn run<const TICKS_TX_GIRTH:usize>(context: SteadyActorShadow
 
 const BUFFER_SIZE:usize = 2000;
 
-#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor: C
                                                                       , ticks_tx: SteadyTxBundle<Tick, TICKS_TX_GIRTH>) -> Result<(),Box<dyn Error>> {
 
     let _cli_args = actor.args::<Args>();
 
-    let mut ticks_tx = ticks_tx.lock().await;
+    let mut ticks_tx = ticks_tx.acquire_guard().await;
     let batch = ticks_tx.capacity()/4;
     let mut buffers:[Tick; BUFFER_SIZE] = [Tick { value: 0 }; BUFFER_SIZE];
 
     let mut count: u128 = 0;
     while actor.is_running(&mut || ticks_tx.mark_closed()) {
-         let _clean = await_for_all!(actor.wait_vacant_bundle(&mut ticks_tx, batch, TICKS_TX_GIRTH)    );
+         let _lane = actor.wait_vacant_index(&mut ticks_tx, &[batch; TICKS_TX_GIRTH]).await;
          for i in 0..TICKS_TX_GIRTH {
              
              let c = ticks_tx[i].vacant_units().min(BUFFER_SIZE);

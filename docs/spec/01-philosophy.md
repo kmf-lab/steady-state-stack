@@ -38,7 +38,7 @@ ss[philosophy.lock-first-contract]
 
 Actors MUST acquire all channel and state guards once at the start of `internal_behavior` and MUST NOT re-lock inside the hot loop.
 
-**Rationale:** Lock-first resource contract (manifesto §II.3).
+**Rationale:** Guard-first (bind-all-at-entry) resource contract (manifesto §II.3).
 
 **Tier:** 0
 

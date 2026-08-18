@@ -69,10 +69,10 @@ async fn internal_behavior<A: SteadyActor,const NUMBERS_RX_GIRTH: usize>(
     errors_tx: SteadyTx<ErrorMessage>,
     state: SteadyState<RuntimeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut state = state.lock(|| RuntimeState::new(1)).await;
-        let mut numbers_rx = numbers_rx.lock().await;
-        let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.lock().await;
-        let mut errors_tx = errors_tx.lock().await;
+    let mut state = state.acquire_guard(|| RuntimeState::new(1)).await;
+        let mut numbers_rx = numbers_rx.acquire_guard().await;
+        let mut fizzbuzz_messages_tx = fizzbuzz_messages_tx.acquire_guard().await;
+        let mut errors_tx = errors_tx.acquire_guard().await;
 
         if state.value > 1 {
             let _ = actor

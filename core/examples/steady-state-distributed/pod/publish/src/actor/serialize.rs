@@ -56,9 +56,9 @@ async fn internal_behavior<A: SteadyActor>(
 ) -> Result<(), Box<dyn Error>> {
     // Lock channels for mutable access, enabling asynchronous reading and writing.
     // This ensures exclusive access to the buffers during processing.
-    let mut rx_heartbeat = heartbeat.lock().await;
-    let mut rx_generator = generator.lock().await;
-    let mut output = output.lock().await;
+    let mut rx_heartbeat = heartbeat.acquire_guard().await;
+    let mut rx_generator = generator.acquire_guard().await;
+    let mut output = output.acquire_guard().await;
     // Remove the two output streams from the bundle: one for generator, one for heartbeat.  //#!#//
     let mut tx_generator = output.remove(1); // Generator output stream (index 1)
     let mut tx_heartbeat = output.remove(0); // Heartbeat output stream (index 0)

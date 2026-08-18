@@ -320,14 +320,25 @@ impl<T: Send + Sync> TxMetaDataProvider for Arc<Mutex<Tx<T>>> {
 /// This trait provides methods for synchronized operations across multiple channels, such as locking or waiting for vacant units, which is valuable in systems requiring coordinated channel management.
 // ss[related channel.backpressure-never-drop]
 pub trait SteadyTxBundleTrait<T, const GIRTH: usize> {
-    /// Acquires locks on all channels in the bundle.
+    /// Acquires the guards on all channels in the bundle.
     ///
-    /// This method returns a future that resolves when all channels in the bundle are locked, enabling synchronized access across the entire set.
+    /// This method returns a future that resolves when every channel guard in the bundle is bound, enabling synchronized access across the entire set.
+    /// Hold the guards for the life of the actor (guard-first, bind-all-at-entry); on panic they are dropped and the rings retain their messages.
     ///
     /// # Returns
-    /// A `JoinAll` future resolving to a collection of mutex guards for the channels.
+    /// A `JoinAll` future resolving to a collection of channel guards for the channels.
     // ss[related channel.backpressure-never-drop]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>>;
+
+    /// Guard-first alias for [`SteadyTxBundleTrait::lock`] — the preferred spelling.
+    ///
+    /// Identical future and semantics; only the vocabulary changes. Steady says
+    /// "acquire the guard", not "lock", because this is not a mutex critical section:
+    /// guards are held across `.await` for the actor's lifetime.
+    // ss[related channel.backpressure-never-drop]
+    fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Tx<T>>> {
+        self.lock()
+    }
 
     /// Retrieves metadata for all transmission channels in the bundle.
     ///

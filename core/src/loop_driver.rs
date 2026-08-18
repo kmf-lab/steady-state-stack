@@ -20,6 +20,21 @@ use futures_util::future::FusedFuture;
 ///
 /// This macro is useful for synchronizing multiple asynchronous operations where all must succeed.
 /// The result is a boolean indicating whether all futures returned `true`.
+///
+/// # Clean vs dirty wakes
+///
+/// Every `bool` fed into these macros is a **wake result**: `true` means the awaited
+/// condition was met, `false` means the wait was interrupted (shutdown). The AND of the
+/// set is the cleanliness of this reactor tick:
+///
+/// * **Clean wake (`true`)** — every condition is genuinely satisfied; proceed to
+///   peek/take/send with confidence.
+/// * **Dirty wake (`false`)** — at least one wait was interrupted. Do **not** assume
+///   readiness. Drain whatever partial work is legitimately available, then let the
+///   `is_running(...)` loop condition exit the actor.
+///
+/// Macro results cannot carry `#[must_use]`, so this convention is contractual: always
+/// bind the result (`let clean = await_for_all!(...)`) and gate readiness on it.
 #[macro_export]
 // ss[related philosophy.single-wake-up]
 macro_rules! await_for_all {
@@ -199,6 +214,16 @@ where
 ///
 /// Waits for either the first future to complete, or for all of the rest to complete.
 /// Returns a boolean indicating if all completed with `true`, or the result of the first future if it completes first.
+///
+/// # Clean vs dirty wakes
+///
+/// The first arm is typically the work trigger (e.g. data availability); the remaining
+/// arms are supporting conditions. If the first arm completes first, its wake result is
+/// returned and the other futures are dropped mid-flight — treat a `false` as an
+/// interrupted (dirty) wake: drain what is legitimately available, do not assume the
+/// dropped conditions were met, and let `is_running(...)` exit on shutdown. Macro results
+/// cannot carry `#[must_use]`; always bind the result (`let clean = ...`) and gate
+/// readiness on it.
 #[macro_export]
 // ss[related philosophy.single-wake-up]
 macro_rules! await_for_all_or_proceed_upon {
@@ -238,6 +263,15 @@ macro_rules! await_for_all_or_proceed_upon {
 ///
 /// This macro is useful for racing multiple asynchronous operations and acting on the first to complete.
 /// The result is the output of the first future that completes.
+///
+/// # Clean vs dirty wakes
+///
+/// Only the winning future's wake result is returned; the losers are dropped mid-flight.
+/// A `true` result vouches **only** for the lane that won — the other conditions are
+/// unknown, so never treat "any" as "all". A `false` result means the winning wait was
+/// interrupted (dirty wake): drain what is legitimately available, do not assume
+/// readiness, and let `is_running(...)` exit on shutdown. Macro results cannot carry
+/// `#[must_use]`; always bind the result (`let clean = ...`) and gate readiness on it.
 #[macro_export]
 // ss[related philosophy.single-wake-up]
 macro_rules! await_for_any {

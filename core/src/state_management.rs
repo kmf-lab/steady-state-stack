@@ -54,7 +54,7 @@ impl<S> Default for SteadyState<S> {
 // ss[related state.lock-init-once]
 impl<S> SteadyState<S> {
 
-    /// Asynchronously locks the state, initializing it if absent.
+    /// Asynchronously acquires the state guard, initializing it if absent.
     ///
     /// If the state is `None`, the provided `init` closure is called to create the initial state.
     ///
@@ -81,6 +81,21 @@ impl<S> SteadyState<S> {
             on_drop: self.on_drop.clone(),
             on_persist: self.on_persist.clone(),
         }
+    }
+
+    /// Guard-first alias for [`SteadyState::lock`] — the preferred spelling.
+    ///
+    /// Acquires the state guard, initializing it if absent. Identical semantics to
+    /// `lock(init)`; only the vocabulary changes. Steady says "acquire the guard",
+    /// not "lock", because the guard is held across `.await` for the actor's work —
+    /// it is not a mutex critical section.
+    // ss[related state.lock-init-once]
+    pub async fn acquire_guard<F>(&self, init: F) -> StateGuard<'_, S>
+    where
+        F: FnOnce() -> S,
+        S: Send,
+    {
+        self.lock(init).await
     }
 
     /// Lock state to review or modify its values after it has been created or initialized.

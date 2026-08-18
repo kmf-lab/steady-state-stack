@@ -35,9 +35,9 @@ pub async fn run(context: SteadyActorShadow
 
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<WidgetInventory>, tx: SteadyTx<ApprovedWidgets>, feedback: SteadyTx<FailureFeedback>) -> Result<(), Box<dyn Error>> {
 
-    let mut tx = tx.lock().await;
-    let mut rx = rx.lock().await;
-    let mut feedback = feedback.lock().await;
+    let mut tx = tx.acquire_guard().await;
+    let mut rx = rx.acquire_guard().await;
+    let mut feedback = feedback.acquire_guard().await;
 
     let mut buffer = [WidgetInventory { count: 0, _payload: 0, }; BATCH_SIZE];
 

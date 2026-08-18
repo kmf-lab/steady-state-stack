@@ -31,8 +31,8 @@ const WAIT_AVAIL: usize = 250;
 async fn internal_behavior<C: SteadyActor>(mut actor: C, rx: SteadyRx<Tick>, tx: SteadyTx<TickCount>) -> Result<(), Box<dyn Error>> {
     let _cli_args = actor.args::<Args>();
 
-    let mut ticks_rx = rx.lock().await;
-    let mut tick_counts_tx = tx.lock().await;
+    let mut ticks_rx = rx.acquire_guard().await;
+    let mut tick_counts_tx = tx.acquire_guard().await;
     let mut buffer = [Tick::default(); BATCH];
 
     while actor.is_running(&mut || ticks_rx.is_closed_and_empty() && tick_counts_tx.mark_closed()) {

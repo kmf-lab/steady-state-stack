@@ -18,7 +18,7 @@ ss[actor.run-dispatcher]
 
 ss[actor.internal-behavior-logic]
 
-`internal_behavior` MUST contain domain logic only: lock-first, `is_running` loop, consolidated waits, and message processing without graph orchestration.
+`internal_behavior` MUST contain domain logic only: guard-first, `is_running` loop, consolidated waits, and message processing without graph orchestration.
 
 **Tier:** 0
 
@@ -26,7 +26,7 @@ ss[actor.internal-behavior-logic]
 
 ss[actor.lock-first.channels]
 
-At the start of `internal_behavior`, the actor MUST call `.lock().await` on every `SteadyRx` / `SteadyTx` (and bundle locks) it uses in the loop.
+At the start of `internal_behavior`, the actor MUST call `.acquire_guard().await` on every `SteadyRx` / `SteadyTx` (and bundle guards) it uses in the loop.
 
 **Tier:** 0
 

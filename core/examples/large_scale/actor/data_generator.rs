@@ -24,14 +24,13 @@ pub async fn run<const GIRTH:usize>(context: SteadyActorShadow
     }
 }
 
-#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
                                                              , tx: SteadyTxBundle<Packet, GIRTH>) -> Result<(),Box<dyn Error>> {
 
     const ARRAY_REPEAT_VALUE: Vec<Packet> = Vec::new();
 
     let mut buffers:[Vec<Packet>; GIRTH] = [ARRAY_REPEAT_VALUE; GIRTH];
-    let mut tx:TxBundle<Packet> = tx.lock().await;
+    let mut tx:TxBundle<Packet> = tx.acquire_guard().await;
 
     let capacity = tx[0].capacity();
     let limit:usize = capacity/2;
@@ -40,7 +39,7 @@ async fn internal_behavior<const GIRTH:usize,C: SteadyActor>(mut actor: C
 
         let _clean = await_for_all!(
             actor.wait_periodic(Duration::from_millis(500)),
-            actor.wait_vacant_bundle(&mut tx, limit, GIRTH)
+            async { actor.wait_vacant_index(&mut tx, &[limit; GIRTH]).await.is_some() }
         );
 
 

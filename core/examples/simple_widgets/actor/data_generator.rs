@@ -34,8 +34,8 @@ async fn internal_behavior<C: SteadyActor>(mut actor:C
         10_000 //default
     };
 
-    let mut feedback = feedback.lock().await;
-    let mut tx = tx.lock().await;
+    let mut feedback = feedback.acquire_guard().await;
+    let mut tx = tx.acquire_guard().await;
     let mut count = 0;
 
     const MULTIPLIER:usize = 256;   //500_000 per second at 500 micros

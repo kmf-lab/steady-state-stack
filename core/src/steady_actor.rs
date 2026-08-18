@@ -406,6 +406,7 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool;
 
     /// Checks if the actor's liveliness state matches any of the provided states.
@@ -445,11 +446,13 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
     /// Waits for a fixed interval between calls, regardless of work time.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_timeout(&self, timeout: Duration) -> bool;
 
 
@@ -461,6 +464,7 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if available, `false` if interrupted.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool;
 
     /// Waits until at least `count` units are available in a bundle of receivers.
@@ -471,6 +475,7 @@ pub trait SteadyActor {
     /// returns the index of the first ready channel.
     // ss[impl bundle.deprecated-bundle-waits]
     #[deprecated(since = "0.3.0", note = "Use wait_avail_index instead, which returns the index of the first ready channel")]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_avail_bundle<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -502,6 +507,7 @@ pub trait SteadyActor {
     ///
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -512,6 +518,7 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if the future completed, `false` if shutdown occurred.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync;
@@ -520,6 +527,7 @@ pub trait SteadyActor {
     ///
     /// Returns `true` if available, `false` if interrupted.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
 
     /// Waits until at least `count` vacant units are available in a bundle of transmitters.
@@ -529,6 +537,7 @@ pub trait SteadyActor {
     /// ⚠️ **Deprecated**: Prefer [`wait_vacant_index`](SteadyActor::wait_vacant_index) which
     /// returns the index of the first ready channel.
     #[deprecated(since = "0.3.0", note = "Use wait_vacant_index instead, which returns the index of the first ready channel")]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     // ss[related actor.run-dispatcher]
     async fn wait_vacant_bundle<T: TxCore>(
         &self,
@@ -558,6 +567,7 @@ pub trait SteadyActor {
     ///
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -582,6 +592,7 @@ pub trait SteadyActor {
     /// **Telemetry:** Like other index waits, this does not use the [`wait_avail`](SteadyActor::wait_avail) /
     /// [`wait_vacant`](SteadyActor::wait_vacant) telemetry-dirty yield path.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -594,6 +605,7 @@ pub trait SteadyActor {
     ///
     /// Always returns `true`.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_shutdown(&self) -> bool;
 
     /// Peeks at the next available slice in the receiver without advancing the index.
@@ -714,6 +726,7 @@ pub trait SteadyActor {
 
     /// Asynchronously waits until the transmitter is empty.
     // ss[related actor.run-dispatcher]
+    #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool;
 
     /// Takes all available messages from the receiver into an iterator.

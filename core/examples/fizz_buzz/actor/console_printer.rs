@@ -26,8 +26,8 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
                                            , fizzbuzz_messages_rx: SteadyRx<FizzBuzzMessage>
                                            , print_signal_rx: SteadyRx<PrintSignal>) -> Result<(),Box<dyn Error>> {
 
-    let mut fizzbuzz_messages_rx = fizzbuzz_messages_rx.lock().await;
-    let mut print_signal_rx = print_signal_rx.lock().await;
+    let mut fizzbuzz_messages_rx = fizzbuzz_messages_rx.acquire_guard().await;
+    let mut print_signal_rx = print_signal_rx.acquire_guard().await;
 
     //boxed so we can allocate more since it is out on the heap.
     let mut buffer:Box<[FizzBuzzMessage; BATCH_SIZE]> = Box::new([FizzBuzzMessage::default(); BATCH_SIZE]);

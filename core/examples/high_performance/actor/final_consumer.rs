@@ -20,18 +20,17 @@ pub async fn run<const TICK_COUNTS_RX_GIRTH:usize,>(context: SteadyActorShadow
     }
 }
 
-#[allow(deprecated)] // K-of-N / all-lanes: `wait_*_bundle` semantics; not replaceable by index waits without restructuring the loop.
 async fn internal_behavior<const TICK_COUNTS_RX_GIRTH:usize,C: SteadyActor>(mut actor: C, tick_counts_rx: SteadyRxBundle<TickCount, { TICK_COUNTS_RX_GIRTH }>) -> Result<(), Box<dyn Error>> {
     let _cli_args = actor.args::<Args>();
 
-    let mut tick_counts_rx = tick_counts_rx.lock().await;
+    let mut tick_counts_rx = tick_counts_rx.acquire_guard().await;
     let buffer = [TickCount::default(); BATCH];
 
     let mut my_max_count: u128 = 0;
 
     while actor.is_running(&mut || tick_counts_rx.is_closed_and_empty()) { //TODO: fix code generator!!
 
-        let _clean = await_for_all!(actor.wait_avail_bundle(&mut tick_counts_rx, 1, TICK_COUNTS_RX_GIRTH)    );
+        let _lane = actor.wait_avail_index(&mut tick_counts_rx, &[1; TICK_COUNTS_RX_GIRTH]).await;
 
         for i in 0..TICK_COUNTS_RX_GIRTH {
             let slice = actor.peek_slice(&mut tick_counts_rx[i]);

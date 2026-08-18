@@ -81,11 +81,11 @@ async fn internal_behavior<A: SteadyActor{%- if has_bundles -%},{% endif -%}
 , state: SteadyState<{{ display_name|capitalize }}InternalState>
  ) -> Result<(),Box<dyn Error>> {
 
-    let mut state = state.lock( || {{ display_name|capitalize }}InternalState::default()).await;
-   //every read and write channel must be locked for this instance use, this is outside before the loop
+    let mut state = state.acquire_guard( || {{ display_name|capitalize }}InternalState::default()).await;
+   //every read and write channel guard must be acquired for this instance use, this is outside before the loop
  {%- for channel in rx_channels %}
-   let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.lock().await;{% endfor %}{% for channel in tx_channels %}
-   let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.lock().await;{% endfor %}
+   let mut {{channel[0].name}}_rx = {{channel[0].name}}_rx.acquire_guard().await;{% endfor %}{% for channel in tx_channels %}
+   let mut {{channel[0].name}}_tx = {{channel[0].name}}_tx.acquire_guard().await;{% endfor %}
 
    //this is the main loop of the actor, will run until shutdown is requested.
    //the closure is called upon shutdown to determine if we need to postpone the shutdown
