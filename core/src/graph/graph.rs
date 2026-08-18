@@ -5,7 +5,7 @@ use super::liveliness::GraphLiveliness;
 use super::shutdown::{effective_block_until_stopped_timeout, watch_shutdown};
 use super::state::GraphLivelinessState;
 use super::testing_guard::StageManagerGuard;
-use log::{error, trace};
+use log::{debug, error, trace};
 
 /// Represents the graph of actors and manages their execution and lifecycle.
 ///
@@ -286,11 +286,15 @@ impl Graph {
 
     /// Blocks the current thread until the graph has fully stopped.
     ///
-    /// This method waits for the shutdown process to complete, either cleanly or uncleanly.
+    /// This method first waits indefinitely for shutdown to be requested (i.e. for the graph
+    /// to leave the `Running`/`Building` state). Only once shutdown has been requested does
+    /// `clean_shutdown_timeout` begin: it bounds the voting/draining phase during which all
+    /// actors must accept the stop.
     ///
     /// # Arguments
     ///
-    /// * `clean_shutdown_timeout` - THE maximum duration to wait for a clean shutdown.
+    /// * `clean_shutdown_timeout` - THE maximum duration to wait for a clean shutdown
+    ///   after shutdown has been requested.
     ///
     /// # Returns
     ///
@@ -314,13 +318,18 @@ impl Graph {
                 None
             }
         } {
-            core_exec::block_on(async move {
-                use futures_util::FutureExt;
-                futures::select! {
-                    _ = wait_on.fuse() => {},
-                    _ = futures_timer::Delay::new(timeout).fuse() => {},
+            // Re-check after registration: internal_request_shutdown sets StopRequested
+            // BEFORE draining the oneshot vec, so if we observe StopRequested here our
+            // tx was either already fired or will never fire - waiting would hang forever.
+            // If we still observe Running/Building, our push happened-before any future
+            // drain, guaranteeing the oneshot fires.
+            if self.runtime_state.read().is_in_state(&[GraphLivelinessState::Running, GraphLivelinessState::Building]) {
+                // Wait without a timeout for shutdown to be requested; the clean-shutdown
+                // timeout applies only to the voting phase watched below.
+                if let Err(dropped) = core_exec::block_on(wait_on) {
+                    debug!("shutdown oneshot sender dropped: {:?}", dropped);
                 }
-            });
+            }
         }
         let now = Instant::now();
         let rs = self.runtime_state;

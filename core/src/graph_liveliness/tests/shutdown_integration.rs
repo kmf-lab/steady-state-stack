@@ -63,3 +63,36 @@ fn test_clean_shutdown_actor_accepts_stop() {
     assert!(result.is_ok());
 }
 
+/// Regression: `block_until_stopped` must wait indefinitely for shutdown to be
+/// requested; `clean_shutdown_timeout` bounds only the voting phase AFTER
+/// `StopRequested`. A delayed shutdown request must not trip the timeout.
+// ss[verify graph.block-until-stopped]
+#[test]
+fn test_block_until_stopped_waits_for_delayed_shutdown_request() {
+    let mut graph = GraphBuilder::for_testing().build(());
+
+    graph
+        .actor_builder()
+        .with_name("DelayedShutdown")
+        .build(
+            |mut actor| {
+                Box::pin(async move {
+                    // Request shutdown well after the clean-shutdown timeout has passed.
+                    actor.wait(Duration::from_millis(1500)).await;
+                    actor.request_shutdown().await;
+                    while actor.is_running(|| true) {
+                        actor.wait(Duration::from_millis(10)).await;
+                    }
+                    Ok(())
+                })
+            },
+            ScheduleAs::SoloAct,
+        );
+
+    graph.start();
+    let started = Instant::now();
+    let result = graph.block_until_stopped(Duration::from_millis(100));
+    assert!(result.is_ok());
+    assert!(started.elapsed() >= Duration::from_millis(1500));
+}
+
