@@ -86,17 +86,17 @@ ss[channel.memory-usage-telemetry]
 
 ---
 
-ss[channel.message-byte-estimate]
+ss[channel.ring-memory-footprint]
 
-`with_message_byte_estimate` MUST set per-slot bytes for telemetry footprint as `capacity × estimate`; the argument MUST NOT include capacity.
+Ring memory telemetry MUST report the static slab as `capacity × size_of::<T>()` (`ring_slot_byte_count` at build). DOT labels MUST use the `ring` suffix (e.g. `800B ring`).
 
 **Tier:** 1
 
 ---
 
-ss[channel.ring-memory-footprint]
+ss[channel.dynamic-payload-estimate]
 
-`with_ring_memory_footprint` MUST set telemetry footprint to the provided ring total without multiplying by capacity again.
+`with_dynamic_payload_estimate` MUST set per-slot heap/referenced payload bytes for telemetry dyn ceiling as `capacity × estimate`; the argument MUST NOT include capacity. DOT labels MUST use the `dyn` suffix when non-zero (e.g. `48GB dyn`).
 
 **Tier:** 1
 
@@ -116,5 +116,5 @@ ss[channel.ring-memory-footprint]
 | `channel.stream-dual-buffer` | Stream TX/RX pair | 1 |
 | `channel.eager-build-test` | Eager for tests | 1 |
 | `channel.memory-usage-telemetry` | Builder memory hook | 1 |
-| `channel.message-byte-estimate` | Per-slot byte override | 1 |
-| `channel.ring-memory-footprint` | Ring-total footprint override | 1 |
+| `channel.ring-memory-footprint` | Structural ring slab telemetry | 1 |
+| `channel.dynamic-payload-estimate` | Dyn heap ceiling telemetry | 1 |

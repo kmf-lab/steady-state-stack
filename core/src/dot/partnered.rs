@@ -40,7 +40,9 @@ pub(crate) struct PartneredEdge {
     // ss[impl telemetry.dot-export]
     pub(crate) pen_width: String,
     // ss[impl telemetry.dot-export]
-    pub(crate) memory_footprint: usize,
+    pub(crate) ring_memory_footprint: usize,
+    // ss[impl telemetry.dot-export]
+    pub(crate) dynamic_memory_footprint: usize,
     // ss[impl telemetry.dot-export]
     pub(crate) show_memory: bool,
     // ss[impl telemetry.dot-export]

@@ -115,7 +115,8 @@ fn make_memory_edge(
     let mut stats = ChannelStatsComputer::default();
     stats.capacity = footprint;
     stats.type_byte_count = 1;
-    stats.memory_footprint = footprint;
+    stats.ring_memory_footprint = footprint;
+    stats.dynamic_memory_footprint = 0;
     stats.show_memory = show_memory;
     Edge {
         id,
@@ -136,10 +137,11 @@ fn make_memory_edge(
 }
 
 // ss[related telemetry.dot-export]
-fn compressed_bytes(val: u128) -> String {
+fn compressed_ring(val: u128) -> String {
     let mut s = String::new();
-    crate::channel_stats_labels::format_compressed_u128(val, &mut s);
-    format!("{s}B")
+    crate::channel_stats_labels::format_memory_bytes_u128(val, &mut s);
+    s.push_str(" ring");
+    s
 }
 
 ss_proptest! {
@@ -447,10 +449,10 @@ ss_proptest! {
             bundle_floor_size: 8,
         };
         let dot = render_dot(&state);
-        let expected = compressed_bytes(sum as u128);
+        let expected = compressed_ring(sum as u128);
         prop_assert!(
             dot.contains(&format!("stream [0] ({expected})")),
-            "partner header missing combined memory {expected}:\n{dot}"
+            "partner header missing combined ring memory {expected}:\n{dot}"
         );
     }
 
@@ -485,14 +487,14 @@ ss_proptest! {
             bundle_floor_size: 2,
         };
         let dot = render_dot(&state);
-        let expected = compressed_bytes(total as u128);
+        let expected = compressed_ring(total as u128);
         prop_assert!(
             dot.contains(&format!("P: {group_count}x ({expected})")),
-            "bundle header missing summed memory:\n{dot}"
+            "bundle header missing summed ring memory:\n{dot}"
         );
         prop_assert!(
             dot.contains(&format!("Memory: {expected}")),
-            "bundle tooltip missing summed memory:\n{dot}"
+            "bundle tooltip missing summed ring memory:\n{dot}"
         );
     }
 

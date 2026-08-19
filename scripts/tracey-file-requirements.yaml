@@ -187,10 +187,11 @@ files:
     primary: telemetry.channel-labels
     requirements:
       - channel.ring-memory-footprint
+      - channel.dynamic-payload-estimate
     test_default_verify: telemetry.channel-labels
     test_rules:
-      - {substr: ring_override, id: channel.ring-memory-footprint}
-      - {substr: per_message, id: channel.message-byte-estimate}
+      - {substr: ring_memory_footprint, id: channel.ring-memory-footprint}
+      - {substr: dynamic_memory_footprint, id: channel.dynamic-payload-estimate}
 
   channel_stats_labels.rs:
     primary: telemetry.channel-labels
@@ -333,12 +334,12 @@ files:
     requirements:
       - channel.backpressure-never-drop
       - bundle.girth-const-generic
-      - channel.message-byte-estimate
+      - channel.dynamic-payload-estimate
       - channel.ring-memory-footprint
     test_rules:
       - {substr: proptest, id: verify.process.proptest}
       - {substr: memory_usage, id: channel.memory-usage-telemetry}
-      - {substr: message_byte_estimate, id: channel.message-byte-estimate}
+      - {substr: dynamic_payload_estimate, id: channel.dynamic-payload-estimate}
       - {substr: ring_memory_footprint, id: channel.ring-memory-footprint}
       - {substr: bundle, id: bundle.girth-const-generic}
       - {substr: stream, id: channel.stream-dual-buffer}

@@ -416,14 +416,19 @@ impl<T> Rx<T> {
     /// `Box<[u8]>`).
     ///
     /// For DOT display, use [`ChannelBuilder::with_memory_usage`](crate::channel_builder::ChannelBuilder::with_memory_usage).
-    /// When [`ChannelMetaData::ring_memory_footprint_override`] is set, use [`Self::memory_bytes`]
-    /// rather than `capacity() × width()`.
+    /// For heap beyond the ring, see [`Self::dynamic_memory_bytes`].
     ///
     /// # Returns
     /// Reserved buffer footprint in bytes.
     // ss[impl channel.memory-usage-telemetry]
     pub fn memory_bytes(&self) -> usize {
-        crate::monitor::channel_memory_footprint(&self.channel_meta_data.meta_data)
+        crate::monitor::channel_ring_memory_footprint(&self.channel_meta_data.meta_data)
+    }
+
+    /// Returns the estimated max heap beyond the ring when every slot holds a full payload.
+    // ss[impl channel.dynamic-payload-estimate]
+    pub fn dynamic_memory_bytes(&self) -> usize {
+        crate::monitor::channel_dynamic_memory_footprint(&self.channel_meta_data.meta_data)
     }
 
     /// Returns the number of messages currently available in the channel.
@@ -790,6 +795,10 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
     /// Combined reserved buffer footprint in bytes.
     // ss[impl channel.memory-usage-telemetry]
     fn memory_bytes(&self) -> usize;
+
+    /// Combined estimated dyn heap ceiling across all lanes in the bundle.
+    // ss[impl channel.dynamic-payload-estimate]
+    fn dynamic_memory_bytes(&self) -> usize;
 }
 
 // ss[related philosophy.zero-copy-discipline]
@@ -861,7 +870,15 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
     // ss[impl channel.memory-usage-telemetry]
     fn memory_bytes(&self) -> usize {
         self.iter()
-            .map(|rx| crate::monitor::channel_memory_footprint(&*RxMetaDataProvider::meta_data(rx)))
+            .map(|rx| crate::monitor::channel_ring_memory_footprint(&*RxMetaDataProvider::meta_data(rx)))
+            .sum()
+    }
+
+    fn dynamic_memory_bytes(&self) -> usize {
+        self.iter()
+            .map(|rx| {
+                crate::monitor::channel_dynamic_memory_footprint(&*RxMetaDataProvider::meta_data(rx))
+            })
             .sum()
     }
 }

@@ -251,16 +251,26 @@ pub struct ChannelMetaData {
     /// Indicates whether to display memory usage in telemetry.
     // ss[related philosophy.single-wake-up]
     pub(crate) show_memory: bool,
-    /// When set, telemetry footprint uses this total directly instead of `capacity × type_byte_count`.
+    /// Bytes per ring slot (`size_of::<T>()` at channel build).
     // ss[related channel.ring-memory-footprint]
-    pub(crate) ring_memory_footprint_override: Option<usize>,
+    pub(crate) ring_slot_byte_count: usize,
+    /// Per-slot heap/referenced payload estimate for telemetry (`capacity × estimate` when set).
+    // ss[related channel.dynamic-payload-estimate]
+    pub(crate) dynamic_per_slot_estimate: Option<usize>,
 }
 
-/// Returns the reserved ring-buffer footprint for telemetry and [`crate::steady_tx::Tx::memory_bytes`].
+/// Static ring slab: `capacity × ring_slot_byte_count`.
 // ss[impl channel.ring-memory-footprint]
-pub(crate) fn channel_memory_footprint(meta: &ChannelMetaData) -> usize {
-    meta.ring_memory_footprint_override
-        .unwrap_or(meta.capacity * meta.type_byte_count)
+pub(crate) fn channel_ring_memory_footprint(meta: &ChannelMetaData) -> usize {
+    meta.capacity * meta.ring_slot_byte_count
+}
+
+/// Estimated max heap beyond the ring when every slot holds a full off-ring payload.
+// ss[impl channel.dynamic-payload-estimate]
+pub(crate) fn channel_dynamic_memory_footprint(meta: &ChannelMetaData) -> usize {
+    meta.dynamic_per_slot_estimate
+        .map(|per_slot| meta.capacity * per_slot)
+        .unwrap_or(0)
 }
 
 /// Type alias for transmitter channel metadata, shared via an atomic reference count.

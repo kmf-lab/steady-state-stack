@@ -142,7 +142,9 @@ pub struct ChannelStatsComputer {
     // ss[related philosophy.structural-hierarchy]
     pub(crate) total_consumed: u128,
     // ss[related philosophy.structural-hierarchy]
-    pub(crate) memory_footprint: usize,
+    pub(crate) ring_memory_footprint: usize,
+    // ss[related philosophy.structural-hierarchy]
+    pub(crate) dynamic_memory_footprint: usize,
     // ss[related philosophy.structural-hierarchy]
     pub(crate) show_memory: bool,
 }
@@ -177,7 +179,8 @@ impl ChannelStatsComputer {
         self.bundle_index = meta.bundle_index;
         self.girth = meta.girth;
         self.total_consumed = 0;
-        self.memory_footprint = crate::monitor::channel_memory_footprint(meta);
+        self.ring_memory_footprint = crate::monitor::channel_ring_memory_footprint(meta);
+        self.dynamic_memory_footprint = crate::monitor::channel_dynamic_memory_footprint(meta);
         self.show_memory = meta.show_memory;
 
         meta.labels.iter().for_each(|f| {
@@ -1077,6 +1080,7 @@ mod channel_stats_tests {
             capacity: 100,
             show_total: true,
             type_byte_count: 8,
+            ring_slot_byte_count: 8,
             show_type: Some("u64"),
             refresh_rate_in_bits: 1, // Rollover every 2 frames
             window_bucket_in_bits: 1, // Window size 2 buckets
@@ -1164,41 +1168,44 @@ mod channel_stats_tests {
         
         // Verify internal state is set correctly (display label no longer contains these values)
         assert_eq!(computer.girth, 4);
-        assert_eq!(computer.memory_footprint, 800); // 100 * 8 bytes
+        assert_eq!(computer.ring_memory_footprint, 800); // 100 * 8 bytes
+        assert_eq!(computer.dynamic_memory_footprint, 0);
         assert!(computer.show_memory);
     }
 
     #[test]
-    // ss[verify channel.message-byte-estimate]
-    fn memory_footprint_uses_per_message_estimate_times_capacity() {
+    // ss[verify channel.ring-memory-footprint]
+    fn ring_memory_footprint_from_capacity_and_slot_bytes() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
         meta.capacity = 100;
-        meta.type_byte_count = 8;
+        meta.ring_slot_byte_count = 8;
         computer.init(
             &Arc::new(meta),
             ActorName::new("a", None),
             ActorName::new("b", None),
             1000,
         );
-        assert_eq!(computer.memory_footprint, 800);
+        assert_eq!(computer.ring_memory_footprint, 800);
+        assert_eq!(computer.dynamic_memory_footprint, 0);
     }
 
     #[test]
-    // ss[verify channel.ring-memory-footprint]
-    fn memory_footprint_ring_override_skips_capacity_multiply() {
+    // ss[verify channel.dynamic-payload-estimate]
+    fn dynamic_memory_footprint_from_per_slot_estimate() {
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();
-        meta.capacity = 16384;
-        meta.type_byte_count = 8;
-        meta.ring_memory_footprint_override = Some(4_200_000_000);
+        meta.capacity = 100;
+        meta.ring_slot_byte_count = 8;
+        meta.dynamic_per_slot_estimate = Some(256_000);
         computer.init(
             &Arc::new(meta),
             ActorName::new("a", None),
             ActorName::new("b", None),
             1000,
         );
-        assert_eq!(computer.memory_footprint, 4_200_000_000);
+        assert_eq!(computer.ring_memory_footprint, 800);
+        assert_eq!(computer.dynamic_memory_footprint, 25_600_000);
     }
 
     #[test]

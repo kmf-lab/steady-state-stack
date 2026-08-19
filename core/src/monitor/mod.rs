@@ -23,7 +23,7 @@ pub(crate) use helpers::{DriftCountIterator, FinallyRollupProfileGuard, find_my_
 // ss[related philosophy.single-wake-up]
 pub(crate) use metadata::{
     CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT,
-    channel_memory_footprint, METADATA_REGISTRY,
+    channel_dynamic_memory_footprint, channel_ring_memory_footprint, METADATA_REGISTRY,
 };
 
 // ss[related philosophy.single-wake-up]

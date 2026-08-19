@@ -276,6 +276,56 @@ pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     }
 }
 
+/// Formats byte counts for memory telemetry (`B`, `KB`, `MB`, `GB`, `TB` — never `BB`).
+// ss[impl telemetry.channel-labels]
+pub(crate) fn format_memory_bytes_u128(val: u128, target: &mut String) {
+    let mut b = itoa::Buffer::new();
+    let t = b.format(val);
+    if val >= 1_000_000_000_000 {
+        target.push_str(&t[..t.len() - 12]);
+        target.push_str("TB");
+    } else if val >= 1_000_000_000 {
+        target.push_str(&t[..t.len() - 9]);
+        target.push_str("GB");
+    } else if val >= 1_000_000 {
+        target.push_str(&t[..t.len() - 6]);
+        target.push_str("MB");
+    } else if val >= 1_000 {
+        target.push_str(&t[..t.len() - 3]);
+        target.push_str("KB");
+    } else {
+        target.push_str(t);
+        target.push('B');
+    }
+}
+
+/// Compact partner header: `(12KB ring + 48GB dyn)` or `(800B ring)` when dyn is zero.
+// ss[impl telemetry.channel-labels]
+pub(crate) fn format_memory_ring_dyn(ring: u128, dyn_bytes: u128, target: &mut String) {
+    target.push('(');
+    format_memory_bytes_u128(ring, target);
+    target.push_str(" ring");
+    if dyn_bytes > 0 {
+        target.push_str(" + ");
+        format_memory_bytes_u128(dyn_bytes, target);
+        target.push_str(" dyn");
+    }
+    target.push(')');
+}
+
+/// Line or tooltip fragment: `prefix` + ring/dyn pair (e.g. `Memory: 800B ring`).
+// ss[impl telemetry.channel-labels]
+pub(crate) fn format_memory_ring_dyn_prefixed(prefix: &str, ring: u128, dyn_bytes: u128, target: &mut String) {
+    target.push_str(prefix);
+    format_memory_bytes_u128(ring, target);
+    target.push_str(" ring");
+    if dyn_bytes > 0 {
+        target.push_str(" + ");
+        format_memory_bytes_u128(dyn_bytes, target);
+        target.push_str(" dyn");
+    }
+}
+
 // ss[impl telemetry.channel-labels]
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
@@ -393,6 +443,15 @@ mod tests {
             fixed_digits: 0,
         };
         format_label_prefix(labels, &mut String::new(), &mut String::new(), "", "");
+    }
+
+    #[test]
+    // ss[verify telemetry.channel-labels]
+    fn test_format_memory_bytes_u128_gb_not_bb() {
+        let mut out = String::new();
+        format_memory_bytes_u128(50_339_519_232, &mut out);
+        assert_eq!(out, "50GB");
+        assert!(!out.contains("BB"));
     }
 
     ss_proptest! {

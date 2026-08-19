@@ -85,9 +85,9 @@ use crate::steady_tx::Tx;
 // ss[impl channel.default-capacity]
 const DEFAULT_CAPACITY: usize = 64; // do not change
 
-/// Heuristic: per-slot estimate larger than `capacity × 1024` likely includes capacity already.
-// ss[related channel.message-byte-estimate]
-pub(crate) fn message_byte_estimate_looks_capacity_scaled(capacity: usize, bytes_per_slot: usize) -> bool {
+/// Heuristic: per-slot dyn estimate larger than `capacity × 1024` likely includes capacity already.
+// ss[related channel.dynamic-payload-estimate]
+pub(crate) fn dynamic_payload_estimate_looks_capacity_scaled(capacity: usize, bytes_per_slot: usize) -> bool {
     capacity > 0 && bytes_per_slot > capacity.saturating_mul(1024)
 }
 
@@ -204,11 +204,8 @@ pub struct ChannelBuilder {
     /// Indicates whether to display memory usage in telemetry.
     show_memory: bool,
 
-    /// Per-slot byte estimate for telemetry (`capacity × estimate`). Must not include capacity.
-    message_byte_estimate: Option<usize>,
-
-    /// Full ring reserved bytes for telemetry; skips the capacity multiply when set.
-    ring_memory_footprint_override: Option<usize>,
+    /// Per-slot heap/referenced payload estimate for telemetry dyn display.
+    dynamic_per_slot_estimate: Option<usize>,
 }
 
 // ss[related channel.lazy.defer-allocation]
@@ -281,8 +278,7 @@ impl ChannelBuilder {
             bundle_index: None,
             girth: 1,
             show_memory: false,
-            message_byte_estimate: None,
-            ring_memory_footprint_override: None,
+            dynamic_per_slot_estimate: None,
         }
     }
 
@@ -350,12 +346,10 @@ impl ChannelBuilder {
     /**
      * Enables reserved buffer memory display in telemetry and the DOT graph.
      *
-     * When enabled, the channel's **configured maximum** footprint is shown (not live occupancy).
-     * Default formula: `capacity × size_of::<T>()`. Override with
-     * [`with_message_byte_estimate`](Self::with_message_byte_estimate) (per-slot bytes) or
-     * [`with_ring_memory_footprint`](Self::with_ring_memory_footprint) (full ring total).
-     * Exposed programmatically via [`Tx::memory_bytes`](crate::steady_tx::Tx::memory_bytes)
-     * (or the Rx equivalents) after locking the established channel.
+     * When enabled, DOT shows **ring** (`capacity × size_of::<T>()`) and optional **dyn**
+     * (estimated heap beyond the ring via [`with_dynamic_payload_estimate`](Self::with_dynamic_payload_estimate)).
+     * Exposed programmatically via [`Tx::memory_bytes`](crate::steady_tx::Tx::memory_bytes) and
+     * [`Tx::dynamic_memory_bytes`](crate::steady_tx::Tx::dynamic_memory_bytes) after locking.
      *
      * **DOT graph display:**
      * - Single channel — edge label gains a `Memory: …B` line.
@@ -380,39 +374,24 @@ impl ChannelBuilder {
         result
     }
 
-    /// Per-slot byte estimate for telemetry footprint: `capacity × bytes_per_slot`.
+    /// Per-slot estimate of heap/referenced payload beyond the ring (`capacity × per_slot` dyn ceiling).
     ///
     /// # WARNING
     ///
-    /// `bytes_per_slot` must be the size of **one ring slot**, not the full ring budget.
-    /// Do not pass `capacity × per_slot` — that double-counts when capacity is applied again.
-    /// For a precomputed ring total, use [`with_ring_memory_footprint`](Self::with_ring_memory_footprint).
-    ///
-    /// When both override APIs are set, [`with_ring_memory_footprint`](Self::with_ring_memory_footprint)
-    /// wins for footprint; this still sets [`ChannelMetaData::type_byte_count`] for width reporting.
-    // ss[impl channel.message-byte-estimate]
-    pub fn with_message_byte_estimate(&self, bytes_per_slot: usize) -> Self {
-        if self.show_memory && message_byte_estimate_looks_capacity_scaled(self.capacity, bytes_per_slot) {
+    /// `bytes_per_slot` is **extra** heap per message at full occupancy, not ring slot size.
+    /// Do not pass `capacity × per_slot` — capacity is applied again for the dyn total.
+    /// Ring memory always remains `capacity × size_of::<T>()`.
+    // ss[impl channel.dynamic-payload-estimate]
+    pub fn with_dynamic_payload_estimate(&self, bytes_per_slot: usize) -> Self {
+        if self.show_memory && dynamic_payload_estimate_looks_capacity_scaled(self.capacity, bytes_per_slot) {
             warn!(
-                "with_message_byte_estimate({bytes_per_slot}) looks capacity-scaled for capacity {} \
-                 — pass per-slot bytes, not ring total (use with_ring_memory_footprint for totals)",
+                "with_dynamic_payload_estimate({bytes_per_slot}) looks capacity-scaled for capacity {} \
+                 — pass per-slot heap bytes, not ring total",
                 self.capacity
             );
         }
         let mut result = self.clone();
-        result.message_byte_estimate = Some(bytes_per_slot);
-        result
-    }
-
-    /// Sets reserved ring memory for telemetry without multiplying by capacity again.
-    ///
-    /// Use when the caller already has a full per-lane ring budget (e.g. `depth × per_slot`).
-    /// Takes precedence over [`with_message_byte_estimate`](Self::with_message_byte_estimate)
-    /// for footprint display and [`Tx::memory_bytes`](crate::steady_tx::Tx::memory_bytes).
-    // ss[impl channel.ring-memory-footprint]
-    pub fn with_ring_memory_footprint(&self, total_bytes: usize) -> Self {
-        let mut result = self.clone();
-        result.ring_memory_footprint_override = Some(total_bytes);
+        result.dynamic_per_slot_estimate = Some(bytes_per_slot);
         result
     }
 
@@ -1051,7 +1030,8 @@ impl ChannelBuilder {
             show_total: self.show_total,
             girth: self.girth,
             show_memory: self.show_memory,
-            ring_memory_footprint_override: self.ring_memory_footprint_override,
+            ring_slot_byte_count: type_byte_count,
+            dynamic_per_slot_estimate: self.dynamic_per_slot_estimate,
         }
     }
 
@@ -1077,19 +1057,23 @@ impl ChannelBuilder {
     pub(crate) fn eager_build_internal<T>(&self) -> (Tx<T>, Rx<T>) {
         let now = Instant::now().sub(Duration::from_secs(1 + MAX_TELEMETRY_ERROR_RATE_SECONDS as u64));
 
-        let type_byte_count = self.message_byte_estimate.unwrap_or(size_of::<T>());
+        let ring_slot_byte_count = size_of::<T>();
         if self.show_memory
-            && self.message_byte_estimate.is_some()
-            && message_byte_estimate_looks_capacity_scaled(self.capacity, type_byte_count)
+            && self.dynamic_per_slot_estimate.is_some()
+            && dynamic_payload_estimate_looks_capacity_scaled(
+                self.capacity,
+                self.dynamic_per_slot_estimate.unwrap_or(0),
+            )
         {
             warn!(
-                "channel message_byte_estimate({type_byte_count}) looks capacity-scaled for capacity {} \
-                 — telemetry footprint may be wrong (use with_ring_memory_footprint for ring totals)",
+                "channel dynamic_per_slot_estimate looks capacity-scaled for capacity {} \
+                 — dyn telemetry may be wrong",
                 self.capacity
             );
         }
         let type_string_name = std::any::type_name::<T>();
-        let channel_meta_data = Arc::new(self.to_meta_data(type_string_name, type_byte_count));
+        let channel_meta_data =
+            Arc::new(self.to_meta_data(type_string_name, ring_slot_byte_count));
         let (sender_tx, receiver_tx) = oneshot::channel();
         let (sender_rx, receiver_rx) = oneshot::channel();
 
@@ -1746,18 +1730,19 @@ pub(crate) mod test_builder {
     }
 
     #[test]
-    // ss[verify channel.message-byte-estimate]
-    pub(crate) fn test_with_message_byte_estimate_footprint() {
+    // ss[verify channel.dynamic-payload-estimate]
+    pub(crate) fn test_with_dynamic_payload_estimate_footprint() {
         const DEPTH: usize = 16384;
         const PER_SLOT: usize = 256024;
+        const MSG_SIZE: usize = 24;
         let builder = create_test_channel_builder()
             .with_capacity(DEPTH)
-            .with_message_byte_estimate(PER_SLOT)
+            .with_dynamic_payload_estimate(PER_SLOT)
             .with_memory_usage();
-        let (_, rx) = builder.eager_build_internal::<u8>();
+        let (_, rx) = builder.eager_build_internal::<[u8; MSG_SIZE]>();
         let meta = crate::steady_rx::RxMetaDataProvider::meta_data(&rx);
-        assert_eq!(meta.type_byte_count, PER_SLOT);
-        assert_eq!(meta.ring_memory_footprint_override, None);
+        assert_eq!(meta.ring_slot_byte_count, MSG_SIZE);
+        assert_eq!(meta.dynamic_per_slot_estimate, Some(PER_SLOT));
 
         let mut computer = crate::channel_stats::ChannelStatsComputer::default();
         computer.init(
@@ -1766,38 +1751,20 @@ pub(crate) mod test_builder {
             crate::ActorName::new("b", None),
             1000,
         );
-        assert_eq!(computer.memory_footprint, DEPTH * PER_SLOT);
-        assert_eq!(crate::monitor::channel_memory_footprint(&meta), DEPTH * PER_SLOT);
-    }
-
-    #[test]
-    // ss[verify channel.ring-memory-footprint]
-    pub(crate) fn test_with_ring_memory_footprint_override() {
-        const DEPTH: usize = 16384;
-        const RING_TOTAL: usize = 4_194_959_936;
-        let builder = create_test_channel_builder()
-            .with_capacity(DEPTH)
-            .with_ring_memory_footprint(RING_TOTAL);
-        let (_, rx) = builder.eager_build_internal::<u8>();
-        let meta = crate::steady_rx::RxMetaDataProvider::meta_data(&rx);
-        assert_eq!(meta.ring_memory_footprint_override, Some(RING_TOTAL));
-
-        let mut computer = crate::channel_stats::ChannelStatsComputer::default();
-        computer.init(
-            &meta,
-            crate::ActorName::new("a", None),
-            crate::ActorName::new("b", None),
-            1000,
+        assert_eq!(computer.ring_memory_footprint, DEPTH * MSG_SIZE);
+        assert_eq!(computer.dynamic_memory_footprint, DEPTH * PER_SLOT);
+        assert_eq!(crate::monitor::channel_ring_memory_footprint(&meta), DEPTH * MSG_SIZE);
+        assert_eq!(
+            crate::monitor::channel_dynamic_memory_footprint(&meta),
+            DEPTH * PER_SLOT
         );
-        assert_eq!(computer.memory_footprint, RING_TOTAL);
-        assert_eq!(crate::monitor::channel_memory_footprint(&meta), RING_TOTAL);
     }
 
     #[test]
-    // ss[verify channel.message-byte-estimate]
-    pub(crate) fn test_message_byte_estimate_looks_capacity_scaled_heuristic() {
-        assert!(message_byte_estimate_looks_capacity_scaled(16384, 256024 * 16384));
-        assert!(!message_byte_estimate_looks_capacity_scaled(16384, 256024));
+    // ss[verify channel.dynamic-payload-estimate]
+    pub(crate) fn test_dynamic_payload_estimate_looks_capacity_scaled_heuristic() {
+        assert!(dynamic_payload_estimate_looks_capacity_scaled(16384, 256024 * 16384));
+        assert!(!dynamic_payload_estimate_looks_capacity_scaled(16384, 256024));
     }
 
     #[test]

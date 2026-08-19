@@ -1256,22 +1256,24 @@ fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
     }
 }
 
-/// Builds one edge with memory display enabled: capacity 100 × 8-byte items = 800B.
+/// Builds one edge with memory display enabled: capacity 100 × 8-byte items = 800B ring.
 // ss[related telemetry.dot-export]
 fn memory_edge(id: usize, partner: Option<&'static str>, bundle_index: Option<usize>) -> Edge {
-    memory_edge_with_footprint(id, 100 * 8, partner, bundle_index)
+    memory_edge_with_ring_dyn(id, 100 * 8, 0, partner, bundle_index)
 }
 
-/// Builds one edge with an explicit memory footprint for partner/bundle rollup tests.
+/// Builds one edge with explicit ring/dyn footprints for partner/bundle rollup tests.
 // ss[related telemetry.dot-export]
-fn memory_edge_with_footprint(
+fn memory_edge_with_ring_dyn(
     id: usize,
-    footprint: usize,
+    ring_footprint: usize,
+    dynamic_footprint: usize,
     partner: Option<&'static str>,
     bundle_index: Option<usize>,
 ) -> Edge {
     let mut stats = ChannelStatsComputer::default();
-    stats.memory_footprint = footprint;
+    stats.ring_memory_footprint = ring_footprint;
+    stats.dynamic_memory_footprint = dynamic_footprint;
     stats.show_memory = true;
     Edge {
         id,
@@ -1302,8 +1304,8 @@ fn test_single_edge_shows_memory_on_label() {
     let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
 
     assert!(
-        dot.contains("Memory: 800B"),
-        "single edge label must show memory footprint, got:\n{dot}"
+        dot.contains("Memory: 800B ring"),
+        "single edge label must show ring memory footprint, got:\n{dot}"
     );
 }
 
@@ -1342,11 +1344,11 @@ fn test_partner_group_memory_combined_and_per_lane() {
     let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
 
     assert!(
-        dot.contains("stream [0] (1KB)"),
-        "partner header must show combined memory (1600B compresses to 1KB), got:\n{dot}"
+        dot.contains("stream [0] (1KB ring)"),
+        "partner header must show combined ring memory (1600B compresses to 1KB ring), got:\n{dot}"
     );
-    // Per-lane breakdown appears in the tooltip (800B per lane).
-    let lane_memory_count = dot.matches("Memory: 800B").count();
+    // Per-lane breakdown appears in the tooltip (800B ring per lane).
+    let lane_memory_count = dot.matches("Ring: 800B ring").count();
     assert!(
         lane_memory_count >= 2,
         "tooltip must show per-lane memory for both lanes (found {lane_memory_count}):\n{dot}"
@@ -1373,16 +1375,16 @@ fn test_bundle_memory_header_and_tooltip() {
     let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
 
     assert!(
-        dot.contains("P: 4x (6KB)"),
-        "bundle header must show summed memory (6400B compresses to 6KB), got:\n{dot}"
+        dot.contains("P: 4x (6KB ring)"),
+        "bundle header must show summed ring memory (6400B compresses to 6KB ring), got:\n{dot}"
     );
     assert!(
-        dot.contains("Memory: 6KB"),
-        "bundle tooltip must show summed memory, got:\n{dot}"
+        dot.contains("Memory: 6KB ring"),
+        "bundle tooltip must show summed ring memory, got:\n{dot}"
     );
 }
 
-/// T12 JoinWire-scale partner rollup: 12 lanes × (DEPTH × per_slot) must be GB-scale, not TB².
+/// T12 JoinWire-scale partner rollup: small ring + large dyn ceiling, not TB².
 #[test]
 // ss[verify telemetry.dot-export]
 // ss[verify channel.memory-usage-telemetry]
@@ -1390,11 +1392,15 @@ fn test_partner_join_wire_scale_memory_not_depth_squared() {
     const N_OUT: usize = 12;
     const DEPTH: usize = 16384;
     const PER_SLOT: usize = 256024;
-    let per_lane = DEPTH * PER_SLOT;
-    let partner_total = N_OUT * per_lane;
+    const MSG_SIZE: usize = 24;
+    let ring_per_lane = DEPTH * MSG_SIZE;
+    let dyn_per_lane = DEPTH * PER_SLOT;
+    let partner_dyn_total = N_OUT * dyn_per_lane;
 
     let edges: Vec<Edge> = (0..N_OUT)
-        .map(|id| memory_edge_with_footprint(id, per_lane, Some("JoinWire"), Some(0)))
+        .map(|id| {
+            memory_edge_with_ring_dyn(id, ring_per_lane, dyn_per_lane, Some("JoinWire"), Some(0))
+        })
         .collect();
     let state = memory_test_state(edges, 16);
     let mut frames = test_dot_frames();
@@ -1402,12 +1408,16 @@ fn test_partner_join_wire_scale_memory_not_depth_squared() {
     let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
 
     assert!(
-        dot.contains("JoinWire [0] (50BB)"),
-        "partner header must show ~50GB-scale total (50BB compressed), got:\n{dot}"
+        dot.contains("JoinWire [0] (4MB ring + 50GB dyn)"),
+        "partner header must show small ring + ~50GB dyn ceiling, got:\n{dot}"
     );
     assert!(
         !dot.contains("825TB"),
         "DEPTH² bug would show TB-scale (825TB), got:\n{dot}"
+    );
+    assert!(
+        !dot.contains("BB"),
+        "memory labels must use GB not BB, got:\n{dot}"
     );
 
     let buggy_total = N_OUT * DEPTH * (DEPTH * PER_SLOT);
@@ -1416,7 +1426,7 @@ fn test_partner_join_wire_scale_memory_not_depth_squared() {
         "sanity: DEPTH² formula must be TB-scale"
     );
     assert!(
-        partner_total < 100_000_000_000,
-        "correct T12 nominal total must be under 100GB"
+        partner_dyn_total < 100_000_000_000,
+        "correct T12 dyn ceiling must be under 100GB"
     );
 }

@@ -215,7 +215,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
         let mut sub_capacities = Vec::with_capacity(edges.len());
         let mut sub_totals = Vec::with_capacity(edges.len());
         let mut sum_total_consumed = 0u128;
-        let mut memory_footprint = 0;
+        let mut ring_memory_footprint = 0;
+        let mut dynamic_memory_footprint = 0;
         let mut show_memory = false;
         let mut lane_colors = Vec::with_capacity(edges.len());
         let mut avg_fill_per_lane = Vec::with_capacity(edges.len());
@@ -233,7 +234,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             }
                 sub_capacities.push(e.stats_computer.capacity);
             sub_totals.push(e.stats_computer.total_consumed);
-            memory_footprint += e.stats_computer.memory_footprint;
+            ring_memory_footprint += e.stats_computer.ring_memory_footprint;
+            dynamic_memory_footprint += e.stats_computer.dynamic_memory_footprint;
             show_memory |= e.stats_computer.show_memory;
 
             if !is_large_bundle {
@@ -254,12 +256,20 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 );
                 // Per-lane memory footprint when the channel opted into memory display
                 if e.stats_computer.show_memory {
-                    tooltip.push_str("\n Memory: ");
-                    crate::channel_stats_labels::format_compressed_u128(
-                        e.stats_computer.memory_footprint as u128,
+                    tooltip.push_str("\n Ring: ");
+                    crate::channel_stats_labels::format_memory_bytes_u128(
+                        e.stats_computer.ring_memory_footprint as u128,
                         &mut tooltip,
                     );
-                    tooltip.push('B');
+                    tooltip.push_str(" ring");
+                    if e.stats_computer.dynamic_memory_footprint > 0 {
+                        tooltip.push_str("\n Dyn: ");
+                        crate::channel_stats_labels::format_memory_bytes_u128(
+                            e.stats_computer.dynamic_memory_footprint as u128,
+                            &mut tooltip,
+                        );
+                        tooltip.push_str(" dyn");
+                    }
                 }
                 // FIX: Show Total (cumulative) on tooltip to match edge label
                 tooltip.push_str("\n Total: ");
@@ -339,12 +349,21 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
             // Memory footprint
             if show_memory {
-                tooltip.push_str("Memory: ");
-                crate::channel_stats_labels::format_compressed_u128(
-                    memory_footprint as u128,
+                tooltip.push_str("Ring: ");
+                crate::channel_stats_labels::format_memory_bytes_u128(
+                    ring_memory_footprint as u128,
                     &mut tooltip,
                 );
-                tooltip.push_str("B\n");
+                tooltip.push_str(" ring");
+                if dynamic_memory_footprint > 0 {
+                    tooltip.push_str("\nDyn: ");
+                    crate::channel_stats_labels::format_memory_bytes_u128(
+                        dynamic_memory_footprint as u128,
+                        &mut tooltip,
+                    );
+                    tooltip.push_str(" dyn");
+                }
+                tooltip.push('\n');
             }
 
             // Lane color histogram
@@ -393,12 +412,12 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             // Build partner info line with memory if needed
             let mut partner_info = partner_header;
             if show_memory {
-                partner_info.push_str(" (");
-                crate::channel_stats_labels::format_compressed_u128(
-                    memory_footprint as u128,
+                partner_info.push(' ');
+                crate::channel_stats_labels::format_memory_ring_dyn(
+                    ring_memory_footprint as u128,
+                    dynamic_memory_footprint as u128,
                     &mut partner_info,
                 );
-                partner_info.push_str("B)");
             }
 
             // Combine: Partner info first, then original label (which contains rate/fill from ChannelStatsComputer)
@@ -409,11 +428,12 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             // reserved buffer footprint to the edge label, matching the partnered
             // header format `(N B)`.
             let mut mem_info = String::from("Memory: ");
-            crate::channel_stats_labels::format_compressed_u128(
-                memory_footprint as u128,
+            crate::channel_stats_labels::format_memory_ring_dyn_prefixed(
+                "",
+                first.stats_computer.ring_memory_footprint as u128,
+                first.stats_computer.dynamic_memory_footprint as u128,
                 &mut mem_info,
             );
-            mem_info.push('B');
             summary_label = format!("{}\n{}", summary_label.trim_end_matches('\n'), mem_info);
         }
 
@@ -468,7 +488,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             } else {
                 first.pen_width.clone()
             },
-            memory_footprint,
+            ring_memory_footprint,
+            dynamic_memory_footprint,
             show_memory,
             show_total: first.stats_computer.show_total,
         });
@@ -535,7 +556,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
 
             // S-Tier: Element-wise summation of index-aligned totals
             let mut bundle_totals = vec![0u128; edges[0].sub_totals.len()];
-            let mut total_memory = 0usize;
+            let mut total_ring_memory = 0usize;
+            let mut total_dynamic_memory = 0usize;
             let mut show_mem = false;
             let mut bundle_memory_line = String::new();
 
@@ -543,7 +565,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
                 for (i, val) in pe.sub_totals.iter().enumerate() {
                     bundle_totals[i] += val;
                 }
-                total_memory += pe.memory_footprint;
+                total_ring_memory += pe.ring_memory_footprint;
+                total_dynamic_memory += pe.dynamic_memory_footprint;
                 show_mem |= pe.show_memory;
             }
 
@@ -558,20 +581,18 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
             let mut header = format!("{}: {}x", label_prefix, n);
 
             if show_mem {
-                header.push_str(" (");
-                crate::channel_stats_labels::format_compressed_u128(
-                    total_memory as u128,
+                header.push(' ');
+                crate::channel_stats_labels::format_memory_ring_dyn(
+                    total_ring_memory as u128,
+                    total_dynamic_memory as u128,
                     &mut header,
                 );
-                header.push_str("B)");
-                // Mirror the bundle memory total in the tooltip so users can see it on hover
-                bundle_memory_line = format!(
-                    "Memory: {}B",
-                    {
-                        let mut s = String::new();
-                        crate::channel_stats_labels::format_compressed_u128(total_memory as u128, &mut s);
-                        s
-                    }
+                bundle_memory_line = String::from("Memory: ");
+                crate::channel_stats_labels::format_memory_ring_dyn_prefixed(
+                    "",
+                    total_ring_memory as u128,
+                    total_dynamic_memory as u128,
+                    &mut bundle_memory_line,
                 );
             }
             // FIX: Show comma-separated totals for each partner type in the bundle, not a single aggregated total

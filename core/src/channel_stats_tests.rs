@@ -28,6 +28,7 @@ mod channel_stats_tests {
             capacity: 100,
             show_total: true,
             type_byte_count: 8,
+            ring_slot_byte_count: 8,
             show_type: Some("u64"),
             refresh_rate_in_bits: 1,
             window_bucket_in_bits: 1,
@@ -180,18 +181,19 @@ mod channel_stats_tests {
             prop_assert!(c.avg_filled_whole_percent().is_none());
         }
 
-        /// Property: init() derives memory_footprint and show_memory from channel meta.
+        /// Property: init() derives ring/dyn footprints and show_memory from channel meta.
         #[test]
         // ss[verify channel.memory-usage-telemetry]
         // ss[verify verify.process.proptest]
-        fn proptest_memory_footprint_from_meta(
+        fn proptest_ring_memory_footprint_from_meta(
             capacity in 1usize..10_000,
-            type_byte_count in 1usize..4096,
+            ring_slot in 1usize..4096,
             show_memory in any::<bool>(),
         ) {
             let mut meta = (*mock_meta()).clone();
             meta.capacity = capacity;
-            meta.type_byte_count = type_byte_count;
+            meta.ring_slot_byte_count = ring_slot;
+            meta.type_byte_count = ring_slot;
             meta.show_memory = show_memory;
             let mut computer = ChannelStatsComputer::default();
             computer.init(
@@ -200,21 +202,22 @@ mod channel_stats_tests {
                 ActorName::new("dst", None),
                 1000,
             );
-            prop_assert_eq!(computer.memory_footprint, capacity * type_byte_count);
+            prop_assert_eq!(computer.ring_memory_footprint, capacity * ring_slot);
+            prop_assert_eq!(computer.dynamic_memory_footprint, 0);
             prop_assert_eq!(computer.show_memory, show_memory);
         }
 
-        /// Property: ring_memory_footprint_override skips capacity multiply.
+        /// Property: dynamic_per_slot_estimate yields capacity × per_slot dyn footprint.
         #[test]
-        // ss[verify channel.ring-memory-footprint]
+        // ss[verify channel.dynamic-payload-estimate]
         // ss[verify verify.process.proptest]
-        fn proptest_memory_footprint_ring_override(
+        fn proptest_dynamic_memory_footprint_from_meta(
             capacity in 1usize..10_000,
-            override_bytes in 1usize..1_000_000_000,
+            per_slot in 1usize..4096,
         ) {
             let mut meta = (*mock_meta()).clone();
             meta.capacity = capacity;
-            meta.ring_memory_footprint_override = Some(override_bytes);
+            meta.dynamic_per_slot_estimate = Some(per_slot);
             let mut computer = ChannelStatsComputer::default();
             computer.init(
                 &Arc::new(meta),
@@ -222,7 +225,7 @@ mod channel_stats_tests {
                 ActorName::new("dst", None),
                 1000,
             );
-            prop_assert_eq!(computer.memory_footprint, override_bytes);
+            prop_assert_eq!(computer.dynamic_memory_footprint, capacity * per_slot);
         }
 
         /// Property: bundle rollup total_consumed equals sum of per-lane deltas.

@@ -164,32 +164,26 @@ let (tx, rx) = channel_builder
     .build_channel::<Packet>();
 ```
 
-The footprint defaults to `capacity × size_of::<T>()`. Override per-slot or ring-total estimates when the nominal slot size exceeds `size_of::<T>()`:
+The footprint splits into **ring** (static slab: `capacity × size_of::<T>()`) and **dyn** (optional ceiling: `capacity × per_slot` when you declare heap/referenced payload beyond the ring). Override **dyn** when messages can pull large off-ring data (e.g. notary windows):
 
 ```rust
 let (tx, rx) = channel_builder
     .with_capacity(JOIN_LANE_RING_DEPTH)
-    .with_message_byte_estimate(bytes_per_slot)   // capacity × per_slot
-    .with_memory_usage()
-    .build_channel::<JoinLaneMsg>();
-
-// Or, when you already have the full per-lane ring budget:
-let (tx, rx) = channel_builder
-    .with_capacity(JOIN_LANE_RING_DEPTH)
-    .with_ring_memory_footprint(ring_total_bytes) // no second capacity multiply
+    .with_dynamic_payload_estimate(bytes_per_slot) // capacity × per_slot dyn ceiling
     .with_memory_usage()
     .build_channel::<JoinLaneMsg>();
 ```
 
 - **Capacity** — max items in the ring buffer (`with_capacity`).
-- **Width** — bytes per slot (`size_of::<T>()` or `with_message_byte_estimate`).
-- **Footprint** — `capacity × width`, or `with_ring_memory_footprint` when set.
+- **Ring width** — bytes per ring slot (`size_of::<T>()` at build).
+- **Ring footprint** — `capacity × size_of::<T>()` (what the `AsyncRb` slab owns).
+- **Dyn footprint** — `capacity × with_dynamic_payload_estimate` when set (max extra heap if every slot is full).
 
 Where it appears in the DOT graph:
 
-- **Single channel** — the edge label gains a `Memory: …B` line.
-- **Partnered channels** (`with_partner`) — the merged edge header shows the **combined** footprint of all lanes (e.g. `stream [0] (1KB)`).
-- **Bundles** — the bundle header shows the **summed** footprint of every edge in the bundle (e.g. `Bundle: 4x (6KB)`); the same total appears in the bundle tooltip, and per-lane footprints appear in the per-channel tooltip lines.
+- **Single channel** — the edge label gains a `Memory: … ring` line (and `+ … dyn` when an estimate is set).
+- **Partnered channels** (`with_partner`) — the merged edge header shows **combined** ring and dyn totals (e.g. `stream [0] (1KB ring)` or `JoinWire [0] (4MB ring + 50GB dyn)`).
+- **Bundles** — the bundle header shows **summed** ring and dyn across every edge in the bundle; per-lane lines appear in tooltips.
 
 ### Querying Memory in Code
 
@@ -197,15 +191,16 @@ Established channels expose the same values programmatically (after locking):
 
 ```rust
 let tx = tx.lock().await;
-let width = tx.width();          // bytes per slot (size_of::<T>())
-let bytes = tx.memory_bytes();   // reserved footprint (see overrides above)
+let width = tx.width();                    // bytes per ring slot (size_of::<T>())
+let ring = tx.memory_bytes();              // ring slab footprint
+let dyn_ceiling = tx.dynamic_memory_bytes(); // dyn ceiling (0 if unset)
 ```
 
-Bundles provide a summed rollup across all lanes via `SteadyTxBundleTrait::memory_bytes()` / `SteadyRxBundleTrait::memory_bytes()`.
+Bundles sum ring and dyn separately via `SteadyTxBundleTrait::memory_bytes()` / `dynamic_memory_bytes()` (and the Rx bundle traits).
 
 Stream channels (`StreamTx` / `StreamRx`) expose `memory_bytes()` that combines **both** ring buffers: control (`capacity × size_of::<T>()`) plus payload (`capacity × bytes_per_item`).
 
-> **Note:** the footprint is the *configured maximum* (`capacity × size_of::<T>()`), not a live allocation measurement. It does not include ring-buffer bookkeeping, telemetry structures, or heap payloads behind pointer-sized types (e.g. `Box<[u8]>`).
+> **Note:** ring is the *configured maximum slab* (`capacity × size_of::<T>()`), not live RSS. Dyn is a *builder-declared ceiling*, not live heap accounting. Neither includes ring-buffer bookkeeping, telemetry structures, or unpredictable heap behind pointer-sized types unless you set `with_dynamic_payload_estimate`.
 
 To see telemetry on a channel, you must **enable telemetry features** in the graph:
 
