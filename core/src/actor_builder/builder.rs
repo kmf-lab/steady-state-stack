@@ -1,27 +1,50 @@
 // ss[related actor.regeneration-survives]
 use super::affinity::CoreBalancer;
+// ss[related philosophy.structural-hierarchy]
 use super::context::{DynCall, NonSendWrapper, SteadyContextArchetype};
+// ss[related philosophy.structural-hierarchy]
 use crate::dot::RemoteDetails;
+// ss[related actor.regeneration-survives]
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::StageManager;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::ActorMetaData;
+// ss[related actor.regeneration-survives]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry::metrics_collector::CollectorDetail;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry_window::compute_refresh_window_frames;
+// ss[related actor.regeneration-survives]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use async_lock::Barrier;
+// ss[related actor.regeneration-survives]
 use futures::channel::oneshot::{Receiver, Sender};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::Shared;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::FutureExt;
+// ss[related actor.regeneration-survives]
 use futures_util::lock::{Mutex, MutexGuard};
+// ss[related philosophy.structural-hierarchy]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
+// ss[related actor.regeneration-survives]
 use std::collections::{HashSet, VecDeque};
+// ss[related philosophy.structural-hierarchy]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related actor.regeneration-survives]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, OnceLock};
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
 
 /// THE `ActorBuilder` struct is responsible for constructing and configuring actors within the system.
@@ -32,75 +55,109 @@ use std::time::Duration;
 // ss[related actor.regeneration-survives]
 pub struct ActorBuilder {
     /// THE name of the actor, used for identification in telemetry and logging.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_name: ActorName,
     /// Shared arguments passed to the actor, accessible via the `args` method in `SteadyContext`.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     /// Telemetry transmitter for collecting and sending actor metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry_tx: Arc<RwLock<Vec<CollectorDetail>>>,
     /// Shared counter for the number of channels in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_count: Arc<AtomicUsize>,
     /// Shared liveliness state of the graph, used for managing actor lifecycle.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     /// Shared counter for the number of actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_count: Arc<AtomicUsize>,
     /// Mutex for synchronizing thread operations, particularly for core affinity settings.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) thread_lock: Arc<Mutex<()>>,
     /// List of CPU cores to exclude from actor assignment.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) excluded_cores: Vec<usize>,
     /// Optional core balancer for distributing actors across available cores.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) core_balancer: Option<CoreBalancer>,
     /// Optional explicit core assignment for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) explicit_core: Option<usize>,
     /// Bit shift value determining the refresh rate for telemetry data.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) refresh_rate_in_bits: u8,
     /// Bit shift value determining the window bucket size for metrics aggregation.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) window_bucket_in_bits: u8,
     /// Flag indicating whether usage review is enabled for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) usage_review: bool,
     /// Percentiles to monitor for CPU usage metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_mcpu: Vec<Percentile>,
     /// Percentiles to monitor for workload metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_load: Vec<Percentile>,
     /// Standard deviations to monitor for CPU usage metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_mcpu: Vec<StdDev>,
     /// Standard deviations to monitor for workload metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_load: Vec<StdDev>,
     /// Triggers for CPU usage that raise alerts with associated colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) trigger_mcpu: Vec<(Trigger<MCPU>, AlertColor)>,
     /// Triggers for workload that raise alerts with associated colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) trigger_load: Vec<(Trigger<Work>, AlertColor)>,
     /// Flag indicating whether to include thread information in telemetry data.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_info: bool,
     /// Flag indicating whether to monitor average CPU usage.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) avg_mcpu: bool,
     /// Flag indicating whether to monitor average workload.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) avg_load: bool,
     /// Frame rate in milliseconds for telemetry data collection.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64,
     /// Shared vector of oneshot senders for shutdown notifications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// Backplane for side-channel communications, primarily used in testing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>,
     /// Shared counter for the number of actor teams.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) team_count: Arc<AtomicUsize>,
     /// Optional details for remote communication in distributed systems.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) remote_details: Option<RemoteDetails>,
     /// Flag indicating whether to prevent simulation, ensuring real execution.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) never_simulate: bool,
     /// Lazily initialized Aeron media driver for communication.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// Optional barrier for synchronizing actor shutdown.
     pub shutdown_barrier: Option<Arc<Barrier>>,
     /// Flag indicating whether the actor is for testing purposes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_for_test: bool,
     /// Optional stack size for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) stack_size: Option<usize>,
     /// Universal list of all actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
     /// Actor base names that run real `internal_behavior` in test graphs (pipeline processors).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) test_pipeline_internal_names: Arc<HashSet<&'static str>>,
 }
 
+// ss[related actor.regeneration-survives]
 impl ActorBuilder {
     /// Creates a new `ActorBuilder` instance, initializing it with default settings derived from the given `Graph`.
     ///

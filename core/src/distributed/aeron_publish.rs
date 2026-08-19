@@ -1,21 +1,30 @@
 // ss[related distributed.subscribe-publish]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related distributed.subscribe-publish]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
+// ss[related philosophy.structural-hierarchy]
 use aeron::exclusive_publication::ExclusivePublication;
 // ss[related distributed.subscribe-publish]
 use aeron::utils::types::Index;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aeron_channel_structs::Channel;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{SteadyStreamRx, StreamEgress};
 // ss[related distributed.subscribe-publish]
 use crate::{await_for_any, RxCore, SteadyActor};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
 // ss[related distributed.subscribe-publish]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::state_management::SteadyState;
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
 // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
@@ -25,6 +34,7 @@ use crate::state_management::SteadyState;
 // ss[related distributed.subscribe-publish]
 pub const TEST_ITEMS: usize = 200_000_000;
 /// Base stream ID for test publications.
+// ss[related philosophy.structural-hierarchy]
 pub const STREAM_ID: i32 = 11;
 /// Term buffer size in MB; 64MB targets high message rates (e.g., 12M messages/sec).
 // ss[related distributed.subscribe-publish]
@@ -37,8 +47,10 @@ pub const _TERM_MB: i32 = 64;
 // ss[related distributed.subscribe-publish]
 pub struct AeronPublishSteadyState {
     /// Optional registration ID for the Aeron publication, persisted across actor restarts.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) pub_reg_id: Option<i64>,
     /// Internal counter for items taken from the stream, used for tracking progress.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) _items_taken: usize,
 }
 
@@ -259,6 +271,7 @@ async fn internal_behavior<C: SteadyActor>(
 #[cfg(test)]
 // ss[related distributed.subscribe-publish]
 mod aeron_publish_state_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::AeronPublishSteadyState;
 
     #[test]
@@ -285,15 +298,23 @@ mod aeron_publish_state_tests {
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_publish_graph_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
+    // ss[related distributed.subscribe-publish]
     use futures_timer::Delay;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aeron_channel_builder::AeronConfig;
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aeron_channel_structs::MediaType;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_builder::AqueductBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::StreamEgress;
+    // ss[related distributed.subscribe-publish]
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron publish actor: graph starts and stops without requiring registration.

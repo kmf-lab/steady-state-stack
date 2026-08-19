@@ -1,10 +1,18 @@
+// ss[related graph.for-testing]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use super::builder::GraphBuilder;
+// ss[related philosophy.structural-hierarchy]
 use super::identity::ActorIdentity;
+// ss[related graph.for-testing]
 use super::liveliness::GraphLiveliness;
+// ss[related philosophy.structural-hierarchy]
 use super::shutdown::{effective_block_until_stopped_timeout, watch_shutdown};
+// ss[related philosophy.structural-hierarchy]
 use super::state::GraphLivelinessState;
+// ss[related graph.for-testing]
 use super::testing_guard::StageManagerGuard;
+// ss[related philosophy.structural-hierarchy]
 use log::{debug, error, trace};
 
 /// Represents the graph of actors and manages their execution and lifecycle.
@@ -14,42 +22,60 @@ use log::{debug, error, trace};
 // ss[impl philosophy.explicit-ownership]
 pub struct Graph {
     /// THE arguments passed to the graph, stored in a thread-safe manner.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     /// A shared counter for the number of channels in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_count: Arc<AtomicUsize>,
     /// A shared counter for the number of actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_count: Arc<AtomicUsize>,
     /// A mutex for synchronizing thread operations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) thread_lock: Arc<Mutex<()>>,
     /// A shared counter for the number of actor troupes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) team_count: Arc<AtomicUsize>,
     /// Indicates whether the graph is configured for testing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_for_testing: bool,
     /// A collection of telemetry receivers for monitoring the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     /// THE shared liveliness state of the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     /// A shared vector of oneshot senders for shutdown notifications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// An optional backplane for testing side-channel communications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) backplane: Arc<Mutex<Option<StageManager>>>,
     /// THE rate at which telemetry data is produced, in milliseconds.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry_production_rate_ms: u64,
     /// An optional hex color for the telemetry top bar.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry_colors: Option<(String, String)>,
     /// A lazily initialized reference to the Aeron media driver.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// An optional barrier for synchronizing actor shutdown.
     pub shutdown_barrier: Option<Arc<Barrier>>,
     /// Default stack size for all actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) default_stack_size: Option<usize>,
     /// Minimum size for bundles.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bundle_floor_size: usize,
     /// Names of actors that use `internal_behavior` in test graphs (pipeline processors).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) test_pipeline_internal_names: Arc<HashSet<&'static str>>,
     /// Univeral list of all actor identifiers
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
 }
+// ss[related graph.for-testing]
 impl Graph {
     /// Acquires a lock on the stage manager for testing purposes.
     ///

@@ -3,15 +3,23 @@ use super::super::{
     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
     GraphLivelinessState, ShutdownVote, VoterStatus,
 };
+// ss[related graph.shutdown.veto]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ScheduleAs, SteadyActor};
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex as FutMutex;
+// ss[related graph.shutdown.veto]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::thread;
+// ss[related graph.shutdown.veto]
 use std::time::{Duration, Instant};
 
 #[test]
+// ss[verify graph.shutdown.veto]
 fn test_unclean_shutdown_veto() {
     let mut graph = GraphBuilder::for_testing().build(());
     
@@ -38,7 +46,9 @@ fn test_unclean_shutdown_veto() {
 // ss[verify graph.shutdown.accept]
 // ss[verify philosophy.cooperative-liveliness]
 
+// ss[verify graph.shutdown.veto]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn test_clean_shutdown_actor_accepts_stop() {
     let mut graph = GraphBuilder::for_testing().build(());
 
@@ -68,6 +78,7 @@ fn test_clean_shutdown_actor_accepts_stop() {
 /// `StopRequested`. A delayed shutdown request must not trip the timeout.
 // ss[verify graph.block-until-stopped]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn test_block_until_stopped_waits_for_delayed_shutdown_request() {
     let mut graph = GraphBuilder::for_testing().build(());
 

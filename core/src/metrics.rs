@@ -1,7 +1,9 @@
 //! Telemetry metrics, triggers, and monitoring constants.
 
+// ss[impl telemetry.prometheus-metrics]
 use std::time::Duration;
 
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_builder_units::Percentile;
 
 /// Constant representing an unknown monitor state.
@@ -44,6 +46,7 @@ pub enum SendSaturation {
 // ss[related philosophy.structural-hierarchy]
 pub struct StdDev(f32);
 
+// ss[related philosophy.structural-hierarchy]
 impl StdDev {
     /// Creates a new `StdDev` if the value is within (0.0, 10.0).
     // ss[related philosophy.structural-hierarchy]
@@ -116,6 +119,7 @@ pub trait DataMetric: Metric {}
 // ss[related philosophy.structural-hierarchy]
 pub trait ComputeMetric: Metric {}
 
+// ss[related philosophy.structural-hierarchy]
 impl Metric for Duration {}
 
 /// Represents the color of an alert.
@@ -166,14 +170,20 @@ where
 }
 
 #[cfg(test)]
+// ss[impl telemetry.prometheus-metrics]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
+    // ss[impl telemetry.prometheus-metrics]
     use super::{
         AlertColor, SendSaturation, StdDev, Trigger, MONITOR_NOT, MONITOR_UNKNOWN,
     };
+    // ss[impl telemetry.prometheus-metrics]
     use crate::actor_builder_units::{Percentile, Work};
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder_units::{Filled, Rate};
 
     #[test]

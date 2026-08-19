@@ -10,6 +10,7 @@ impl Metric for Work {}
 // ss[related actor.regeneration-survives]
 pub struct Work {
     /// The work value scaled to 0-10000, where 10000 represents 100%.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) work: u16,
 }
 
@@ -115,6 +116,7 @@ impl Metric for MCPU {}
 // ss[related actor.regeneration-survives]
 pub struct MCPU {
     /// The mCPU value, ranging from 1 to 1024.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mcpu: u16,
 }
 
@@ -186,6 +188,7 @@ impl MCPU {
 // ss[related actor.regeneration-survives]
 pub struct Percentile(pub f64);
 
+// ss[related philosophy.structural-hierarchy]
 impl Percentile {
     /// Creates a new `Percentile` instance with the specified value.
     ///
@@ -271,6 +274,7 @@ impl Percentile {
 #[cfg(test)]
 // ss[related actor.regeneration-survives]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
 
     #[test]
@@ -287,6 +291,7 @@ mod tests {
         assert_eq!(mcpu.mcpu(), 256);
     }
 
+    // ss[related actor.regeneration-survives]
     use proptest::prelude::*;
 
     ss_proptest! {

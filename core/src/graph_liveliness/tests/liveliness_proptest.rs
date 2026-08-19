@@ -1,15 +1,22 @@
 // ss[related graph.for-testing]
 use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use super::super::{
     effective_block_until_stopped_timeout, ActorIdentity, GraphLiveliness, GraphLivelinessState,
     VoterStatus,
 };
+// ss[related graph.block-until-stopped]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related graph.block-until-stopped]
 use std::time::{Duration, Instant};
 
+// ss[related philosophy.structural-hierarchy]
 fn new_liveliness(
     actors: usize,
 ) -> (
@@ -24,6 +31,7 @@ fn new_liveliness(
     (Arc::new(parking_lot::RwLock::new(gl)), actors_count, catalog)
 }
 
+// ss[related graph.block-until-stopped]
 fn setup_stop_requested(
     l: &Arc<parking_lot::RwLock<GraphLiveliness>>,
     voters: usize,
@@ -48,6 +56,7 @@ fn setup_stop_requested(
     idents
 }
 
+// ss[related graph.block-until-stopped]
 fn ballots_in_favor(l: &GraphLiveliness) -> usize {
     l.votes
         .iter()

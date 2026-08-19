@@ -9,10 +9,13 @@
 
 // ss[related philosophy.single-wake-up]
 use futures_util::FutureExt;
+// ss[related philosophy.structural-hierarchy]
 pub use futures::future::Future;
+// ss[related philosophy.structural-hierarchy]
 pub use futures::select;
 // ss[related philosophy.single-wake-up]
 pub use futures::pin_mut;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::FusedFuture;
 
 // ss[impl philosophy.single-wake-up]
@@ -392,6 +395,7 @@ macro_rules! wait_for_any {
 /// ```
 // ss[impl bundle.wait-for-index-macro]
 #[macro_export]
+// ss[related philosophy.structural-hierarchy]
 macro_rules! wait_for_index {
     ($call:expr => $target:expr) => {
         async {
@@ -506,11 +510,15 @@ where
 #[cfg(test)]
 // ss[related philosophy.single-wake-up]
 mod loop_driver_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use futures_timer::Delay;
     // ss[related philosophy.single-wake-up]
     use futures::future::ready;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::{AtomicBool, Ordering};
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
     // ss[related philosophy.single-wake-up]
     use std::time::Duration;
@@ -539,6 +547,7 @@ mod loop_driver_tests {
     // ss[verify philosophy.single-wake-up]
     // ss[verify philosophy.mechanical-sympathy]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_all_true() {
     crate::core_exec::block_on(async {
 
@@ -553,6 +562,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_one_false() {
     crate::core_exec::block_on(async {
 
@@ -567,6 +577,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_empty() {
     crate::core_exec::block_on(async {
 
@@ -578,6 +589,7 @@ mod loop_driver_tests {
     // Tests for wait_for_all! macro
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn wait_for_all_all_true() {
     crate::core_exec::block_on(async {
 
@@ -592,6 +604,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn wait_for_all_one_false() {
     crate::core_exec::block_on(async {
 
@@ -606,6 +619,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn wait_for_all_empty() {
     crate::core_exec::block_on(async {
 
@@ -630,6 +644,7 @@ mod loop_driver_tests {
     // Tests for await_for_all_or_proceed_upon! macro with two futures
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_two_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -643,6 +658,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_two_others_complete() {
     crate::core_exec::block_on(async {
 
@@ -658,6 +674,7 @@ mod loop_driver_tests {
     // Tests for await_for_all_or_proceed_upon! macro with three futures
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_three_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -672,6 +689,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_three_others_complete() {
     crate::core_exec::block_on(async {
 
@@ -688,6 +706,7 @@ mod loop_driver_tests {
     // Tests for await_for_all_or_proceed_upon! macro with four futures
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_four_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -703,6 +722,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_four_others_complete() {
     crate::core_exec::block_on(async {
 
@@ -720,6 +740,7 @@ mod loop_driver_tests {
     // Tests for await_for_all_or_proceed_upon! macro with five futures
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_five_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -736,6 +757,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_all_or_proceed_upon_five_others_complete() {
     crate::core_exec::block_on(async {
 
@@ -754,6 +776,7 @@ mod loop_driver_tests {
     // Tests for await_for_any! macro
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_one() {
     crate::core_exec::block_on(async {
 
@@ -764,6 +787,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_two_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -776,6 +800,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_two_second_completes() {
     crate::core_exec::block_on(async {
 
@@ -788,6 +813,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_three_third_completes() {
     crate::core_exec::block_on(async {
 
@@ -801,6 +827,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_four_fourth_completes() {
     crate::core_exec::block_on(async {
 
@@ -815,6 +842,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn await_for_any_five_fifth_completes() {
     crate::core_exec::block_on(async {
 
@@ -896,6 +924,7 @@ mod loop_driver_tests {
     // Tests for steady_select_* functions
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn steady_select_two_first_completes() {
     crate::core_exec::block_on(async {
 
@@ -908,6 +937,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn steady_select_two_second_completes() {
     crate::core_exec::block_on(async {
 
@@ -920,6 +950,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn steady_select_three_third_completes() {
     crate::core_exec::block_on(async {
 
@@ -933,6 +964,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn steady_select_four_fourth_completes() {
     crate::core_exec::block_on(async {
 
@@ -947,6 +979,7 @@ mod loop_driver_tests {
 
     // ss[verify philosophy.single-wake-up]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn steady_select_five_fifth_completes() {
     crate::core_exec::block_on(async {
 

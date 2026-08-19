@@ -1,6 +1,8 @@
 // ss[related distributed.aeron-uri]
 use std::ffi::CString;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
+// ss[related philosophy.structural-hierarchy]
 use std::net::{IpAddr};
 
 // ss[related distributed.aeron-uri]
@@ -13,18 +15,25 @@ pub use aeron_utils::{
 pub mod aeron_utils {
     // ss[related distributed.aeron-uri]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use futures_util::lock::Mutex;
+    // ss[related philosophy.structural-hierarchy]
     use aeron::aeron::Aeron;
     // ss[related distributed.aeron-uri]
     use aeron::context::Context;
+    // ss[related philosophy.structural-hierarchy]
     use aeron::utils::errors::AeronError;
+    // ss[related philosophy.structural-hierarchy]
     use log::*;
     // ss[related distributed.aeron-uri]
     use std::time::Instant;
+    // ss[related philosophy.structural-hierarchy]
     use std::fs::File;
+    // ss[related philosophy.structural-hierarchy]
     use std::io::{Read, Seek, SeekFrom};
     // ss[related distributed.aeron-uri]
     use std::time::{Duration};
+    // ss[related philosophy.structural-hierarchy]
     use std::path::Path;
 
     /// Handles Aeron errors by logging them at the warn level.
@@ -42,6 +51,7 @@ pub mod aeron_utils {
     // ss[related distributed.aeron-uri]
     fn is_cnc_version_marker_set<P: AsRef<Path>>(cnc_path: P) -> bool {
         // The version marker is a 32-bit int at offset 0
+        // ss[related philosophy.structural-hierarchy]
         const VERSION_OFFSET: u64 = 0;
         let mut file = match File::open(&cnc_path) {
             Ok(f) => f,
@@ -125,6 +135,7 @@ pub mod aeron_utils {
     /// Checks if the CNC file's modification time has stabilized for `stabilization_period`.
     // ss[related distributed.aeron-uri]
     fn is_cnc_stable(aeron: &Aeron, stabilization_period: Duration) -> bool {
+        // ss[related philosophy.structural-hierarchy]
         use std::fs;
         // Convert String to PathBuf correctly
         let cnc_path = PathBuf::from(aeron.context().cnc_file_name());
@@ -183,6 +194,7 @@ pub mod aeron_utils {
     // ss[related distributed.aeron-uri]
     impl MediaDriverProbeError {
         /// Operator-facing hint for starting or fixing the media driver.
+        // ss[related philosophy.structural-hierarchy]
         pub fn hint(&self) -> String {
             format!(
                 "Is aeronmd running? CNC/aeron dir: {}. Last error: {}. \
@@ -195,6 +207,7 @@ pub mod aeron_utils {
 
     // ss[related distributed.aeron-uri]
     impl std::fmt::Display for MediaDriverProbeError {
+        // ss[related philosophy.structural-hierarchy]
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
@@ -620,15 +633,20 @@ fn ip_to_string(ip: &IpAddr) -> String {
 #[cfg(test)]
 // ss[related distributed.aeron-uri]
 mod aeron_channel_structs_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
+    // ss[related distributed.aeron-uri]
     use std::time::Duration;
 
+    // ss[related philosophy.structural-hierarchy]
     fn uri_from_channel(channel: &Channel) -> String {
         channel.cstring().into_string().expect("cstring")
     }
 
     /// Extract `key=value` pairs from an Aeron channel URI query segment.
+    // ss[related distributed.aeron-uri]
     fn uri_param_pairs(uri: &str) -> Vec<(&str, &str)> {
         let tail = if let Some((_, query)) = uri.split_once('?') {
             query
@@ -642,6 +660,7 @@ mod aeron_channel_structs_tests {
             .collect()
     }
 
+    // ss[related distributed.aeron-uri]
     fn uri_param_value(uri: &str, key: &str) -> Option<String> {
         if key == "endpoint" {
             if let Some((_, query)) = uri.split_once('?') {
@@ -661,6 +680,7 @@ mod aeron_channel_structs_tests {
     }
 
     /// Parse the port from an `endpoint=host:port` token (IPv4 or bracketed IPv6).
+    // ss[related distributed.aeron-uri]
     fn uri_endpoint_port(uri: &str) -> Option<u16> {
         let endpoint = uri_param_value(uri, "endpoint")?;
         if let Some(bracket_end) = endpoint.find(']') {
@@ -673,6 +693,7 @@ mod aeron_channel_structs_tests {
         }
     }
 
+    // ss[related distributed.aeron-uri]
     fn required_uri_tokens(channel: &Channel) -> Vec<String> {
         match channel {
             Channel::PointToPoint {

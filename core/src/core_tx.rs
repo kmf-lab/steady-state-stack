@@ -1,21 +1,30 @@
 // ss[related channel.backpressure-never-drop]
 use std::fmt::Debug;
+// ss[related philosophy.structural-hierarchy]
 use log::{error, trace, warn};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, FutureExt};
 // ss[related channel.backpressure-never-drop]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use futures::pin_mut;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related channel.backpressure-never-drop]
 use ringbuf::traits::Observer;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{FusedFuture};
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::producer::AsyncProducer;
 // ss[related channel.backpressure-never-drop]
 use ringbuf::producer::Producer;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::TxDone;
 // ss[related channel.backpressure-never-drop]
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, Tx, MONITOR_NOT, MONITOR_UNKNOWN};
+// ss[related philosophy.structural-hierarchy]
 use crate::yield_now;
 
 /// Trait defining the core functionality for transmitting data in a steady-state system.
@@ -28,6 +37,7 @@ use crate::yield_now;
 // ss[related channel.backpressure-never-drop]
 pub trait TxCore {
     /// The type of message that can be sent into the channel.
+    // ss[related philosophy.structural-hierarchy]
     type MsgIn<'a>;
 
     /// The type of message that comes out of the channel.
@@ -231,6 +241,7 @@ pub trait TxCore {
 // ss[related channel.backpressure-never-drop]
 impl<T> TxCore for Tx<T> {
     /// The type of message that can be sent into the channel, matching the channel's generic type.
+    // ss[related philosophy.structural-hierarchy]
     type MsgIn<'a> = T;
 
     /// The type of message that comes out of the channel, identical to `MsgIn` for standard channels.
@@ -606,10 +617,13 @@ impl<T> TxCore for Tx<T> {
 #[cfg(test)]
 // ss[related channel.backpressure-never-drop]
 mod core_tx_rx_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[related channel.backpressure-never-drop]
     use crate::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_rx::RxCore;
 
     /// Tests basic send and receive operations using `TxCore` and `RxCore`.
@@ -665,11 +679,15 @@ mod core_tx_rx_tests {
 
     // ss[related channel.backpressure-never-drop]
     use futures::executor::block_on;
+    // ss[related philosophy.structural-hierarchy]
     use futures_util::lock::Mutex;
+    // ss[related philosophy.structural-hierarchy]
     use crate::TxCore;
     // ss[related channel.backpressure-never-drop]
     use crate::{ActorIdentity, SendOutcome, SendSaturation};
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
+    // ss[related philosophy.structural-hierarchy]
     use crate::GraphBuilder;
 
     /// A mock implementation of `TxCore` for testing `MutexGuard` forwarding behavior.
@@ -691,6 +709,7 @@ mod core_tx_rx_tests {
     // ss[related channel.backpressure-never-drop]
     impl FakeTx {
         /// Creates a new instance with default values for testing.
+        // ss[related philosophy.structural-hierarchy]
         fn new() -> Self {
             FakeTx { closed: false, send_count: 0, log_calls: 0, one_val: 3, capacity: 4, is_full: false, is_empty: true, vacant: 4 }
         }
@@ -698,11 +717,15 @@ mod core_tx_rx_tests {
 
     // ss[related channel.backpressure-never-drop]
     impl TxCore for FakeTx {
+        // ss[related philosophy.structural-hierarchy]
         type MsgIn<'a> = usize;
+        // ss[related philosophy.structural-hierarchy]
         type MsgOut = usize;
         // ss[related channel.backpressure-never-drop]
         type MsgSize = usize;
+        // ss[related philosophy.structural-hierarchy]
         type SliceSource<'b> = &'b [usize];
+        // ss[related philosophy.structural-hierarchy]
         type SliceTarget<'a> = (&'a [usize], &'a [usize]);
 
         /// Marks the channel as closed and returns `true`.
@@ -945,6 +968,7 @@ mod core_tx_rx_tests {
     /// processes the operation correctly.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn shared_send_iter_until_full_and_warn_after_close() {
         let (mut tx, _graph, _sender) = new_tx();
         let pushed = tx.shared_send_iter_until_full([7u8, 8u8].into_iter());
@@ -960,6 +984,7 @@ mod core_tx_rx_tests {
     /// under normal conditions.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn shared_try_send_and_async_variants() {
         let (mut tx, _graph, _sender) = new_tx();
         let ident = ActorIdentity::new(0, "me", None);
@@ -977,6 +1002,7 @@ mod core_tx_rx_tests {
     /// Tests saturation policies: WarnThenAwait and DebugWarnThenAwait on a full channel.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_send_async_saturation_policies() {
         let (mut tx, _graph, _sender) = new_tx();
         let ident = ActorIdentity::new(0, "saturation", None);
@@ -1020,6 +1046,7 @@ mod core_tx_rx_tests {
     /// Tests ReturnBlockedMsg saturation on a full channel.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_send_async_saturation_returns_blocked() {
         let (mut tx, _graph, _sender) = new_tx();
         let ident = ActorIdentity::new(0, "blocked", None);
@@ -1042,6 +1069,7 @@ mod core_tx_rx_tests {
     /// Tests that if the shutdown oneshot fires during the send wait, Closed is returned.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_send_async_saturation_closes_on_shutdown() {
         let (mut tx, _graph, sender) = new_tx();
         let ident = ActorIdentity::new(0, "closed_shutdown", None);
@@ -1066,6 +1094,7 @@ mod core_tx_rx_tests {
     /// Tests that when room becomes available after a wait, AwaitForRoom succeeds.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_send_async_saturation_awaits_room_and_succeeds() {
         // Create a channel and keep its receiver so we can make room.
         let (mut tx, mut rx, _graph, _sender) = new_tx_with_rx();
@@ -1108,7 +1137,9 @@ mod core_tx_rx_tests {
         // The error is logged but no panic
     }
 
+    // ss[related channel.backpressure-never-drop]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, message_vec};
 
     ss_proptest! {

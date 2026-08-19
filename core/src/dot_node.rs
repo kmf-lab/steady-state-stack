@@ -1,6 +1,8 @@
 // ss[related telemetry.dot-export]
 use crate::ActorName;
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_stats::ActorStatsComputer;
+// ss[related philosophy.structural-hierarchy]
 use crate::dot::RemoteDetails;
 // ss[related telemetry.dot-export]
 use crate::monitor::{ActorStatus, ThreadInfo};
@@ -8,19 +10,32 @@ use crate::monitor::{ActorStatus, ThreadInfo};
 /// Represents a node in the graph, including metrics and display information.
 // ss[related telemetry.dot-export]
 pub(crate) struct Node {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) id: Option<ActorName>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) remote_details: Option<RemoteDetails>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) color: &'static str,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) pen_width: &'static str,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) stats_computer: ActorStatsComputer,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) display_label: String,
     /// Raw (unescaped) optional subtitle line under the actor name in DOT labels only.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) dot_subtitle: Option<String>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) tooltip: String,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) metric_text: String,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) thread_info_cache: Option<ThreadInfo>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) total_count_restarts: u32,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_stalled: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) work_info: Option<(u16, u16)>,
 }
 

@@ -1,11 +1,15 @@
 #[allow(unused_imports)]
 // ss[related distributed.aqueduct-stream]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::{LazyStreamRx, LazyStreamTx, ScheduleAs};
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_builder::ActorBuilder;
 // ss[related distributed.aqueduct-stream]
 use crate::distributed::aeron_channel_builder::AqueTech;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::{aeron_publish, aeron_publish_bundle, aeron_subscribe, aeron_subscribe_bundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundle, LazySteadyStreamTxBundleClone, StreamEgress, StreamIngress};
 // ss[related distributed.aqueduct-stream]
 use crate::state_management::new_state;
@@ -35,6 +39,7 @@ pub trait AqueductBuilder {
 // ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamRx<StreamEgress> {
+    // ss[related philosophy.structural-hierarchy]
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -79,6 +84,7 @@ impl AqueductBuilder for LazyStreamRx<StreamEgress> {
 // ss[depends stream.control-payload]
 // ss[related distributed.aqueduct-stream]
 impl AqueductBuilder for LazyStreamTx<StreamIngress> {
+    // ss[related philosophy.structural-hierarchy]
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -120,6 +126,7 @@ impl AqueductBuilder for LazyStreamTx<StreamIngress> {
 }
 // ss[related distributed.aqueduct-stream]
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgress, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -160,6 +167,7 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamRxBundle<StreamEgre
 
 // ss[related distributed.aqueduct-stream]
 impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngress, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn build_aqueduct(
         self,
         tech: AqueTech,
@@ -202,7 +210,9 @@ impl<const GIRTH: usize> AqueductBuilder for LazySteadyStreamTxBundle<StreamIngr
 #[cfg(test)]
 // ss[related distributed.aqueduct-stream]
 mod distributed_builder_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::*;
 
     /// Test that `build_aqueduct` works for `LazyStreamRx<StreamSimpleMessage>` with `AqueTech::Aeron`.

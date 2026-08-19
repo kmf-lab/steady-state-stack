@@ -1,6 +1,8 @@
 // ss[impl actor.lock-first.channels]
 use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
 use crate::{RxCore, RxDone};
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
 
 // ss[impl actor.lock-first.channels]
@@ -11,6 +13,7 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 // ss[impl actor.lock-first.channels]
 impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     /// Inherits the message item type from the underlying `T`.
+    // ss[related philosophy.structural-hierarchy]
     type MsgItem = <T as RxCore>::MsgItem;
 
     /// Inherits the output message type from the underlying `T`.
@@ -33,6 +36,7 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
     // ss[impl actor.lock-first.channels]
     type SliceTarget<'b> = <T as RxCore>::SliceTarget<'b> where Self::MsgOut: 'b;
 
+    // ss[related philosophy.structural-hierarchy]
     fn shared_validate_capacity_items(&self, items_count: usize) -> usize {
         <T as RxCore>::shared_validate_capacity_items(& **self, items_count)
     }
@@ -136,7 +140,9 @@ impl<T: RxCore> RxCore for futures_util::lock::MutexGuard<'_, T> {
 #[cfg(test)]
 // ss[impl actor.lock-first.channels]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[impl actor.lock-first.channels]
     use crate::core_exec;
@@ -144,6 +150,7 @@ mod tests {
     // ss[verify actor.lock-first.channels]
     // ss[verify channel.internal-behavior-no-lazy]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn mutex_guard_forwards_avail_items_count() {
         let builder = ChannelBuilder::default().with_capacity(4);
         let (tx, rx) = builder.build_channel::<u32>();
@@ -155,7 +162,9 @@ mod tests {
         });
     }
 
+    // ss[impl actor.lock-first.channels]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, channel_fifo_take, message_vec};
 
     ss_proptest! {

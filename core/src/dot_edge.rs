@@ -1,5 +1,6 @@
 // ss[related telemetry.dot-export]
 use crate::ActorName;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_stats::ChannelStatsComputer;
 
 /// Represents an edge in the graph, including metrics and display information.
@@ -9,22 +10,39 @@ use crate::channel_stats::ChannelStatsComputer;
 #[derive(Default, Debug)]
 // ss[related telemetry.dot-export]
 pub(crate) struct Edge {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) id: usize, // Position matches the channel ID
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) from: Option<ActorName>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) to: Option<ActorName>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) color: &'static str, // Results from computer
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) sidecar: bool, // Mark this edge as attaching to a sidecar
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) pen_width: String, // Results from computer
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) saturation_score: f64, // Results from computer
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ctl_labels: Vec<&'static str>, // Visibility tags for render
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) stats_computer: ChannelStatsComputer,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) display_label: String, // Results from computer
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) metric_text: String, // Results from computer
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) partner: Option<&'static str>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bundle_index: Option<usize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) diag_from_claim_actor_id: Option<usize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) diag_from_claim_meta_arc: Option<usize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) diag_to_claim_actor_id: Option<usize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) diag_to_claim_meta_arc: Option<usize>,
 }
 

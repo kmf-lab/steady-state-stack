@@ -1,24 +1,40 @@
 // ss[related actor.regeneration-survives]
 use super::affinity::pin_thread_to_core;
+// ss[related philosophy.structural-hierarchy]
 use super::context::{
     build_actor_context, build_actor_registration, exit_actor_registration, DynCall,
     NonSendWrapper, SteadyContextArchetype,
 };
+// ss[related actor.regeneration-survives]
 use crate::graph_liveliness::Graph;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related actor.regeneration-survives]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures::FutureExt;
+// ss[related philosophy.structural-hierarchy]
 use futures::stream::{FuturesUnordered, StreamExt};
+// ss[related actor.regeneration-survives]
 use std::collections::VecDeque;
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
+// ss[related philosophy.structural-hierarchy]
 use std::error::Error;
+// ss[related actor.regeneration-survives]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use std::panic::{catch_unwind, AssertUnwindSafe};
+// ss[related philosophy.structural-hierarchy]
 use std::pin::Pin;
+// ss[related actor.regeneration-survives]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 
+// ss[related actor.regeneration-survives]
 type ActorRuntime = NonSendWrapper<DynCall>;
 
 /// Manages a collection of actors, facilitating their coordinated execution on a shared thread.
@@ -28,10 +44,12 @@ type ActorRuntime = NonSendWrapper<DynCall>;
 // ss[related actor.regeneration-survives]
 pub struct Troupe {
     /// A queue of future builders for the actors in the troupe.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) future_builder: VecDeque<FutureBuilderType>,
     /// Unique identifier for the troupe.
     team_id: usize,
     /// Optional human-readable name for the troupe.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) name: Option<String>,
 }
 
@@ -128,11 +146,13 @@ impl FutureBuilderType {
 // ss[related actor.regeneration-survives]
 pub struct TroupeGuard {
     /// THE optional troupe to be spawned when the guard is dropped.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) troupe: Option<Troupe>,
 }
 
 // ss[related actor.regeneration-survives]
 impl std::ops::Deref for TroupeGuard {
+    // ss[related philosophy.structural-hierarchy]
     type Target = Troupe;
 
     /// Provides immutable access to the underlying troupe.
@@ -147,6 +167,7 @@ impl std::ops::Deref for TroupeGuard {
 // ss[related actor.regeneration-survives]
 impl std::ops::DerefMut for TroupeGuard {
     /// Provides mutable access to the underlying troupe.
+    // ss[related philosophy.structural-hierarchy]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.troupe
             .as_mut()
@@ -157,6 +178,7 @@ impl std::ops::DerefMut for TroupeGuard {
 // ss[related actor.regeneration-survives]
 impl Drop for TroupeGuard {
     /// Spawns the troupe when the guard is dropped, initiating the execution of the actors.
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if let Some(troupe) = self.troupe.take() {
             troupe.spawn();
@@ -351,10 +373,18 @@ impl Troupe {
                         Ok(Err(e)) => {
                             // Actor returned an Error, restart it
                             error!("Actor {:?} error: {:?}", slot.ctx.ident, e);
-                            // ss[impl actor.regeneration-survives]
-                            // ss[impl graph.panic-restart]
-                            slot.ctx.regeneration += 1;
-                            futures.push(Self::build_async_fun(slot));
+                            if slot.ctx.runtime_state.read().is_in_state(&[
+                                GraphLivelinessState::StopRequested,
+                                GraphLivelinessState::Stopped,
+                                GraphLivelinessState::StoppedUncleanly,
+                            ]) {
+                                exit_actor_registration(&slot.arch);
+                            } else {
+                                // ss[impl actor.regeneration-survives]
+                                // ss[impl graph.panic-restart]
+                                slot.ctx.regeneration += 1;
+                                futures.push(Self::build_async_fun(slot));
+                            }
                         }
                         Err(e) => {
                             // Actor panicked, restart it
@@ -367,10 +397,22 @@ impl Troupe {
                             };
 
                             error!("PANIC in troupe actor {:?}: {}", slot.ctx.ident, msg);
-                            // ss[impl actor.regeneration-survives]
-                            // ss[impl graph.panic-restart]
-                            slot.ctx.regeneration += 1;
-                            futures.push(Self::build_async_fun(slot));
+                            if slot.ctx.runtime_state.read().is_in_state(&[
+                                GraphLivelinessState::StopRequested,
+                                GraphLivelinessState::Stopped,
+                                GraphLivelinessState::StoppedUncleanly,
+                            ]) {
+                                error!(
+                                    "Troupe actor {:?} panicked during shutdown; not restarting",
+                                    slot.ctx.ident
+                                );
+                                exit_actor_registration(&slot.arch);
+                            } else {
+                                // ss[impl actor.regeneration-survives]
+                                // ss[impl graph.panic-restart]
+                                slot.ctx.regeneration += 1;
+                                futures.push(Self::build_async_fun(slot));
+                            }
                         }
                     }
                 }
@@ -411,16 +453,24 @@ impl Troupe {
 #[cfg(test)]
 // ss[related actor.regeneration-survives]
 mod troupe_proptest {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder::context::{
         DynCall, NonSendWrapper, SteadyContextArchetype,
     };
+    // ss[related actor.regeneration-survives]
     use crate::actor_builder::ActorBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use futures::channel::oneshot;
+    // ss[related philosophy.structural-hierarchy]
     use futures::FutureExt;
+    // ss[related actor.regeneration-survives]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
 
+    // ss[related actor.regeneration-survives]
     fn mock_archetype(graph: &Graph) -> SteadyContextArchetype<DynCall> {
         let (_tx, rx) = oneshot::channel();
         SteadyContextArchetype {
@@ -546,8 +596,11 @@ mod troupe_proptest {
             actor_count in 1usize..3,
             timeout_ms in 200u64..1_500,
         ) {
+            // ss[related actor.regeneration-survives]
             use crate::SteadyRunner;
+            // ss[related philosophy.structural-hierarchy]
             use std::thread::sleep;
+            // ss[related philosophy.structural-hierarchy]
             use std::time::Duration;
 
             SteadyRunner::test_build()

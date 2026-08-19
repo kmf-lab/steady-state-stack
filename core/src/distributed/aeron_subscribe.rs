@@ -1,26 +1,38 @@
 // ss[related distributed.subscribe-publish]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related distributed.subscribe-publish]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
 // ss[related distributed.subscribe-publish]
 use aeron::concurrent::logbuffer::frame_descriptor;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::logbuffer::header::Header;
+// ss[related philosophy.structural-hierarchy]
 use aeron::subscription::Subscription;
 // ss[related distributed.subscribe-publish]
 use log::{error, warn};
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aeron_channel_structs::Channel;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{SteadyStreamTx, StreamIngress};
 // ss[related distributed.subscribe-publish]
 use crate::{SteadyActor, StreamTx};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
 // ss[related distributed.subscribe-publish]
 use crate::distributed::polling;
+// ss[related philosophy.structural-hierarchy]
 use crate::state_management::SteadyState;
+// ss[related philosophy.structural-hierarchy]
 use crate::yield_now;
 
 /// Steady state for the single-channel Aeron subscriber, tracking the subscription registration ID.
@@ -28,6 +40,7 @@ use crate::yield_now;
 // ss[related distributed.subscribe-publish]
 pub struct AeronSubscribeSteadyState {
     /// The registration ID of the single subscription, None if not yet registered.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) sub_reg_id: Option<i64>,
 }
 
@@ -286,11 +299,15 @@ async fn poll_aeron_subscription<C: SteadyActor>(
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_subscribe_state_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::AeronSubscribeSteadyState;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::polling::PollScheduler;
 
     /// Preflight wire probe stream id in integration tests (see `PREFLIGHT_PROBE_STREAM_ID`).
+    // ss[related distributed.subscribe-publish]
     const PREFLIGHT_PROBE_STREAM_ID: i32 = 80_000;
 
     #[test]
@@ -332,15 +349,23 @@ mod aeron_subscribe_state_tests {
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_subscribe_graph_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
+    // ss[related distributed.subscribe-publish]
     use futures_timer::Delay;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aeron_channel_builder::AeronConfig;
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aeron_channel_structs::MediaType;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_builder::AqueductBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::StreamIngress;
+    // ss[related distributed.subscribe-publish]
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron subscribe actor: graph starts and stops without a live driver.

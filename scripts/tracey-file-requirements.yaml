@@ -73,40 +73,66 @@ files:
 
   dot/mod.rs:
     primary: telemetry.dot-export
+    verb: impl
     test_default_verify: telemetry.dot-export
+    impl_patterns:
+      - {substr: render, id: telemetry.dot-export, verb: impl}
+      - {substr: build, id: telemetry.dot-export, verb: impl}
+      - {substr: register, id: telemetry.dot-export, verb: impl}
 
   dot/escape.rs:
     primary: telemetry.dot-export
+    verb: impl
+    impl_patterns:
+      - {substr: escape, id: telemetry.dot-export, verb: impl}
 
   dot/colors.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/format.rs:
     primary: telemetry.dot-export
+    verb: impl
+    impl_patterns:
+      - {substr: format, id: telemetry.dot-export, verb: impl}
 
   dot/metric.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/keys.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/frames.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/partnered.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/render.rs:
     primary: telemetry.dot-export
+    verb: impl
+    impl_patterns:
+      - {substr: render, id: telemetry.dot-export, verb: impl}
 
   dot/register.rs:
     primary: telemetry.dot-export
+    verb: impl
+    impl_patterns:
+      - {substr: register, id: telemetry.dot-export, verb: impl}
 
   dot/history.rs:
     primary: telemetry.dot-export
+    verb: impl
 
   dot/build.rs:
     primary: telemetry.dot-export
+    verb: impl
+    impl_patterns:
+      - {substr: build, id: telemetry.dot-export, verb: impl}
 
   dot/tests/format_tests.rs:
     primary: telemetry.dot-export
@@ -163,7 +189,11 @@ files:
 
   channel_stats_labels.rs:
     primary: telemetry.channel-labels
+    verb: impl
     test_default_verify: telemetry.channel-labels
+    impl_patterns:
+      - {substr: label, id: telemetry.channel-labels, verb: impl}
+      - {substr: prometheus, id: telemetry.prometheus-metrics, verb: impl}
 
   channel_stats_tests.rs:
     primary: telemetry.channel-labels
@@ -381,6 +411,13 @@ files:
     requirements:
       - graph.block-until-stopped
       - testing.never-run-in-unit
+    impl_patterns:
+      - {substr: StageManager, id: testing.stage-manager-integration, verb: impl}
+      - {substr: actor_perform, id: testing.stage-manager-integration, verb: impl}
+      - {substr: final_bow, id: testing.stage-manager-integration, verb: impl}
+      - {substr: stage_manager, id: testing.stage-manager-integration, verb: impl}
+      - {substr: puppet, id: testing.never-run-in-unit, verb: impl}
+      - {substr: pipeline, id: testing.pipeline-worker-allowlist, verb: impl}
     test_rules:
       - {substr: stage, id: testing.stage-manager-integration}
       - {substr: puppet, id: testing.stage-manager-integration}
@@ -482,17 +519,38 @@ files:
 
   simulate_edge.rs:
     primary: testing.sim-producer-close
+    verb: impl
+    impl_patterns:
+      - {substr: simulate, id: testing.sim-producer-close, verb: impl}
+      - {substr: close, id: testing.sim-producer-close, verb: impl}
     test_rules:
       - {substr: simulate, id: testing.stage-manager-integration}
 
   macros.rs:
     primary: bundle.split-macro
+    verb: impl
+    impl_patterns:
+      - {substr: split_bundle, id: bundle.split-macro, verb: impl}
+      - {substr: wait_for_index, id: bundle.wait-for-index-macro, verb: impl}
     test_rules:
       - {substr: split_bundle, id: bundle.split-macro}
       - {substr: wait_for_index, id: bundle.wait-for-index-macro}
 
+  guard_ext.rs:
+    primary: actor.lock-first.channels
+    verb: impl
+    test_default_verify: actor.lock-first.channels
+    impl_patterns:
+      - {substr: acquire_guard, id: actor.lock-first.channels, verb: impl}
+      - {substr: SteadyChannelExt, id: actor.lock-first.channels, verb: impl}
+
   lib.rs:
     primary: philosophy.structural-hierarchy
+    impl_patterns:
+      - {substr: ss_proptest, id: verify.process.proptest, verb: impl}
+      - {substr: ss_proptest_telemetry, id: verify.process.proptest, verb: impl}
+      - {substr: pub use, id: philosophy.structural-hierarchy, verb: related}
+      - {substr: mod , id: philosophy.structural-hierarchy, verb: related}
 
   types.rs:
     primary: philosophy.structural-hierarchy
@@ -504,17 +562,25 @@ files:
 
   metrics.rs:
     primary: telemetry.prometheus-metrics
+    verb: impl
     requirements:
       - channel.backpressure-never-drop
     test_default_verify: verify.process.proptest
+    impl_patterns:
+      - {substr: prometheus, id: telemetry.prometheus-metrics, verb: impl}
+      - {substr: collector, id: telemetry.prometheus-metrics, verb: impl}
     test_rules:
       - {substr: stddev, id: verify.process.proptest}
 
   monitor_telemetry.rs:
     primary: telemetry.prometheus-metrics
+    verb: impl
     test_default_verify: telemetry.prometheus-metrics
     requirements:
       - actor.shadow-spotlight
+    impl_patterns:
+      - {substr: prometheus, id: telemetry.prometheus-metrics, verb: impl}
+      - {substr: process_event, id: telemetry.prometheus-metrics, verb: impl}
     test_rules:
       - {substr: proptest, id: verify.process.proptest}
 
@@ -534,7 +600,11 @@ files:
 
   telemetry/setup.rs:
     primary: telemetry.builtin-server
+    verb: impl
     test_default_verify: telemetry.builtin-server
+    impl_patterns:
+      - {substr: telemetry, id: telemetry.builtin-server, verb: impl}
+      - {substr: server, id: telemetry.builtin-server, verb: impl}
     test_rules:
       - {substr: proptest, id: verify.process.proptest}
 
@@ -547,16 +617,28 @@ files:
 
   telemetry/metrics_server.rs:
     primary: telemetry.builtin-server
+    verb: impl
     test_default_verify: telemetry.builtin-server
+    impl_patterns:
+      - {substr: server, id: telemetry.builtin-server, verb: impl}
+      - {substr: http, id: telemetry.builtin-server, verb: impl}
 
   telemetry/metrics_collector.rs:
     primary: telemetry.prometheus-metrics
+    verb: impl
     test_default_verify: telemetry.prometheus-metrics
+    impl_patterns:
+      - {substr: collect, id: telemetry.prometheus-metrics, verb: impl}
+      - {substr: prometheus, id: telemetry.prometheus-metrics, verb: impl}
     test_rules:
       - {substr: proptest, id: verify.process.proptest}
 
   telemetry_window.rs:
     primary: telemetry.shutdown-complete
+    verb: impl
+    impl_patterns:
+      - {substr: shutdown, id: telemetry.shutdown-complete, verb: impl}
+      - {substr: window, id: telemetry.shutdown-complete, verb: impl}
 
   abstract_executor_async_std.rs:
     primary: platform.executor-features
@@ -602,11 +684,23 @@ files:
 
   serialize/byte_buffer_packer.rs:
     primary: stream.control-payload
+    verb: impl
     test_default_verify: stream.control-payload
+    impl_patterns:
+      - {substr: pack, id: stream.control-payload, verb: impl}
+      - {substr: unpack, id: stream.control-payload, verb: impl}
+      - {substr: encode, id: stream.control-payload, verb: impl}
+      - {substr: decode, id: stream.control-payload, verb: impl}
 
   serialize/fast_protocol_packed.rs:
     primary: stream.control-payload
+    verb: impl
     test_default_verify: stream.control-payload
+    impl_patterns:
+      - {substr: pack, id: stream.control-payload, verb: impl}
+      - {substr: unpack, id: stream.control-payload, verb: impl}
+      - {substr: encode, id: stream.control-payload, verb: impl}
+      - {substr: decode, id: stream.control-payload, verb: impl}
 
   distributed/aeron_channel_builder.rs:
     primary: distributed.aeron-uri
@@ -634,6 +728,7 @@ files:
 
   distributed/aeron_publish_bundle.rs:
     primary: distributed.subscribe-publish
+    verb: impl
     requirements:
       - bundle.girth-const-generic
     test_default_verify: distributed.subscribe-publish
@@ -641,6 +736,8 @@ files:
       - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
       - {substr: mock_sender_run, id: distributed.subscribe-publish, verb: impl}
       - {substr: mock_receiver_run, id: distributed.subscribe-publish, verb: impl}
+      - {substr: publish, id: distributed.subscribe-publish, verb: impl}
+      - {substr: bundle, id: bundle.girth-const-generic, verb: impl}
     test_rules:
       - {substr: mock_sender, id: distributed.subscribe-publish}
       - {substr: mock_receiver, id: distributed.subscribe-publish}
@@ -658,9 +755,12 @@ files:
 
   distributed/aeron_subscribe_bundle.rs:
     primary: distributed.subscribe-publish
+    verb: impl
     test_default_verify: distributed.subscribe-publish
     impl_patterns:
       - {substr: internal_behavior, id: actor.internal-behavior-logic, verb: impl}
+      - {substr: subscribe, id: distributed.subscribe-publish, verb: impl}
+      - {substr: bundle, id: bundle.girth-const-generic, verb: impl}
     test_rules:
       - {substr: never_simulate, id: testing.never-run-in-unit}
       - {substr: bundle, id: bundle.girth-const-generic}

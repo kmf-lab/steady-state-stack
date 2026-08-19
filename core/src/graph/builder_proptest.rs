@@ -1,8 +1,12 @@
 //! Property tests for `GraphBuilder` configuration invariants.
 
+// ss[related philosophy.structural-hierarchy]
 use super::{GraphBuilder, MIN_MS_RATE};
+// ss[related philosophy.structural-hierarchy]
 use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::HashSet;
 
 ss_proptest! {

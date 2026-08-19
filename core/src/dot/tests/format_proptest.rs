@@ -1,6 +1,8 @@
 // ss[related telemetry.dot-export]
 use crate::ss_proptest;
+// ss[impl telemetry.dot-export]
 use proptest::prelude::*;
+// ss[impl telemetry.dot-export]
 use super::super::{
     actor_fillcolor_hex_into, color_to_rgb, escape_dot_quotes, escape_node_tooltip_text,
     mean_avg_fill_percent, rgb_to_hex_into,

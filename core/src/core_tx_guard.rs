@@ -1,6 +1,8 @@
 // ss[related actor.lock-first.channels]
 use futures_util::lock::MutexGuard;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ActorIdentity, SendOutcome, SendSaturation, TxCore, TxDone};
 // ss[related actor.lock-first.channels]
 use crate::monitor_telemetry::SteadyTelemetrySend;
@@ -12,6 +14,7 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 // ss[related actor.lock-first.channels]
 impl<T: TxCore> TxCore for MutexGuard<'_, T> {
     /// Inherits the input message type from the underlying `T`.
+    // ss[related philosophy.structural-hierarchy]
     type MsgIn<'a> = <T as TxCore>::MsgIn<'a>;
 
     /// Inherits the output message type from the underlying `T`.
@@ -193,13 +196,21 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
 }
 
 #[cfg(test)]
+// ss[related actor.lock-first.channels]
 mod core_tx_guard_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
+    // ss[related actor.lock-first.channels]
     use crate::core_rx::RxCore;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_tx::TxCore;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_exec;
+    // ss[related actor.lock-first.channels]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, message_vec};
 
     ss_proptest! {

@@ -1,21 +1,30 @@
 // ss[related distributed.subscribe-publish]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related distributed.subscribe-publish]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::atomic_buffer::{AlignedBuffer, AtomicBuffer};
+// ss[related philosophy.structural-hierarchy]
 use aeron::exclusive_publication::ExclusivePublication;
 // ss[related distributed.subscribe-publish]
 use aeron::utils::types::Index;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aeron_channel_structs::Channel;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{SteadyStreamRxBundle, SteadyStreamRxBundleTrait, StreamEgress, StreamRxBundleTrait};
 // ss[related distributed.subscribe-publish]
 use crate::SteadyActor;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
 // ss[related distributed.subscribe-publish]
 use crate::simulate_edge::IntoSimRunner;
+// ss[related philosophy.structural-hierarchy]
 use crate::state_management::SteadyState;
 // Reference to Aeron Best Practices Guide for performance optimization and configuration tips:
 // https://github.com/real-logic/aeron/wiki/Best-Practices-Guide
@@ -42,8 +51,10 @@ pub struct AeronPublishSteadyState {
     ///
     /// Each entry corresponds to a stream in the bundle, storing the Aeron-assigned ID for its publication.
     /// `None` indicates the publication has not yet been registered.
+    // ss[impl distributed.subscribe-publish]
     pub(crate) pub_reg_id: Vec<Option<i64>>,
     /// Internal counter for items taken from the stream, used for tracking purposes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) _items_taken: usize,
 }
 
@@ -335,10 +346,13 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 /// This module includes mock sender and receiver actors, along with a test case to simulate message flow through Aeron.
 /// It exercises the publishing logic under controlled conditions, ensuring reliability and performance.
 #[cfg(test)]
+// ss[impl distributed.subscribe-publish]
 pub(crate) mod aeron_publish_bundle_tests {
     // ss[related distributed.subscribe-publish]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, SteadyStreamTxBundleTrait, StreamIngress, StreamTxBundleTrait};
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::StreamEgress;
 
     /// Number of items to send in tests; increase for extended load testing.
@@ -349,6 +363,7 @@ pub(crate) mod aeron_publish_bundle_tests {
     // ss[related distributed.subscribe-publish]
     pub const STREAM_ID: i32 = 11;
     /// Term buffer size in MB; 64MB targets high message rates (e.g., 12M messages/sec).
+    // ss[related philosophy.structural-hierarchy]
     pub const _TERM_MB: i32 = 64;
     // A single stream at 64MB maps 400MB of shared memory. For optimal performance,
     // tune SO_RCVBUF/SO_SNDBUF and check loopback queue length (e.g., `ip link set lo txqueuelen 10000`).
@@ -458,17 +473,25 @@ pub(crate) mod aeron_publish_bundle_tests {
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_publish_bundle_graph_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
+    // ss[related distributed.subscribe-publish]
     use futures_timer::Delay;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aeron_channel_builder::AeronConfig;
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aeron_channel_structs::MediaType;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_builder::AqueductBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::{
         LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone, StreamEgress, StreamIngress,
     };
+    // ss[related distributed.subscribe-publish]
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron publish bundle: graph starts and stops without a live driver.
@@ -477,6 +500,7 @@ mod aeron_publish_bundle_graph_tests {
     fn test_publish_bundle_simulated_graph_stops_cleanly() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -512,6 +536,7 @@ mod aeron_publish_bundle_graph_tests {
             eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
             return;
         }
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let cb = graph.channel_builder().with_capacity(256);
         let (_tx, lazy_rx) = cb.build_stream_bundle::<StreamEgress, GIRTH>(64);
@@ -540,6 +565,7 @@ mod aeron_publish_bundle_graph_tests {
     fn test_publish_bundle_internal_closed_egress_stops_without_driver() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -570,8 +596,10 @@ mod aeron_publish_bundle_graph_tests {
     fn test_mock_sender_run_graph_stops_cleanly() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         use super::aeron_publish_bundle_tests::mock_sender_run;
 
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(4096);
@@ -594,8 +622,10 @@ mod aeron_publish_bundle_graph_tests {
     fn test_mock_receiver_run_graph_stops_cleanly() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         use super::aeron_publish_bundle_tests::mock_receiver_run;
 
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(64);
@@ -619,8 +649,10 @@ mod aeron_publish_bundle_graph_tests {
     fn test_mock_receiver_run_with_prefilled_ingress_stops() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         use super::aeron_publish_bundle_tests::mock_receiver_run;
 
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -645,6 +677,7 @@ mod aeron_publish_bundle_graph_tests {
     fn test_publish_bundle_internal_with_mock_sender_stops_without_driver() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         use super::aeron_publish_bundle_tests::mock_sender_run;
 
         let mut graph = GraphBuilder::for_testing().build(());
@@ -652,6 +685,7 @@ mod aeron_publish_bundle_graph_tests {
             eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
             return;
         }
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let cb = graph.channel_builder().with_capacity(4096);
         let (lazy_tx, lazy_rx) = cb.build_stream_bundle::<StreamEgress, GIRTH>(8);

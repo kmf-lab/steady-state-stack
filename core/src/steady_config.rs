@@ -66,7 +66,24 @@ pub(crate) const AGGREGATION_THRESHOLD: usize = 4;
 // Default values for runtime configuration
 // ss[related philosophy.structural-hierarchy]
 const DEFAULT_TELEMETRY_SERVER_PORT: u16 = 9900;
+// ss[related philosophy.structural-hierarchy]
 const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
+
+/// Maximum ports to walk when scanning for a free telemetry bind (default port only).
+// ss[related philosophy.structural-hierarchy]
+pub(crate) const TELEMETRY_PORT_SCAN_MAX_WALK: u16 = 256;
+
+/// Stop telemetry port scan before trying this port (32K ceiling).
+// ss[related philosophy.structural-hierarchy]
+pub(crate) const TELEMETRY_PORT_SCAN_CEILING: u16 = 32768;
+
+/// Returns the telemetry port from `TELEMETRY_SERVER_PORT` when set and parseable.
+// ss[related philosophy.structural-hierarchy]
+pub(crate) fn telemetry_server_port_from_env() -> Option<u16> {
+    env::var("TELEMETRY_SERVER_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+}
 
 /// Retrieves the telemetry server port, reading from the `TELEMETRY_SERVER_PORT` environment
 /// variable. Falls back to a sensible default if the variable is unset or invalid.
@@ -76,10 +93,16 @@ const DEFAULT_TELEMETRY_SERVER_IP: &str = "0.0.0.0";
 /// - If the variable is set but cannot be parsed as `u16`, returns the default.
 // ss[related philosophy.structural-hierarchy]
 pub(crate) fn telemetry_server_port() -> u16 {
-    env::var("TELEMETRY_SERVER_PORT")
-        .ok()
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(DEFAULT_TELEMETRY_SERVER_PORT)
+    telemetry_server_port_from_env().unwrap_or(DEFAULT_TELEMETRY_SERVER_PORT)
+}
+
+/// Whether binding may scan to the next port when the requested port is in use.
+///
+/// Scanning applies only when the default port (9900) is requested and
+/// `TELEMETRY_SERVER_PORT` is unset.
+// ss[related philosophy.structural-hierarchy]
+pub(crate) fn telemetry_port_scan_enabled(requested_port: u16) -> bool {
+    requested_port == DEFAULT_TELEMETRY_SERVER_PORT && telemetry_server_port_from_env().is_none()
 }
 
 /// Retrieves the telemetry server IP address, reading from the `TELEMETRY_SERVER_IP`
@@ -95,7 +118,9 @@ pub(crate) fn telemetry_server_ip() -> String {
 #[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::env;
 
     #[test]
@@ -127,13 +152,23 @@ mod tests {
         unsafe {
             env::remove_var("TELEMETRY_SERVER_PORT");
             assert_eq!(telemetry_server_port(), DEFAULT_TELEMETRY_SERVER_PORT);
+            assert_eq!(telemetry_server_port_from_env(), None);
 
             env::set_var("TELEMETRY_SERVER_PORT", "9100");
             assert_eq!(telemetry_server_port(), 9100);
+            assert_eq!(telemetry_server_port_from_env(), Some(9100));
 
             env::set_var("TELEMETRY_SERVER_PORT", "not_a_number");
             // invalid values fall back to default
             assert_eq!(telemetry_server_port(), DEFAULT_TELEMETRY_SERVER_PORT);
+            assert_eq!(telemetry_server_port_from_env(), None);
+            assert!(telemetry_port_scan_enabled(DEFAULT_TELEMETRY_SERVER_PORT));
+
+            env::set_var("TELEMETRY_SERVER_PORT", "9900");
+            assert!(!telemetry_port_scan_enabled(DEFAULT_TELEMETRY_SERVER_PORT));
+
+            env::remove_var("TELEMETRY_SERVER_PORT");
+            assert!(!telemetry_port_scan_enabled(9901));
         }
     }
 

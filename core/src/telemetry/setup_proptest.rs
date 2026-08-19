@@ -1,7 +1,10 @@
 //! Property tests for telemetry setup backoff scaling.
 
+// ss[related telemetry.builtin-server]
 use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry::setup::calculate_exponential_channel_backoff;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
 
 ss_proptest! {

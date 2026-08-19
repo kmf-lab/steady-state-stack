@@ -53,6 +53,7 @@ pub struct PollScheduler {
 // ss[related distributed.media-driver-testing]
 impl Default for PollScheduler {
     /// Sets up a scheduler with default values if you don’t specify anything.
+    // ss[related philosophy.structural-hierarchy]
     fn default() -> Self {
         Self::new()
     }
@@ -228,6 +229,7 @@ impl PollScheduler {
 #[cfg(test)]
 // ss[related distributed.media-driver-testing]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::PollScheduler;
 
     /// Checks the delay when the current time is exactly at the expected moment.

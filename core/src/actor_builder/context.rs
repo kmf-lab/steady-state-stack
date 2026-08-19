@@ -1,24 +1,44 @@
 // ss[related actor.regeneration-survives]
 use crate::dot::RemoteDetails;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::SideChannel;
+// ss[related actor.regeneration-survives]
 use crate::monitor::ActorMetaData;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry::metrics_collector::CollectorDetail;
+// ss[related actor.regeneration-survives]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use async_lock::Barrier;
+// ss[related actor.regeneration-survives]
 use futures::channel::oneshot::{Receiver, Sender};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::Shared;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::Mutex;
+// ss[related actor.regeneration-survives]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::VecDeque;
+// ss[related actor.regeneration-survives]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use std::pin::Pin;
+// ss[related actor.regeneration-survives]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, OnceLock};
+// ss[related philosophy.structural-hierarchy]
 use std::time::Instant;
 
 /// A type alias for a pinned future representing an actor's execution logic.
@@ -40,41 +60,58 @@ pub(crate) type NodeTxRx = Mutex<(SideChannel, Receiver<()>)>;
 // ss[related actor.regeneration-survives]
 pub(crate) struct SteadyContextArchetype<DynCall: ?Sized> {
     /// THE execution logic for the actor, wrapped to avoid `Send` requirements.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_actor_exec: NonSendWrapper<DynCall>,
     /// Shared liveliness state of the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     /// Shared counter for the number of channels.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_count: Arc<AtomicUsize>,
     /// Unique identifier for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
     /// Shared arguments for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
     /// Telemetry receivers for monitoring.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
     /// Metadata for the actor, including telemetry configurations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_metadata: Arc<ActorMetaData>,
     /// Vector of oneshot senders for shutdown notifications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<Sender<()>>>>,
     /// A shared future that resolves when a shutdown is requested.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown: Shared<Receiver<()>>,
     /// Optional node transmitter and receiver for side-channel communications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
     /// Flag indicating whether to show thread information in telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_info: bool,
     /// Lazily initialized Aeron media driver.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// Short Aeron init retry budget when graph/actor is for testing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_init_for_tests: bool,
     /// Flag indicating whether to prevent simulation.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) never_simulate: bool,
     /// When true, test graphs use `internal_behavior` for this actor (see graph name allowlist).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) force_internal_behavior_in_test: bool,
     /// Optional barrier for synchronizing shutdown.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
 }
 
 // ss[related actor.regeneration-survives]
 impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> Self {
         SteadyContextArchetype {
             build_actor_exec: self.build_actor_exec.clone(),

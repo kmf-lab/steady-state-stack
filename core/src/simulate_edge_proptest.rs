@@ -1,33 +1,53 @@
 //! Property tests for simulation runners and `simulated_behavior`.
 
+// ss[related testing.sim-producer-close]
 use super::*;
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::producer::AsyncProducer;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::ChannelBuilder;
+// ss[related testing.sim-producer-close]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::{SideChannelResponder, StageDirection, StageManager};
+// ss[related philosophy.structural-hierarchy]
 use crate::proptest_support::{capacity, message_vec};
+// ss[related testing.sim-producer-close]
 use crate::SteadyRxBundle;
+// ss[related philosophy.structural-hierarchy]
 use crate::SteadyTxBundle;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ActorIdentity, ActorName, SteadyActor};
+// ss[related testing.sim-producer-close]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::ops::DerefMut;
+// ss[related testing.sim-producer-close]
 use std::sync::Arc;
 
+// ss[related philosophy.structural-hierarchy]
 struct ErrorOnStepRunner;
+// ss[related testing.sim-producer-close]
 struct ErrorOnStageRunner;
 
+// ss[related philosophy.structural-hierarchy]
 impl<C: SteadyActor> SimRunner<C> for ErrorOnStepRunner {
+    // ss[related testing.sim-producer-close]
     fn step(&mut self) -> Result<SimStepResult, Box<dyn std::error::Error>> {
         Err("injected step error".into())
     }
 }
 
+// ss[related testing.sim-producer-close]
 impl<C: SteadyActor> SimRunner<C> for ErrorOnStageRunner {
+    // ss[related philosophy.structural-hierarchy]
     fn step(&mut self) -> Result<SimStepResult, Box<dyn std::error::Error>> {
         Ok(SimStepResult::NoWork)
     }
 
+    // ss[related testing.sim-producer-close]
     fn stage_step(
         &mut self,
         _actor: &mut C,
@@ -37,15 +57,21 @@ impl<C: SteadyActor> SimRunner<C> for ErrorOnStageRunner {
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct ErrorOnStep;
+// ss[related philosophy.structural-hierarchy]
 impl<C: SteadyActor> IntoSimRunner<C> for ErrorOnStep {
+    // ss[related philosophy.structural-hierarchy]
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(ErrorOnStepRunner)
     }
 }
 
+// ss[related testing.sim-producer-close]
 struct ErrorOnStage;
+// ss[related philosophy.structural-hierarchy]
 impl<C: SteadyActor> IntoSimRunner<C> for ErrorOnStage {
+    // ss[related philosophy.structural-hierarchy]
     fn into_sim_runner(&self) -> Box<dyn SimRunner<C>> {
         Box::new(ErrorOnStageRunner)
     }
@@ -189,6 +215,7 @@ ss_proptest! {
     // ss[verify testing.sim-producer-close]
     // ss[verify verify.process.proptest]
     fn proptest_sim_stream_tx_step(cap in 2usize..16) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::distributed::aqueduct_stream::StreamIngress;
         let builder = ChannelBuilder::default().with_capacity(cap);
         let (tx_lazy, _rx) = builder.build_stream::<StreamIngress>(8);
@@ -211,6 +238,7 @@ ss_proptest! {
     // ss[verify testing.sim-producer-close]
     // ss[verify verify.process.proptest]
     fn proptest_sim_stream_rx_step(cap in 2usize..16) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::distributed::aqueduct_stream::StreamIngress;
         let builder = ChannelBuilder::default().with_capacity(cap);
         let (tx_lazy, rx_lazy) = builder.build_stream::<StreamIngress>(8);
@@ -297,6 +325,7 @@ ss_proptest! {
     // ss[verify testing.sim-producer-close]
     // ss[verify verify.process.proptest]
     fn proptest_sim_stream_tx_close_outputs(cap in 2usize..16) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::distributed::aqueduct_stream::StreamIngress;
         let builder = ChannelBuilder::default().with_capacity(cap);
         let (tx_lazy, rx_lazy) = builder.build_stream::<StreamIngress>(8);
@@ -593,6 +622,7 @@ ss_proptest! {
     // ss[verify testing.sim-producer-close]
     // ss[verify verify.process.proptest]
     fn proptest_sim_stream_rx_step_empty(cap in 2usize..16) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::distributed::aqueduct_stream::StreamIngress;
         let builder = ChannelBuilder::default().with_capacity(cap);
         let (_tx_lazy, rx_lazy) = builder.build_stream::<StreamIngress>(8);
@@ -679,8 +709,11 @@ ss_proptest! {
     // ss[verify graph.for-testing]
     // ss[verify verify.process.proptest]
     fn proptest_never_simulate_edge_skips_simulated_behavior(timeout_ms in 50u64..1_000) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph::GraphBuilder;
+        // ss[related philosophy.structural-hierarchy]
         use crate::ScheduleAs;
+        // ss[related testing.sim-producer-close]
         use crate::SteadyActorShadow;
         let mut graph = GraphBuilder::for_testing().build(());
         graph

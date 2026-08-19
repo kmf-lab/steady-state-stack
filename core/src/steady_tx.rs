@@ -1,30 +1,44 @@
 // ss[related channel.backpressure-never-drop]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use log::{error, warn};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{FutureExt};
 // ss[related channel.backpressure-never-drop]
 use std::any::type_name;
+// ss[related philosophy.structural-hierarchy]
 use std::backtrace::Backtrace;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Instant};
 // ss[related channel.backpressure-never-drop]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::{Mutex, MutexLockFuture};
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::traits::Observer;
 // ss[related channel.backpressure-never-drop]
 use ringbuf::producer::Producer;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{select_all};
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
 // ss[related channel.backpressure-never-drop]
 use std::ops::Deref;
+// ss[related philosophy.structural-hierarchy]
 use std::thread;
+// ss[related philosophy.structural-hierarchy]
 use crate::{steady_config, ActorIdentity, SteadyTxBundle, TxBundle};
 // ss[related channel.backpressure-never-drop]
 use crate::channel_builder::InternalSender;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{TxChannelMetaDataWrapper};
 // ss[related channel.backpressure-never-drop]
 use crate::monitor::{ChannelMetaData};
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
+// ss[related philosophy.structural-hierarchy]
 use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 
 /// Represents a transmission channel for sending messages of type `T`.
@@ -33,23 +47,31 @@ use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 // ss[related channel.backpressure-never-drop]
 pub struct Tx<T> {
     /// The internal sender that manages the ring buffer for message transmission.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) tx: InternalSender<T>,
     /// A wrapper around metadata for the channel, utilized for logging and telemetry purposes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_meta_data: TxChannelMetaDataWrapper,
     /// An index assigned for local monitoring, initialized upon first use of the channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) local_monitor_index: usize,
     /// The timestamp of the last error transmission, used to enforce rate-limiting on error logs.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_error_send: Instant,
     /// An optional sender for signaling that the channel has been closed, facilitating lifecycle control.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) make_closed: Option<oneshot::Sender<()>>,
     /// A receiver for detecting shutdown signals, enabling graceful termination of the channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
     /// Unique key for the global metadata registry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) registry_key: usize,
 }
 
 // ss[related channel.backpressure-never-drop]
 impl<T> Drop for Tx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if self.registry_key != 0 {
             crate::monitor::METADATA_REGISTRY.write().remove(&self.registry_key);
@@ -71,6 +93,7 @@ impl<T> Debug for Tx<T> {
 // Satisfy the trait for the raw struct
 // ss[related channel.backpressure-never-drop]
 impl<T> TxMetaDataProvider for Tx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.channel_meta_data.meta_data)
     }
@@ -267,6 +290,7 @@ impl<T> Tx<T> {
     /// - `tel`: The telemetry send structure to record the event in.
     // ss[related channel.backpressure-never-drop]
     #[allow(dead_code)] // used by Rx path; Tx keeps symmetric API for future monitor wiring
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn telemetry_inc<const LEN: usize>(&mut self, done: TxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         // CRITICAL FIX: Resolve lazy index if not yet established
         if self.local_monitor_index == MONITOR_UNKNOWN {
@@ -593,6 +617,7 @@ impl TxDone {
 
 // ss[related channel.backpressure-never-drop]
 impl Deref for TxDone {
+    // ss[related philosophy.structural-hierarchy]
     type Target = usize;
 
     /// Allows dereferencing to the item count of the transmission.
@@ -611,7 +636,9 @@ impl Deref for TxDone {
 #[cfg(test)]
 // ss[related channel.backpressure-never-drop]
 mod steady_lazy_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[related channel.backpressure-never-drop]
     use crate::*;
@@ -619,6 +646,7 @@ mod steady_lazy_tests {
     /// Tests the basic flow of sending and receiving messages through lazy transmitter and receiver channels.
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_lazy_flow() {
         let builder = ChannelBuilder::default().with_capacity(3);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
@@ -656,9 +684,11 @@ mod steady_lazy_tests {
 
     // ss[verify bundle.index-wait-readiness]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_steady_rx_bundle_wait_avail_index() {
     crate::core_exec::block_on(async {
 
+        // ss[related channel.backpressure-never-drop]
         use crate::SteadyRxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (tx0, rx0) = b0.build_channel::<i32>();
@@ -674,9 +704,11 @@ mod steady_lazy_tests {
 
     // ss[verify channel.backpressure-never-drop]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_steady_tx_bundle_wait_vacant_index() {
     crate::core_exec::block_on(async {
 
+        // ss[related channel.backpressure-never-drop]
         use crate::SteadyTxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (tx0, _rx0) = b0.build_channel::<i32>();
@@ -691,6 +723,7 @@ mod steady_lazy_tests {
     /// Tests the `width()` and `memory_bytes()` accessors on an established Tx.
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_tx_width_and_memory_bytes() {
         let builder = ChannelBuilder::default().with_capacity(10);
         let (tx_lazy, _rx_lazy) = builder.build_channel::<u32>();
@@ -704,7 +737,9 @@ mod steady_lazy_tests {
     /// Tests the bundle-level `memory_bytes()` rollup across lanes.
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_tx_bundle_memory_bytes() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::SteadyTxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (tx0, _rx0) = b0.build_channel::<u64>();
@@ -715,7 +750,9 @@ mod steady_lazy_tests {
         assert_eq!(bundle.memory_bytes(), 96);
     }
 
+    // ss[related channel.backpressure-never-drop]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
 
     ss_proptest! {
@@ -728,6 +765,7 @@ mod steady_lazy_tests {
             lane in 0usize..2,
             other_count in 1usize..8,
         ) {
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyTxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(8);
             let (tx0, _rx0) = b0.build_channel::<i32>();
@@ -748,6 +786,7 @@ mod steady_lazy_tests {
         fn proptest_wait_vacant_index_ready_lane(
             count in 1usize..4,
         ) {
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyTxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(8);
             let (tx0, _rx0) = b0.build_channel::<i32>();
@@ -766,6 +805,7 @@ mod steady_lazy_tests {
             lane in 0usize..2,
             other_count in 1usize..8,
         ) {
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyRxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(8);
             let (_tx0, rx0) = b0.build_channel::<i32>();
@@ -788,6 +828,7 @@ mod steady_lazy_tests {
             per_lane in 1usize..4,
         ) {
             prop_assume!(per_lane <= cap);
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyRxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(cap);
             let (tx0, rx0) = b0.build_channel::<i32>();
@@ -826,6 +867,7 @@ mod steady_lazy_tests {
             mask in lane_mask(2),
             per_lane in 1usize..4,
         ) {
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyTxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(8);
             let (tx0, _rx0) = b0.build_channel::<i32>();
@@ -918,6 +960,7 @@ mod steady_lazy_tests {
         // ss[verify channel.memory-usage-telemetry]
         // ss[verify verify.process.proptest]
         fn proptest_tx_width_and_memory_bytes(cap in capacity()) {
+            // ss[related philosophy.structural-hierarchy]
             use std::mem::size_of;
             let builder = ChannelBuilder::default().with_capacity(cap);
             let (tx_lazy, _rx_lazy) = builder.build_channel::<u64>();
@@ -940,7 +983,9 @@ mod steady_lazy_tests {
         fn proptest_tx_bundle_memory_bytes_is_lane_sum(
             caps in prop::collection::vec(capacity(), 4),
         ) {
+            // ss[related channel.backpressure-never-drop]
             use crate::SteadyTxBundleTrait;
+            // ss[related philosophy.structural-hierarchy]
             use std::mem::size_of;
             let b0 = ChannelBuilder::default().with_capacity(caps[0]);
             let (tx0, _rx0) = b0.build_channel::<u64>();
@@ -961,6 +1006,7 @@ mod steady_lazy_tests {
 #[cfg(test)]
 // ss[related channel.backpressure-never-drop]
 mod tx_done_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     #[test]

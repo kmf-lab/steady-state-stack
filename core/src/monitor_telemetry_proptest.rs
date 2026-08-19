@@ -1,13 +1,20 @@
 //! Property tests for monitor telemetry counters and DOT subtitle coalescing.
 
+// ss[related telemetry.prometheus-metrics]
 use crate::channel_builder::ChannelBuilder;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetrySend, DOT_SUBTITLE_MAX_CHARS};
-use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
+use crate::ss_proptest_telemetry;
+// ss[related telemetry.prometheus-metrics]
 use crate::{MONITOR_NOT, MONITOR_UNKNOWN};
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Instant;
 
-ss_proptest! {
+ss_proptest_telemetry! {
+
     /// Property: `process_event` never panics and preserves non-negative counts for valid indices.
     #[test]
     // ss[verify telemetry.prometheus-metrics]
@@ -17,7 +24,7 @@ ss_proptest! {
         delta in 0isize..100,
         seed in 0usize..50,
     ) {
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
         let mut send = SteadyTelemetrySend::new(tx, [seed; 4], [0, 1, 2, 3], Instant::now());
         let before = send.count[index];
@@ -35,7 +42,7 @@ ss_proptest! {
         id in 4usize..64,
         delta in 0isize..32,
     ) {
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
         let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
         let resolved = send.process_event(MONITOR_UNKNOWN, id, delta);
@@ -49,7 +56,7 @@ ss_proptest! {
     fn proptest_process_event_monitor_not_passthrough(
         delta in 0isize..16,
     ) {
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
         let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
         prop_assert_eq!(send.process_event(MONITOR_NOT, 0, delta), MONITOR_NOT);

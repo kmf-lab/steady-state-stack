@@ -1,14 +1,20 @@
 // ss[related state.lock-init-once]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::{Mutex, MutexGuard, MappedMutexGuard};
+// ss[related philosophy.structural-hierarchy]
 use std::ops::{Deref, DerefMut};
 // ss[related state.lock-init-once]
 use std::fs::File;
+// ss[related philosophy.structural-hierarchy]
 use std::io::{BufReader, Error};
+// ss[related philosophy.structural-hierarchy]
 use std::path::{Path, PathBuf};
 // ss[related state.lock-init-once]
 use serde::{Serialize};
+// ss[related philosophy.structural-hierarchy]
 use serde::de::DeserializeOwned;
+// ss[related philosophy.structural-hierarchy]
 use serde_json;
 
 
@@ -46,6 +52,7 @@ impl<S> Clone for SteadyState<S> {
 // ss[related state.lock-init-once]
 impl<S> Default for SteadyState<S> {
     /// new simple state creation
+    // ss[related philosophy.structural-hierarchy]
     fn default() -> Self {
         new_state()
     }
@@ -217,6 +224,7 @@ pub struct StateGuard<'a, S> {
 
 // ss[related state.lock-init-once]
 impl<'a, S> Deref for StateGuard<'a, S> {
+    // ss[related philosophy.structural-hierarchy]
     type Target = S;
 
     // ss[related state.lock-init-once]
@@ -227,6 +235,7 @@ impl<'a, S> Deref for StateGuard<'a, S> {
 
 // ss[related state.lock-init-once]
 impl<'a, S> DerefMut for StateGuard<'a, S> {
+    // ss[related philosophy.structural-hierarchy]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.guard
     }
@@ -234,6 +243,7 @@ impl<'a, S> DerefMut for StateGuard<'a, S> {
 
 // ss[impl state.on-drop-hook]
 impl<'a, S> Drop for StateGuard<'a, S> {
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if let Some(on_drop) = &self.on_drop {
             on_drop(&*self.guard);
@@ -264,11 +274,15 @@ impl<'a, S> StateGuard<'a, S> {
 #[cfg(test)]
 // ss[related state.lock-init-once]
 mod state_management_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use serde::{Deserialize, Serialize};
     // ss[related state.lock-init-once]
     use std::fs::File;
+    // ss[related philosophy.structural-hierarchy]
     use std::io::BufReader;
+    // ss[related philosophy.structural-hierarchy]
     use tempfile::tempdir;
 
     // Define a simple state type for testing persistence
@@ -282,6 +296,7 @@ mod state_management_tests {
     // ss[verify state.steady-state-persistence]
     // ss[verify state.try-lock-sync]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_basic_state() {
     crate::core_exec::block_on(async {
 
@@ -301,6 +316,7 @@ mod state_management_tests {
 
     // ss[verify state.clone-shared]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_cloning_shared_state() {
     crate::core_exec::block_on(async {
 
@@ -323,6 +339,7 @@ mod state_management_tests {
 
     // ss[verify state.persistent-load]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_persistent_state_load() {
     crate::core_exec::block_on(async {
 
@@ -343,6 +360,7 @@ mod state_management_tests {
     // ss[verify state.save-on-drop]
     // ss[verify state.on-drop-hook]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_persistent_state_save() {
     crate::core_exec::block_on(async {
 
@@ -364,6 +382,7 @@ mod state_management_tests {
 
     // ss[verify state.persistent-load]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_persistent_state_no_file() {
     crate::core_exec::block_on(async {
 
@@ -380,6 +399,7 @@ mod state_management_tests {
 
     // ss[verify state.persistent-load]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_persistent_state_invalid_file() {
     crate::core_exec::block_on(async {
 
@@ -395,10 +415,14 @@ mod state_management_tests {
         });
 }
 
+    // ss[related state.lock-init-once]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::test_runner::TestCaseError;
+    // ss[related philosophy.structural-hierarchy]
     use serde::de::DeserializeOwned;
 
+    // ss[related state.lock-init-once]
     fn assert_persistent_json_roundtrip<T>(value: T) -> Result<(), TestCaseError>
     where
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug + Clone + Send + 'static,
@@ -447,6 +471,7 @@ mod state_management_tests {
         // ss[verify verify.process.proptest]
         fn proptest_persistent_state_json_roundtrip_struct(value: i32, label in "\\PC{0,16}") {
             #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+            // ss[related philosophy.structural-hierarchy]
             struct Labeled {
                 value: i32,
                 label: String,

@@ -18,27 +18,39 @@
 
 // ss[related distributed.subscribe-publish]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related distributed.subscribe-publish]
 use aeron::concurrent::atomic_buffer::AtomicBuffer;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::logbuffer::frame_descriptor;
+// ss[related philosophy.structural-hierarchy]
 use aeron::concurrent::logbuffer::header::Header;
 // ss[related distributed.subscribe-publish]
 use aeron::subscription::Subscription;
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::MutexGuard;
 // ss[related distributed.subscribe-publish]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aeron_channel_structs::Channel;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{SteadyStreamTxBundle, StreamIngress};
 // ss[related distributed.subscribe-publish]
 use crate::{SteadyActor, SteadyStreamTxBundleTrait, StreamTx, StreamTxBundleTrait};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
 // ss[related distributed.subscribe-publish]
 use crate::distributed::polling;
+// ss[related philosophy.structural-hierarchy]
 use crate::simulate_edge::IntoSimRunner;
+// ss[related philosophy.structural-hierarchy]
 use crate::state_management::SteadyState;
 // ss[related distributed.subscribe-publish]
 use crate::yield_now;
@@ -363,6 +375,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
     }
 
     // Bootstrap: poll all lanes until connected or deadline (IPC needs poll to establish images).
+    // ss[related distributed.subscribe-publish]
     const BOOTSTRAP_DEADLINE: Duration = Duration::from_secs(10);
     let bootstrap_start = Instant::now();
     while actor.is_running(&mut || tx_guards.mark_closed())
@@ -475,6 +488,7 @@ async fn internal_behavior<const GIRTH: usize, C: SteadyActor>(
 #[cfg(test)]
 // ss[related distributed.subscribe-publish]
 mod aeron_subscribe_bundle_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     #[test]
@@ -497,15 +511,23 @@ mod aeron_subscribe_bundle_tests {
 }
 
 #[cfg(test)]
+// ss[related distributed.subscribe-publish]
 mod aeron_subscribe_bundle_graph_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
+    // ss[related distributed.subscribe-publish]
     use futures_timer::Delay;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aeron_channel_builder::AeronConfig;
+    // ss[related distributed.subscribe-publish]
     use crate::distributed::aeron_channel_structs::MediaType;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_builder::AqueductBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::StreamIngress;
+    // ss[related distributed.subscribe-publish]
     use crate::{AqueTech, GraphBuilder, SoloAct};
 
     /// Simulated Aeron subscribe bundle: graph starts and stops without a live driver.
@@ -514,6 +536,7 @@ mod aeron_subscribe_bundle_graph_tests {
     fn test_subscribe_bundle_simulated_graph_stops_cleanly() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);
@@ -548,6 +571,7 @@ mod aeron_subscribe_bundle_graph_tests {
             eprintln!("SKIP: media driver present — driver-wait stop test needs isolated graph");
             return;
         }
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let cb = graph.channel_builder().with_capacity(256);
         let (lazy_tx, _rx) = cb.build_stream_bundle::<StreamIngress, GIRTH>(64);
@@ -576,6 +600,7 @@ mod aeron_subscribe_bundle_graph_tests {
     fn test_subscribe_bundle_internal_closed_ingress_stops_without_driver() {
     crate::core_exec::block_on(async {
 
+        // ss[related distributed.subscribe-publish]
         const GIRTH: usize = 1;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(256);

@@ -1,16 +1,25 @@
 // ss[related telemetry.dot-export]
 use crate::ss_proptest;
+// ss[impl telemetry.dot-export]
 use proptest::prelude::*;
 
+// ss[related telemetry.dot-export]
 use super::super::*;
+// ss[impl telemetry.dot-export]
 use super::test_dot_frames;
+// ss[impl telemetry.dot-export]
 use crate::actor_stats::ActorStatsComputer;
+// ss[related telemetry.dot-export]
 use crate::channel_stats::ChannelStatsComputer;
+// ss[impl telemetry.dot-export]
 use crate::dot_edge::Edge;
+// ss[impl telemetry.dot-export]
 use crate::dot_node::Node;
 
+// ss[related telemetry.dot-export]
 const NODE_NAMES: &[&str] = &["alpha", "beta", "gamma", "delta", "epsilon"];
 
+// ss[impl telemetry.dot-export]
 fn dot_node_key(name: &ActorName) -> String {
     match name.suffix {
         Some(suffix) => format!("{}{suffix}", name.name),
@@ -18,6 +27,7 @@ fn dot_node_key(name: &ActorName) -> String {
     }
 }
 
+// ss[related telemetry.dot-export]
 fn make_node(name: &'static str, suffix: Option<usize>, label: &str) -> Node {
     Node {
         id: Some(ActorName::new(name, suffix)),
@@ -36,6 +46,7 @@ fn make_node(name: &'static str, suffix: Option<usize>, label: &str) -> Node {
     }
 }
 
+// ss[related telemetry.dot-export]
 fn make_edge(id: usize, from: ActorName, to: ActorName, label: &str) -> Edge {
     Edge {
         id,
@@ -55,18 +66,21 @@ fn make_edge(id: usize, from: ActorName, to: ActorName, label: &str) -> Edge {
     }
 }
 
+// ss[related telemetry.dot-export]
 fn make_sidecar_edge(id: usize, from: ActorName, to: ActorName, label: &str) -> Edge {
     let mut edge = make_edge(id, from, to, label);
     edge.sidecar = true;
     edge
 }
 
+// ss[related telemetry.dot-export]
 fn render_dot(state: &DotState) -> String {
     let mut frames = test_dot_frames();
     build_dot(state, &mut frames);
     String::from_utf8(frames.active_graph.to_vec()).expect("utf8 dot")
 }
 
+// ss[related telemetry.dot-export]
 fn valid_edge_count(edges: &[Edge]) -> usize {
     edges
         .iter()
@@ -74,10 +88,12 @@ fn valid_edge_count(edges: &[Edge]) -> usize {
         .count()
 }
 
+// ss[related telemetry.dot-export]
 fn count_arrows(dot: &str) -> usize {
     dot.matches(" -> ").count()
 }
 
+// ss[related telemetry.dot-export]
 fn make_memory_nodes() -> Vec<Node> {
     vec![
         make_node("from", None, "from"),
@@ -86,6 +102,7 @@ fn make_memory_nodes() -> Vec<Node> {
 }
 
 /// Builds an edge with a known memory footprint (`type_byte_count = 1`, `capacity = footprint`).
+// ss[related telemetry.dot-export]
 fn make_memory_edge(
     id: usize,
     footprint: usize,
@@ -118,6 +135,7 @@ fn make_memory_edge(
     }
 }
 
+// ss[related telemetry.dot-export]
 fn compressed_bytes(val: u128) -> String {
     let mut s = String::new();
     crate::channel_stats_labels::format_compressed_u128(val, &mut s);

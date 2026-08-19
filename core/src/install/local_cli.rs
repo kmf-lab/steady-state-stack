@@ -3,18 +3,24 @@
 
 // ss[related platform.executor-features]
 use std::env;
+// ss[related philosophy.structural-hierarchy]
 use std::fs;
+// ss[related philosophy.structural-hierarchy]
 use std::path::PathBuf;
 // ss[related platform.executor-features]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use dirs; // Ensure `dirs` crate is added to your `Cargo.toml`
 
 /// A builder for creating and installing local CLI tools.
 #[derive(Clone)]
 // ss[related platform.executor-features]
 pub struct LocalCLIBuilder {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) path: String,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) system_wide: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) install_dir: PathBuf,
 }
 
@@ -171,10 +177,13 @@ impl LocalCLIBuilder {
 #[cfg(test)]
 // ss[related platform.executor-features]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::fs;
     // ss[related platform.executor-features]
     use std::path::PathBuf;
+    // ss[related philosophy.structural-hierarchy]
     use tempfile::tempdir;
 
     #[test]

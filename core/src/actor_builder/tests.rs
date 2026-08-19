@@ -1,12 +1,19 @@
+// ss[related actor.regeneration-survives]
 use super::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry_window::compute_refresh_window_frames;
+// ss[related philosophy.structural-hierarchy]
 use crate::{
     ActorIdentity, ActorMetaData, AlertColor, Duration, Error, GraphBuilder, MCPU, Percentile,
     Trigger, Work,
 };
+// ss[related actor.regeneration-survives]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::FutureExt;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related actor.regeneration-survives]
 use std::sync::OnceLock;
 
 #[test]
@@ -25,6 +32,7 @@ fn test_core_balancer() {
 // ss[verify testing.never-run-in-unit]
 // ss[verify testing.graph-for-testing]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn test_actor_builder_core_configs() {
     let mut graph = GraphBuilder::for_testing().build(());
     let builder = ActorBuilder::new(&mut graph);
@@ -55,6 +63,7 @@ fn test_explicit_core_zero_panic() {
 // ss[verify actor.regeneration-survives]
 // ss[verify graph.panic-restart]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn test_troupe_ops() {
     let graph = GraphBuilder::for_testing().build(());
     let mut troupe = Troupe::new(&graph);

@@ -1,14 +1,20 @@
 // ss[related actor.shadow-spotlight]
 #![allow(deprecated)]
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, Mutex};
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
 
+// ss[related actor.shadow-spotlight]
 use proptest::prelude::*;
 
+// ss[related philosophy.structural-hierarchy]
 use crate::proptest_support::{capacity, lane_mask, vote_matrix};
+// ss[related actor.shadow-spotlight]
 use crate::*;
 
 /// Shadow-path internal_behavior: drain `rx` honoring shutdown vote rounds.
+// ss[related actor.shadow-spotlight]
 async fn shadow_consumer_internal(
     mut actor: SteadyActorShadow,
     rx: SteadyRx<i32>,

@@ -21,6 +21,7 @@ pub struct Rate {
 // ss[related channel.default-capacity]
 impl Rate {
     /** Creates a rate representing units per millisecond. */
+    // ss[related philosophy.structural-hierarchy]
     pub fn per_millis(units: u64) -> Self {
         Self { numerator: units, denominator: 1 }
     }
@@ -76,6 +77,7 @@ pub enum Filled {
 // ss[related channel.default-capacity]
 impl Filled {
     /** Creates a `Filled` instance from a percentage value (0.0 to 100.0), returning `None` if out of range. */
+    // ss[related philosophy.structural-hierarchy]
     pub fn percentage(value: f32) -> Option<Self> {
         if (0.0..=100.0).contains(&value) {
             Some(Self::Percentage((value * 1_000f32) as u64, 100_000u64))

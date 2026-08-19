@@ -1,14 +1,18 @@
 // ss[related telemetry.prometheus-metrics]
 use std::collections::VecDeque;
+// ss[related philosophy.structural-hierarchy]
 use hdrhistogram::{Counter, Histogram};
 #[allow(unused_imports)]
 // ss[related telemetry.prometheus-metrics]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use std::cmp;
 
 // ss[related telemetry.prometheus-metrics]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_stats::{DOT_GREEN, DOT_GREY, DOT_ORANGE, DOT_RED, DOT_YELLOW, PLACES_TENS};
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_stats_labels::{compute_labels, ComputeLabelsConfig, ComputeLabelsLabels};
 // ss[related telemetry.prometheus-metrics]
 use crate::monitor::ThreadInfo;
@@ -19,87 +23,115 @@ use crate::monitor::ThreadInfo;
 // ss[related telemetry.prometheus-metrics]
 pub struct ActorStatsComputer {
     /// The unique identifier for the actor, including its name and optional suffix.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
 
     /// A list of CPU utilization triggers paired with their corresponding alert colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mcpu_trigger: Vec<(Trigger<MCPU>, AlertColor)>, // If used base is green
 
     /// A list of workload utilization triggers paired with their corresponding alert colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) work_trigger: Vec<(Trigger<Work>, AlertColor)>, // If used base is green
 
     /// The count of frames accumulated in the current bucket before it is finalized and added to history.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bucket_frames_count: usize, // When this bucket is full we add a new one
 
     /// The bit shift value representing the refresh rate for telemetry collection.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) refresh_rate_in_bits: u8,
 
     /// The bit shift value representing the window bucket size for telemetry aggregation.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) window_bucket_in_bits: u8,
 
     /// The frame rate in milliseconds, used for timing calculations and unit testing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64, // Const at runtime but needed here for unit testing
 
     /// A string label representing the time window for the current statistics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) time_label: String,
 
     /// A list of percentiles to monitor for CPU utilization.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_mcpu: Vec<Percentile>, // To show
 
     /// A list of percentiles to monitor for workload utilization.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_work: Vec<Percentile>, // To show
 
     /// A list of standard deviations to monitor for CPU utilization variability.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_mcpu: Vec<StdDev>, // To show
 
     /// A list of standard deviations to monitor for workload variability.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_work: Vec<StdDev>, // To show
 
     /// Flag to indicate whether to display average CPU utilization in telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg_mcpu: bool,
 
     /// Min mCPU
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min_mcpu: bool,
 
     /// Max mCPU
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max_mcpu: bool,
 
     /// Flag to indicate whether to display average workload in telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg_work: bool,
 
     /// Max work value
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min_work: bool,
 
     /// Min work value
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max_work: bool,
 
     /// Flag to enable usage review in telemetry for detailed analysis.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) usage_review: bool,
 
     /// Flag indicating whether to build a histogram for CPU utilization.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_mcpu_histogram: bool,
 
     /// Flag indicating whether to build a histogram for workload utilization.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_work_histogram: bool,
 
     /// A deque containing historical CPU utilization data blocks.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) history_mcpu: VecDeque<ChannelBlock<u16>>,
 
     /// A deque containing historical workload utilization data blocks.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) history_work: VecDeque<ChannelBlock<u8>>,
 
     /// The current CPU utilization data block being accumulated.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) current_mcpu: Option<ChannelBlock<u16>>,
 
     /// The current workload utilization data block being accumulated.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) current_work: Option<ChannelBlock<u8>>,
 
     /// A string containing Prometheus-style labels for metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) prometheus_labels: String,
 
     /// Flag to indicate whether to display thread information in telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_id: bool,
     /// Flag to indicate whether the actor has not sent updates in a while
     /// If an node has no work and is not using any CPU then it will not send deltas, that is ok.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_quiet: bool, //this is NOT a problem, it might just have nothing worth reporting
 }
 
@@ -767,18 +799,22 @@ pub(crate) const SQUARE_LIMIT: u128 = (1 << 64) - 1;
 // ss[related telemetry.prometheus-metrics]
 pub(crate) struct ChannelBlock<T> where T: Counter {
     /// An optional histogram for storing distribution data.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) histogram: Option<Histogram<T>>,
 
     /// The accumulated runner value for average calculations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runner: u128,
 
     /// The accumulated sum of squares for variance calculations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) sum_of_squares: u128,
 }
 
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod actor_stats_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     #[test]
@@ -817,14 +853,19 @@ mod actor_stats_tests {
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod test_actor_stats {
+    // ss[related philosophy.structural-hierarchy]
     use std::cmp;
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_stats::*;
     // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
     // ss[related telemetry.prometheus-metrics]
     use crate::channel_stats::DOT_GREEN;
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
 
     // ss[related telemetry.prometheus-metrics]
@@ -972,11 +1013,15 @@ mod test_actor_stats {
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod test_actor_stats_triggers {
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_stats::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
     // ss[related telemetry.prometheus-metrics]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
 
     // ss[related telemetry.prometheus-metrics]
@@ -1115,6 +1160,7 @@ mod test_actor_stats_triggers {
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod extra_tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_stats::*;
 
 
@@ -1155,10 +1201,13 @@ mod extra_tests {
 
     // ss[related telemetry.prometheus-metrics]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
+    // ss[related philosophy.structural-hierarchy]
     use crate::{logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
     // ss[related telemetry.prometheus-metrics]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
 
     /// Test init method with actor suffix

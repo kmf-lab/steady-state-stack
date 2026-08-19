@@ -1,7 +1,9 @@
 // ss[related telemetry.dot-export]
 use crate::ss_proptest;
+// ss[impl telemetry.dot-export]
 use proptest::prelude::*;
 
+// ss[related telemetry.dot-export]
 use super::super::FrameHistory;
 
 ss_proptest! {

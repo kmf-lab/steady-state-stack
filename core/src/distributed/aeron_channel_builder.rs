@@ -1,6 +1,8 @@
 // ss[related distributed.aeron-uri]
 use std::cmp::PartialEq;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
+// ss[related philosophy.structural-hierarchy]
 use std::net::{IpAddr, Ipv4Addr};
 // ss[related distributed.aeron-uri]
 use crate::distributed::aeron_channel_structs::*;
@@ -140,6 +142,7 @@ pub struct AeronConfig {
 // ss[related distributed.aeron-uri]
 impl Default for AeronConfig {
     /// Provides a default implementation that creates a new, empty `AeronConfig`.
+    // ss[related philosophy.structural-hierarchy]
     fn default() -> Self {
         Self::new()
     }
@@ -405,9 +408,12 @@ impl AeronConfig {
 #[cfg(test)]
 // ss[related distributed.aeron-uri]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
+    // ss[related distributed.aeron-uri]
     fn uri_from_config(config: &AeronConfig) -> String {
         config.build().cstring().into_string().expect("cstring")
     }

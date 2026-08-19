@@ -1,19 +1,31 @@
 //! Property tests for monitor helper utilities (`find_my_index`, drift tracking, profile guard).
 
+// ss[related philosophy.structural-hierarchy]
 use super::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::ChannelBuilder;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_liveliness::ActorIdentity;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{ActorStatus};
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
-use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
+use crate::ss_proptest_telemetry;
+// ss[related philosophy.structural-hierarchy]
 use crate::MONITOR_NOT;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicIsize, AtomicU16, AtomicU64, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 
+// ss[related philosophy.structural-hierarchy]
 fn minimal_actor_send() -> SteadyTelemetryActorSend {
-    let builder = ChannelBuilder::default().with_capacity(4);
+    let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
     let (tx, _rx) = builder.eager_build::<ActorStatus>();
     SteadyTelemetryActorSend {
         tx,
@@ -33,7 +45,8 @@ fn minimal_actor_send() -> SteadyTelemetryActorSend {
     }
 }
 
-ss_proptest! {
+ss_proptest_telemetry! {
+
     /// Property: `find_my_index` returns the local slot for a mapped global id.
     #[test]
     // ss[verify verify.process.proptest]
@@ -42,7 +55,7 @@ ss_proptest! {
         goal_slot_offset in 0usize..6,
     ) {
         let goal_slot = goal_slot_offset % len;
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (tx, _rx) = builder.eager_build::<[usize; 6]>();
         let mut inverse = [MONITOR_NOT; 6];
         let mut globals = Vec::new();

@@ -6,19 +6,26 @@
 
 // ss[related philosophy.structural-hierarchy]
 use flexi_logger::writers::*;
+// ss[related philosophy.structural-hierarchy]
 use flexi_logger::*;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Mutex, Arc};
 // ss[related philosophy.structural-hierarchy]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::io;
 #[allow(unused_imports)]
 // ss[related philosophy.structural-hierarchy]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::LogFileConfig;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicBool, Ordering};
 // ss[related philosophy.structural-hierarchy]
 use std::collections::HashMap;
+// ss[related philosophy.structural-hierarchy]
 use std::thread::{self, ThreadId};
+// ss[related philosophy.structural-hierarchy]
 use crate::LogLevel;
 // ss[related philosophy.structural-hierarchy]
 use lazy_static::lazy_static;
@@ -36,6 +43,7 @@ struct MemoryWriter {
 // ss[related philosophy.structural-hierarchy]
 impl MemoryWriter {
     /// Creates a new `MemoryWriter` with the specified formatting function.
+    // ss[related philosophy.structural-hierarchy]
     fn new(format: FormatFunction) -> Self {
         MemoryWriter { format }
     }
@@ -151,6 +159,7 @@ fn steady_logging_init(level: LogLevel, file_config: Option<LogFileConfig>) -> R
 pub mod steady_logger {
     // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use lazy_static::lazy_static;
 
     lazy_static! {
@@ -170,6 +179,7 @@ pub mod steady_logger {
     // ss[related philosophy.structural-hierarchy]
     impl Drop for LogCaptureGuard {
         /// Stops capturing logs when the guard is dropped.
+        // ss[related philosophy.structural-hierarchy]
         fn drop(&mut self) {
             stop_capturing_logs(self.thread_id);
         }
@@ -357,10 +367,13 @@ pub const TS_DASHES: &str = "%Y-%m-%d %H:%M:%S%.6f %:z";
 #[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::logging_util::steady_logger::{
         initialize, initialize_with_level, initialize_with_level_and_file, start_log_capture,
     };
+    // ss[related philosophy.structural-hierarchy]
     use crate::{assert_in_logs, LogFileConfig, LogLevel};
 
     #[test]
@@ -396,6 +409,7 @@ mod tests {
     #[test]
     // ss[verify philosophy.structural-hierarchy]
     fn plain_with_thread_formats_record_line() {
+        // ss[related philosophy.structural-hierarchy]
         use flexi_logger::DeferredNow;
         let mut buf = Vec::new();
         let mut now = DeferredNow::default();
@@ -413,6 +427,7 @@ mod tests {
     #[test]
     // ss[verify philosophy.structural-hierarchy]
     fn colored_with_thread_formats_record_line() {
+        // ss[related philosophy.structural-hierarchy]
         use flexi_logger::DeferredNow;
         let mut buf = Vec::new();
         let mut now = DeferredNow::default();

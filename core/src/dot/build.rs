@@ -1,23 +1,36 @@
 // ss[related telemetry.dot-export]
 use std::collections::{BTreeMap, HashMap};
+// ss[impl telemetry.dot-export]
 use std::fmt::Write;
 
+// ss[impl platform.ringbuf-pin]
 use bytes::{BufMut, BytesMut};
 
+// ss[impl telemetry.dot-export]
 use crate::channel_stats::FilledVisualMode;
+// ss[impl platform.ringbuf-pin]
 use crate::dot_edge::Edge;
+// ss[impl telemetry.dot-export]
 use crate::ActorName;
 
+// ss[impl platform.ringbuf-pin]
 use super::colors::{actor_fillcolor_hex_into, color_to_rgb};
+// ss[impl telemetry.dot-export]
 use super::escape::escape_node_tooltip_text;
+// ss[impl telemetry.dot-export]
 use super::format::{
     append_channel_fill_tooltip, format_avg_fill_rollup_line_into, format_lane_color_histogram_into,
     hex_color_average_into, mean_avg_fill_percent,
 };
+// ss[impl platform.ringbuf-pin]
 use super::frames::DotGraphFrames;
+// ss[impl telemetry.dot-export]
 use super::keys::{PartnerKey, PrimaryGroupKey};
+// ss[impl telemetry.dot-export]
 use super::partnered::PartneredEdge;
+// ss[impl platform.ringbuf-pin]
 use super::render::render_edge_internal;
+// ss[impl telemetry.dot-export]
 use super::{
     BUNDLE_PEN_WIDTH, DOT_NODESEP, DOT_RANKSEP, DotState, MAX_INLINE_AVG_FILL_LANES,
     PARTNER_BUNDLE_PEN_WIDTH,
@@ -33,6 +46,7 @@ use super::{
 /// that partner can join the shared-name column. Using code owns naming and which edges are
 /// sidecar so the diagram stays readable — Steady State will not exclude sidecar endpoints
 /// from same-name groups.
+// ss[impl platform.ringbuf-pin]
 fn emit_same_name_rank_columns(dot_graph: &mut BytesMut, state: &DotState) {
     let mut by_name: BTreeMap<&'static str, Vec<ActorName>> = BTreeMap::new();
     for node in state.nodes.iter().filter(|n| n.id.is_some()) {
@@ -76,6 +90,7 @@ fn emit_same_name_rank_columns(dot_graph: &mut BytesMut, state: &DotState) {
 ///
 /// * `state` - THE current metric state.
 /// * `frames` - Working buffers including the DOT output (`active_graph`).
+// ss[impl platform.ringbuf-pin]
 pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     frames.active_graph.clear(); // Clear the buffer for reuse
     let dot_graph = &mut frames.active_graph;
@@ -92,8 +107,8 @@ pub(crate) fn build_dot(state: &DotState, frames: &mut DotGraphFrames) {
     dot_graph.put_slice(b"];\n");
     dot_graph.put_slice(b"node [margin=0.1];\n"); // Gap around text inside the circle
 
-    dot_graph.put_slice(b"node [style=filled, fillcolor=white, fontcolor=black];\n");
-    dot_graph.put_slice(b"edge [color=white, fontcolor=white];\n");
+    dot_graph.put_slice(b"node [style=filled, fillcolor=white, fontcolor=black, fontname=Helvetica, fontsize=14];\n");
+    dot_graph.put_slice(b"edge [color=white, fontcolor=white, fontname=Helvetica, fontsize=12];\n");
     dot_graph.put_slice(b"graph [bgcolor=black];\n");
 
     state

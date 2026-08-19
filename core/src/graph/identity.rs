@@ -1,4 +1,6 @@
+// ss[related graph.actor-identity]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
 
 /// Identifies an actor within the graph uniquely.

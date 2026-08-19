@@ -1,14 +1,20 @@
 // ss[related channel.lazy.establish-on-clone]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::thread::sleep;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
 // ss[related channel.lazy.establish-on-clone]
 use futures_util::lock::Mutex;
+// ss[related philosophy.structural-hierarchy]
 use log::warn;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::producer::Producer;
 // ss[related channel.lazy.establish-on-clone]
 use crate::{SteadyRx, SteadyRxBundle, SteadyTx, SteadyTxBundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::ChannelBuilder;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
 
 /**
@@ -72,6 +78,7 @@ impl <T> LazySteadyTx<T> {
      */
     // ss[impl channel.testing-send-all]
     pub fn testing_send_all(&self, data: Vec<T>, close: bool) {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_tx::TxCore;
 
         let tx = self.clone();
@@ -284,6 +291,7 @@ pub trait LazySteadyTxBundleClone<T, const GIRTH: usize> {
 
 // ss[impl bundle.clone-establishes]
 impl<T, const GIRTH: usize> LazySteadyTxBundleClone<T, GIRTH> for LazySteadyTxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyTxBundle<T, GIRTH> {
         let tx_clones: Vec<SteadyTx<T>> = self.iter().map(|l| l.clone()).collect();
         match tx_clones.try_into() {
@@ -318,6 +326,7 @@ pub trait LazySteadyRxBundleClone<T, const GIRTH: usize> {
 
 // ss[impl bundle.clone-establishes]
 impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyRxBundle<T, GIRTH> {
         let rx_clones: Vec<SteadyRx<T>> = self.iter().map(|l| l.clone()).collect();
         match rx_clones.try_into() {
@@ -331,7 +340,9 @@ impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBu
 #[cfg(test)]
 // ss[related channel.lazy.establish-on-clone]
 mod steady_lazy_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[related channel.lazy.establish-on-clone]
     use crate::*;
@@ -340,6 +351,7 @@ mod steady_lazy_tests {
     // ss[verify channel.lazy.establish-on-clone]
     // ss[verify philosophy.lazy-to-established]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_lazy_flow() {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
@@ -370,6 +382,7 @@ mod steady_lazy_tests {
     /// Tests lazy channel initialization - verifies that channels are properly created on first clone.
     // ss[verify channel.lazy.defer-allocation]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_lazy_channel_initialization() {
         let builder = ChannelBuilder::default().with_capacity(10);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
@@ -393,6 +406,7 @@ mod steady_lazy_tests {
     /// Tests testing_send_all with close=true to verify channel closure.
     // ss[verify channel.testing-send-all]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_testing_send_all_with_close() {
         let builder = ChannelBuilder::default().with_capacity(5);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
@@ -419,6 +433,7 @@ mod steady_lazy_tests {
     // ss[verify channel.testing-take-all]
     // ss[verify testing.assert-steady-rx]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_testing_take_all() {
         let builder = ChannelBuilder::default().with_capacity(5);
         let (tx_lazy, rx_lazy) = builder.build_channel::<u8>();
@@ -438,7 +453,9 @@ mod steady_lazy_tests {
 
     // ss[verify testing.assert-steady-rx]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_assert_steady_rx_eq_count_macro() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::{assert_steady_rx_eq_count, GraphBuilder};
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
@@ -451,7 +468,9 @@ mod steady_lazy_tests {
     /// and returns a SteadyTxBundle that can be used with the lock() method.
     // ss[verify bundle.clone-establishes]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_lazy_tx_bundle_clone() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::channel_builder_lazy::LazySteadyTxBundleClone;
         
         let builder = ChannelBuilder::default().with_capacity(3);
@@ -475,7 +494,9 @@ mod steady_lazy_tests {
     /// and returns a SteadyRxBundle that can be used with the lock() method.
     // ss[verify bundle.clone-establishes]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_lazy_rx_bundle_clone() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::channel_builder_lazy::LazySteadyRxBundleClone;
         
         let builder = ChannelBuilder::default().with_capacity(3);

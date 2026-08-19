@@ -1,20 +1,32 @@
 //! Property tests for graph shutdown helpers and clean-stop invariants.
 
+// ss[related graph.block-until-stopped]
 use super::{effective_block_until_stopped_timeout, watch_shutdown};
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph::state::GraphLivelinessState;
+// ss[related graph.block-until-stopped]
 use crate::graph::GraphLiveliness;
+// ss[related philosophy.structural-hierarchy]
 use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
 use crate::{
     ActorIdentity, GraphBuilder, ScheduleAs, ShutdownVote, SteadyActor, SteadyActorShadow,
     VoterStatus,
 };
+// ss[related graph.block-until-stopped]
 use futures::lock::Mutex as FutMutex;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related graph.block-until-stopped]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 
+// ss[related graph.block-until-stopped]
 fn new_liveliness(actors: usize) -> Arc<parking_lot::RwLock<GraphLiveliness>> {
     let oss = Arc::new(FutMutex::new(Vec::new()));
     let actors_count = Arc::new(AtomicUsize::new(actors));
@@ -26,6 +38,7 @@ fn new_liveliness(actors: usize) -> Arc<parking_lot::RwLock<GraphLiveliness>> {
     )))
 }
 
+// ss[related graph.block-until-stopped]
 fn setup_stop_requested(
     l: &Arc<parking_lot::RwLock<GraphLiveliness>>,
     voters: usize,
@@ -86,6 +99,7 @@ ss_proptest! {
     fn proptest_never_simulate_edge_exits_without_stage_manager(
         timeout_ms in 200u64..2_000,
     ) {
+        // ss[related graph.block-until-stopped]
         use std::thread::sleep;
         let mut graph = GraphBuilder::for_testing().build(());
         graph

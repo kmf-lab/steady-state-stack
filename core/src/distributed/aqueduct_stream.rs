@@ -5,38 +5,55 @@
 
 // ss[related distributed.aqueduct-stream]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::{channel_builder::ChannelBuilder, Rx, SteadyActor, Tx};
+// ss[related philosophy.structural-hierarchy]
 use ahash::AHashMap;
 // ss[related distributed.aqueduct-stream]
 use async_ringbuf::wrap::AsyncWrap;
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::AsyncRb;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::{Mutex, MutexGuard, MutexLockFuture};
 // ss[related distributed.aqueduct-stream]
 use ringbuf::consumer::Consumer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::producer::Producer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::storage::Heap;
 // ss[related distributed.aqueduct-stream]
 use ringbuf::traits::{Observer, Split};
+// ss[related philosophy.structural-hierarchy]
 use std::collections::VecDeque;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::{Debug, Formatter};
 // ss[related distributed.aqueduct-stream]
 use std::num::NonZero;
+// ss[related philosophy.structural-hierarchy]
 use std::ops::Mul;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 // ss[related distributed.aqueduct-stream]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::select;
 // ss[related distributed.aqueduct-stream]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::ChannelMetaData;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::RxMetaDataProvider;
 // ss[related distributed.aqueduct-stream]
 use crate::steady_tx::TxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use futures::future::FutureExt; // For .fuse()
 // ss[related distributed.aqueduct-stream]
 use futures::pin_mut;
+// ss[related philosophy.structural-hierarchy]
 use log::{error, trace};
 // For pin_mut!
 
@@ -56,6 +73,7 @@ pub type LazySteadyStreamRxBundle<T, const GIRTH: usize> = [LazyStreamRx<T>; GIR
 // ss[related distributed.aqueduct-stream]
 pub trait LazySteadyStreamTxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Creates a new bundle of thread-safe transmitters by cloning the lazy-initialized channels and initializing them if not already done.
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH>;
 }
 
@@ -63,12 +81,14 @@ pub trait LazySteadyStreamTxBundleClone<T: StreamControlItem, const GIRTH: usize
 // ss[related distributed.aqueduct-stream]
 pub trait LazySteadyStreamRxBundleClone<T: StreamControlItem, const GIRTH: usize> {
     /// Creates a new bundle of thread-safe receivers by cloning the lazy-initialized channels and initializing them if not already done.
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH>;
 }
 
 /// Implementation of cloning for a bundle of lazy-initialized transmitter streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, GIRTH> for LazySteadyStreamTxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyStreamTxBundle<T, GIRTH> {
         let tx_clones: Vec<SteadyStreamTx<T>> = self.iter().map(|l| l.clone()).collect();
         match tx_clones.try_into() {
@@ -83,6 +103,7 @@ impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamTxBundleClone<T, 
 /// Implementation of cloning for a bundle of lazy-initialized receiver streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> LazySteadyStreamRxBundleClone<T, GIRTH> for LazySteadyStreamRxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> SteadyStreamRxBundle<T, GIRTH> {
         let rx_clones: Vec<SteadyStreamRx<T>> = self.iter().map(|l| l.clone()).collect();
         match rx_clones.try_into() {
@@ -106,12 +127,14 @@ pub type SteadyStreamTxBundle<T, const GIRTH: usize> = Arc<[SteadyStreamTx<T>; G
 // ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamRxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Acquires the guards for all receivers in the bundle, returning a future that resolves when every guard is bound.
+    // ss[related philosophy.structural-hierarchy]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>>;
 
     /// Guard-first alias for [`SteadyStreamRxBundleTrait::lock`] — the preferred spelling.
     ///
     /// Identical future and semantics; only the vocabulary changes. Hold the guards for the
     /// life of the actor; this is not a mutex critical section.
+    // ss[related distributed.aqueduct-stream]
     fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>> {
         self.lock()
     }
@@ -128,6 +151,7 @@ pub trait SteadyStreamRxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
 /// Implementation of receiver bundle operations for a thread-safe array of receiver streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRTH> for SteadyStreamRxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamRx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
@@ -160,12 +184,14 @@ impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamRxBundleTrait<T, GIRT
 // ss[related distributed.aqueduct-stream]
 pub trait SteadyStreamTxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
     /// Acquires the guards for all transmitters in the bundle, returning a future that resolves when every guard is bound.
+    // ss[related philosophy.structural-hierarchy]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>>;
 
     /// Guard-first alias for [`SteadyStreamTxBundleTrait::lock`] — the preferred spelling.
     ///
     /// Identical future and semantics; only the vocabulary changes. Hold the guards for the
     /// life of the actor; this is not a mutex critical section.
+    // ss[related distributed.aqueduct-stream]
     fn acquire_guard(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>> {
         self.lock()
     }
@@ -182,6 +208,7 @@ pub trait SteadyStreamTxBundleTrait<T: StreamControlItem, const GIRTH: usize> {
 /// Implementation of transmitter bundle operations for a thread-safe array of transmitter streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem, const GIRTH: usize> SteadyStreamTxBundleTrait<T, GIRTH> for SteadyStreamTxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, StreamTx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
@@ -226,6 +253,7 @@ pub type StreamRxBundle<'a, T> = Vec<MutexGuard<'a, StreamRx<T>>>;
 // ss[related distributed.aqueduct-stream]
 pub trait StreamTxBundleTrait {
     /// Marks all channels in the bundle as closed, signaling that no further data will be sent.
+    // ss[related philosophy.structural-hierarchy]
     fn mark_closed(&mut self) -> bool;
 }
 
@@ -233,6 +261,7 @@ pub trait StreamTxBundleTrait {
 // ss[related distributed.aqueduct-stream]
 pub trait StreamRxBundleTrait {
     /// Checks if all channels in the bundle are closed and have no remaining data.
+    // ss[related philosophy.structural-hierarchy]
     fn is_closed_and_empty(&mut self) -> bool;
 
     /// Checks if all channels in the bundle are closed.
@@ -247,6 +276,7 @@ pub trait StreamRxBundleTrait {
 /// Implementation of transmitter bundle operations for a vector of locked transmitter streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
+    // ss[related philosophy.structural-hierarchy]
     fn mark_closed(&mut self) -> bool {
         if self.is_empty() {
             trace!("bundle has no streams, nothing found to be closed");
@@ -263,6 +293,7 @@ impl<T: StreamControlItem> StreamTxBundleTrait for StreamTxBundle<'_, T> {
 /// Implementation of receiver bundle operations for a vector of locked receiver streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamRxBundleTrait for StreamRxBundle<'_, T> {
+    // ss[related philosophy.structural-hierarchy]
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
     }
@@ -284,6 +315,7 @@ impl<T: StreamControlItem> StreamRxBundleTrait for StreamRxBundle<'_, T> {
 // ss[related distributed.aqueduct-stream]
 pub trait StreamControlItem: Copy + Send + Sync + 'static {
     /// Creates a new instance for testing purposes with the specified length.
+    // ss[related philosophy.structural-hierarchy]
     fn testing_new(length: i32) -> Self;
 
     /// Returns the length of the item in bytes.
@@ -313,6 +345,7 @@ pub struct StreamIngress {
 /// Implementation of default values for incoming stream fragments.
 // ss[related distributed.aqueduct-stream]
 impl Default for StreamIngress {
+    // ss[related philosophy.structural-hierarchy]
     fn default() -> Self {
         let now = Instant::now();
         StreamIngress {
@@ -363,6 +396,7 @@ impl StreamIngress {
 /// Implementation of stream control item functionality for incoming fragments.
 // ss[related distributed.aqueduct-stream]
 impl StreamControlItem for StreamIngress {
+    // ss[related philosophy.structural-hierarchy]
     fn testing_new(length: i32) -> Self {
         StreamIngress {
             length,
@@ -394,6 +428,7 @@ impl StreamControlItem for StreamIngress {
 // ss[related distributed.aqueduct-stream]
 pub struct StreamEgress {
     /// Length of the message in bytes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) length: i32,
 }
 
@@ -401,6 +436,7 @@ pub struct StreamEgress {
 // ss[related distributed.aqueduct-stream]
 impl StreamEgress {
     /// Creates a new outgoing stream message and returns it with an owned byte buffer.
+    // ss[related philosophy.structural-hierarchy]
     pub fn build(p0: &[u8]) -> (StreamEgress, Box<[u8]>) {
         StreamEgress::by_box(p0)
     }
@@ -430,6 +466,7 @@ impl StreamEgress {
 /// Implementation of stream control item functionality for outgoing messages.
 // ss[related distributed.aqueduct-stream]
 impl StreamControlItem for StreamEgress {
+    // ss[related philosophy.structural-hierarchy]
     fn testing_new(length: i32) -> Self {
         StreamEgress { length }
     }
@@ -459,12 +496,14 @@ pub struct StreamRxMetaData {
 // ss[related distributed.aqueduct-stream]
 pub struct RxChannelMetaDataWrapper {
     /// The underlying channel metadata, wrapped in an Arc for thread-safe sharing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) meta_data: Arc<ChannelMetaData>,
 }
 
 /// Implementation of metadata provider for receiver channel wrappers.
 // ss[related distributed.aqueduct-stream]
 impl RxMetaDataProvider for RxChannelMetaDataWrapper {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.meta_data)
     }
@@ -475,12 +514,14 @@ impl RxMetaDataProvider for RxChannelMetaDataWrapper {
 // ss[related distributed.aqueduct-stream]
 pub struct TxChannelMetaDataWrapper {
     /// The underlying channel metadata, wrapped in an Arc for thread-safe sharing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) meta_data: Arc<ChannelMetaData>,
 }
 
 /// Implementation of metadata provider for transmitter channel wrappers.
 // ss[related distributed.aqueduct-stream]
 impl TxMetaDataProvider for TxChannelMetaDataWrapper {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.meta_data)
     }
@@ -498,36 +539,49 @@ pub const RATE_COLLECTOR_LEN: usize = 32;
 // ss[related distributed.aqueduct-stream]
 pub struct StreamTx<T: StreamControlItem> {
     /// The control channel for sending stream metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) control_channel: Tx<T>,
     /// The payload channel for sending raw data bytes.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) payload_channel: Tx<u8>,
     /// A map of session IDs to defragmentation entries for reassembling fragmented messages.
     defrag: AHashMap<i32, Defrag<T>>,
     /// A queue of session IDs with ready messages for processing.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) ready_msg_session: VecDeque<i32>,
     /// The timestamp of the last input data received.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_input_instant: Instant,
     /// The timestamp of the last output data sent.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) last_output_instant: Instant,
     /// The current index for the input rate collector.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) input_rate_index: usize,
     /// An array collecting input rate statistics (duration, messages, bytes).
+    // ss[related distributed.aqueduct-stream]
     pub(crate) input_rate_collector: [(Duration, u32, u32); RATE_COLLECTOR_LEN],
     /// The maximum latency allowed for polling operations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) max_poll_latency: Duration,
     /// The current index for the output rate collector.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) output_rate_index: usize,
     /// An array collecting output rate statistics (duration, messages, bytes).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) output_rate_collector: [(Duration, u32, u32); RATE_COLLECTOR_LEN],
     /// Cached values for available message and byte capacities.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) stored_vacant_values: (i32, i32),
     /// Flag indicating whether to focus on control channel metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) spotlight_control: bool,
 }
 
 /// Implementation of debug formatting for transmitter streams.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> Debug for StreamTx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StreamTx")
             .field("item_channel", &"Tx<T>")
@@ -542,20 +596,26 @@ impl<T: StreamControlItem> Debug for StreamTx<T> {
 // ss[related distributed.aqueduct-stream]
 pub struct Defrag<T: StreamControlItem> {
     /// The time when the first fragment was received, if available.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) arrival: Option<Instant>,
     /// The time when the last fragment was received, if available.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) finish: Option<Instant>,
     /// The session identifier for the defragmentation entry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) session_id: i32,
     /// The cumulative length of data in the defragmentation buffer.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) running_length: usize,
     /// Ring buffers for storing stream control items (producer and consumer).
     #[allow(clippy::type_complexity)]
+    // ss[related distributed.aqueduct-stream]
     pub(crate) ringbuffer_items: (
         AsyncWrap<Arc<AsyncRb<Heap<T>>>, true, false>,
         AsyncWrap<Arc<AsyncRb<Heap<T>>>, false, true>,
     ),
     /// Ring buffers for storing raw byte data (producer and consumer).
+    // ss[related distributed.aqueduct-stream]
     pub(crate) ringbuffer_bytes: (
         AsyncWrap<Arc<AsyncRb<Heap<u8>>>, true, false>,
         AsyncWrap<Arc<AsyncRb<Heap<u8>>>, false, true>,
@@ -566,6 +626,7 @@ pub struct Defrag<T: StreamControlItem> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> Defrag<T> {
     /// Creates a new defragmentation entry with the specified session ID and buffer capacities.
+    // ss[related philosophy.structural-hierarchy]
     pub fn new(session_id: i32, items: usize, bytes: usize) -> Self {
         Defrag {
             arrival: None,
@@ -899,10 +960,13 @@ impl<T: StreamControlItem> StreamTx<T> {
 // ss[related distributed.aqueduct-stream]
 pub struct StreamRx<T: StreamControlItem> {
     /// The control channel for receiving stream metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) control_channel: Rx<T>,
     /// The payload channel for receiving raw data bytes.
+    // ss[related distributed.aqueduct-stream]
     pub(crate) payload_channel: Rx<u8>,
     /// Flag indicating whether to focus on control channel metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) spotlight_control: bool,
 }
 
@@ -910,6 +974,7 @@ pub struct StreamRx<T: StreamControlItem> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> StreamRx<T> {
     /// Creates a new receiver stream with the specified control and payload channels.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new(control_channel: Rx<T>, payload_channel: Rx<u8>) -> Self {
         StreamRx {
             control_channel,
@@ -1096,6 +1161,7 @@ pub(crate) struct LazyStream<T: StreamControlItem> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStream<T> {
     /// Creates a new lazy stream with the specified channel builders for control and payload channels.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new(item_builder: &ChannelBuilder, payload_builder: &ChannelBuilder) -> Self {
         LazyStream {
             control_builder: Mutex::new(Some(item_builder.clone())),
@@ -1173,6 +1239,7 @@ pub struct LazyStreamTx<T: StreamControlItem> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStreamTx<T> {
     /// Creates a new lazy transmitter stream from a shared lazy stream channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
         LazyStreamTx { lazy_channel }
     }
@@ -1251,6 +1318,7 @@ pub struct LazyStreamRx<T: StreamControlItem> {
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> LazyStreamRx<T> {
     /// Creates a new lazy receiver stream from a shared lazy stream channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new(lazy_channel: Arc<LazyStream<T>>) -> Self {
         LazyStreamRx { lazy_channel }
     }
@@ -1309,6 +1377,7 @@ impl<T: StreamControlItem> LazyStreamRx<T> {
 /// Implementation of metadata provider for receiver streams, selecting between control and payload metadata.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
             Some(guard) => {
@@ -1333,6 +1402,7 @@ impl<T: StreamControlItem> RxMetaDataProvider for SteadyStreamRx<T> {
 /// Implementation of metadata provider for transmitter streams, selecting between control and payload metadata.
 // ss[related distributed.aqueduct-stream]
 impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         match self.try_lock() {
             Some(guard) => {
@@ -1357,11 +1427,15 @@ impl<T: StreamControlItem> TxMetaDataProvider for SteadyStreamTx<T> {
 #[cfg(test)]
 // ss[related distributed.aqueduct-stream]
 mod extra_stream_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
+    // ss[related distributed.aqueduct-stream]
     use std::sync::Arc;
     // ss[related distributed.aqueduct-stream]
     use std::time::{Duration, Instant};
+    // ss[related philosophy.structural-hierarchy]
     use crate::GraphBuilder;
 
     /// Tests the behavior of extracting payload slices from receiver buffers, covering both first and second slice cases.
@@ -1446,6 +1520,7 @@ mod extra_stream_tests {
     #[test]
     // ss[verify distributed.aqueduct-stream]
     fn test_stream_tx_bundle_trait_empty() {
+        // ss[related philosophy.structural-hierarchy]
         type Bundle = StreamTxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
         assert!(bundle.mark_closed(), "even Empty bundle should return true");
@@ -1455,6 +1530,7 @@ mod extra_stream_tests {
     #[test]
     // ss[verify distributed.aqueduct-stream]
     fn test_stream_rx_bundle_trait_empty() {
+        // ss[related philosophy.structural-hierarchy]
         type Bundle = StreamRxBundle<'static, StreamEgress>;
         let mut bundle: Bundle = Vec::new();
         assert!(bundle.is_closed_and_empty());
@@ -1598,6 +1674,7 @@ mod extra_stream_tests {
     // ss[verify distributed.aqueduct-stream]
     // ss[verify bundle.girth-const-generic]
     fn test_lazy_bundle_clone_girth_2() {
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 2;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(32);
@@ -1616,6 +1693,7 @@ mod extra_stream_tests {
     // ss[verify distributed.aqueduct-stream]
     // ss[verify bundle.girth-const-generic]
     fn test_lazy_bundle_clone_girth_3() {
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 3;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(32);
@@ -1632,6 +1710,7 @@ mod extra_stream_tests {
     // ss[verify distributed.aqueduct-stream]
     // ss[verify bundle.girth-const-generic]
     fn test_lazy_bundle_clone_girth_4() {
+        // ss[related philosophy.structural-hierarchy]
         const GIRTH: usize = 4;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(32);
@@ -1647,7 +1726,9 @@ mod extra_stream_tests {
     /// Tests combined `memory_bytes()` on an established stream Tx.
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_stream_tx_memory_bytes() {
+        // ss[related philosophy.structural-hierarchy]
         use std::mem::size_of;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(10);
@@ -1665,4 +1746,5 @@ mod extra_stream_tests {
 
 #[cfg(test)]
 #[path = "aqueduct_stream_proptest.rs"]
+// ss[related distributed.aqueduct-stream]
 mod aqueduct_stream_proptest;

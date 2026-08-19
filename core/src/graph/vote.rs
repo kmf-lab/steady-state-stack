@@ -1,4 +1,6 @@
+// ss[related philosophy.structural-hierarchy]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use super::identity::ActorIdentity;
 
 /// Represents a vote cast by an actor regarding the shutdown of the graph.
@@ -9,16 +11,22 @@ use super::identity::ActorIdentity;
 // ss[related graph.for-testing]
 pub struct ShutdownVote {
     /// THE unique identifier of the actor casting the vote.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) id: usize,
     /// THE optional identity of the actor, providing additional context.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) signature: Option<ActorIdentity>,
     /// Indicates whether the actor supports the shutdown.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) in_favor: bool,
     /// THE current status of the voter, such as registered or dead.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) voter_status: VoterStatus,
     /// An optional backtrace captured if the actor vetoes the shutdown, useful for debugging.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) veto_backtrace: Option<Backtrace>,
     /// An optional reason provided by the actor for vetoing the shutdown.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) veto_reason: Option<Eye>,
 }
 

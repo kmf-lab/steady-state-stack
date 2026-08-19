@@ -1,20 +1,28 @@
 // ss[related philosophy.single-wake-up]
 use std::sync::Arc;
 
+// ss[related philosophy.structural-hierarchy]
 use lazy_static::lazy_static;
+// ss[related philosophy.single-wake-up]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::HashMap;
+// ss[related philosophy.structural-hierarchy]
 use std::thread::ThreadId;
 
 // ss[related philosophy.single-wake-up]
 use crate::actor_builder_units::{MCPU, Percentile, Work};
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder_units::{Filled, Rate};
 // ss[related philosophy.single-wake-up]
 use crate::dot::RemoteDetails;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_liveliness::ActorIdentity;
 // ss[related philosophy.single-wake-up]
 use crate::steady_rx::RxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::TxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
 
 lazy_static! {
@@ -28,26 +36,37 @@ lazy_static! {
 // ss[related philosophy.single-wake-up]
 pub struct ActorStatus {
     /// Unique identifier for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
     /// Total number of times the actor has been restarted.
+    // ss[related philosophy.single-wake-up]
     pub(crate) total_count_restarts: u32,
     /// Start time of the current iteration, typically measured in nanoseconds.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) iteration_start: u64,
     /// Accumulated sum of iteration times or counts.
+    // ss[related philosophy.single-wake-up]
     pub(crate) iteration_sum: u64,
     /// Indicates whether the actor has stopped.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_stop: bool,
     /// Indicates whether the actor is stalled (not yielding).
+    // ss[related philosophy.single-wake-up]
     pub(crate) is_quiet: bool,
     /// Indicates whether the actor is currently blocking.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_blocking: bool,
     /// Total time spent awaiting, measured in nanoseconds.
+    // ss[related philosophy.single-wake-up]
     pub(crate) await_total_ns: u64,
     /// Total time spent in unit operations, measured in nanoseconds.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) unit_total_ns: u64,// should not be zero.
     /// Optional information about the thread running the actor.
+    // ss[related philosophy.single-wake-up]
     pub(crate) thread_info: Option<ThreadInfo>,
     /// Array tracking counts of different operation types.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) calls: [u16; 6],
 }
 
@@ -56,9 +75,11 @@ pub struct ActorStatus {
 // ss[related philosophy.single-wake-up]
 pub struct ThreadInfo {
     /// Unique identifier of the thread.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) thread_id: ThreadId,
     #[cfg(feature = "core_display")]
     /// Core on which the thread is running, available if the `core_display` feature is enabled.
+    // ss[related philosophy.single-wake-up]
     pub(crate) core: i32,
 }
 
@@ -66,16 +87,19 @@ pub struct ThreadInfo {
 // ss[related philosophy.single-wake-up]
 pub(crate) const CALL_SINGLE_READ: usize = 0;
 /// Index for batch read operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const CALL_BATCH_READ: usize = 1;
 /// Index for single write operations in the `calls` array of `ActorStatus`.
 // ss[related philosophy.single-wake-up]
 pub(crate) const CALL_SINGLE_WRITE: usize = 2;
 /// Index for batch write operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const CALL_BATCH_WRITE: usize = 3;
 /// Index for miscellaneous operations in the `calls` array of `ActorStatus`.
 // ss[related philosophy.single-wake-up]
 pub(crate) const CALL_OTHER: usize = 4;
 /// Index for wait operations in the `calls` array of `ActorStatus`.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const CALL_WAIT: usize = 5;
 
 /// Metadata configuration for an actor, used for monitoring and performance analysis.
@@ -85,14 +109,19 @@ pub(crate) const CALL_WAIT: usize = 5;
 // ss[related philosophy.single-wake-up]
 pub struct ActorMetaData {
     /// Unique identifier for the actor.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
     /// Details for remote communication, present if the actor operates in a distributed system.
+    // ss[related philosophy.single-wake-up]
     pub(crate) remote_details: Option<RemoteDetails>,
     /// Indicates whether to monitor the average microcontroller processing unit (MCPU) usage.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) avg_mcpu: bool,
     /// Indicates whether to monitor the average work performed by the actor.
+    // ss[related philosophy.single-wake-up]
     pub(crate) avg_work: bool,
     /// Indicates whether to include thread information in telemetry data.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_info: bool,
     /// Percentiles to track for MCPU usage metrics.
     pub percentiles_mcpu: Vec<Percentile>,
@@ -121,73 +150,106 @@ pub struct ActorMetaData {
 // ss[related philosophy.single-wake-up]
 pub struct ChannelMetaData {
     /// Unique identifier for the channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) id: usize,
     /// Descriptive labels for the channel, aiding in identification.
+    // ss[related philosophy.single-wake-up]
     pub(crate) labels: Vec<&'static str>,
     /// Maximum number of items the channel can hold.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) capacity: usize,
     /// Indicates whether to display labels in telemetry output.
+    // ss[related philosophy.single-wake-up]
     pub(crate) display_labels: bool,
     /// Factor for expanding line displays in visualizations.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) line_expansion: f32,
     /// Optional type descriptor for display purposes.
+    // ss[related philosophy.single-wake-up]
     pub(crate) show_type: Option<&'static str>,
     /// Bit shift value for the refresh rate of channel metrics.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) refresh_rate_in_bits: u8,
     /// Bit shift value for the window bucket size in channel metrics aggregation.
+    // ss[related philosophy.single-wake-up]
     pub(crate) window_bucket_in_bits: u8,
     /// Percentiles to track for the channel's filled state.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_filled: Vec<Percentile>,
     /// Percentiles to track for the data rate through the channel.
+    // ss[related philosophy.single-wake-up]
     pub(crate) percentiles_rate: Vec<Percentile>,
     /// Percentiles to track for latency within the channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_latency: Vec<Percentile>,
     /// Standard deviations to track for the channel's filled state.
+    // ss[related philosophy.single-wake-up]
     pub(crate) std_dev_inflight: Vec<StdDev>,
     /// Standard deviations to track for the channel's data rate.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_consumed: Vec<StdDev>,
     /// Standard deviations to track for the channel's latency.
+    // ss[related philosophy.single-wake-up]
     pub(crate) std_dev_latency: Vec<StdDev>,
     /// Triggers for data rate that raise alerts with associated colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) trigger_rate: Vec<(Trigger<Rate>, AlertColor)>,
     /// Triggers for filled state that raise alerts with associated colors.
+    // ss[related philosophy.single-wake-up]
     pub(crate) trigger_filled: Vec<(Trigger<Filled>, AlertColor)>,
     /// Triggers for latency that raise alerts with associated colors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) trigger_latency: Vec<(Trigger<Duration>, AlertColor)>,
     /// Indicates whether to monitor the average filled state.
+    // ss[related philosophy.single-wake-up]
     pub(crate) avg_filled: bool,
     /// Indicates whether to monitor the average data rate.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) avg_rate: bool,
     /// Indicates whether to monitor the average latency.
+    // ss[related philosophy.single-wake-up]
     pub(crate) avg_latency: bool,
     /// Indicates whether to monitor the minimum filled state.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) min_filled: bool,
     /// Indicates whether to monitor the maximum filled state.
+    // ss[related philosophy.single-wake-up]
     pub(crate) max_filled: bool,
     /// Indicates whether to monitor the minimum rate.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) min_rate: bool,
     /// Indicates whether to monitor the maximum rate.
+    // ss[related philosophy.single-wake-up]
     pub(crate) max_rate: bool,
     /// Indicates whether to monitor the minimum latency.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) min_latency: bool,
     /// Indicates whether to monitor the maximum latency.
+    // ss[related philosophy.single-wake-up]
     pub(crate) max_latency: bool,
 
 
 
     /// Indicates whether the channel connects to a sidecar process.
+    // ss[related philosophy.single-wake-up]
     pub(crate) connects_sidecar: bool,
     /// Optional partner name used to pair channels for shared tasks.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) partner: Option<&'static str>,
     /// Optional index within a bundle, used for pairing partnered channels.
+    // ss[related philosophy.single-wake-up]
     pub(crate) bundle_index: Option<usize>,
     /// Byte size of the data type transmitted through the channel.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) type_byte_count: usize,
     /// Indicates whether to display total metrics in telemetry.
+    // ss[related philosophy.single-wake-up]
     pub(crate) show_total: bool,
     /// Number of channels in the bundle, used for rollup display.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) girth: usize,
     /// Indicates whether to display memory usage in telemetry.
+    // ss[related philosophy.single-wake-up]
     pub(crate) show_memory: bool,
 }
 
@@ -201,6 +263,7 @@ pub type TxMetaData = Arc<ChannelMetaData>;
 // ss[related philosophy.single-wake-up]
 impl TxMetaDataProvider for TxMetaData {
     /// Returns a clone of the transmitter metadata.
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> TxMetaData {
         self.clone()
     }
@@ -210,12 +273,14 @@ impl TxMetaDataProvider for TxMetaData {
 // ss[related philosophy.single-wake-up]
 pub struct TxMetaDataHolder<const LEN: usize> {
     /// Array of transmitter metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) array: [TxMetaData; LEN],
 }
 
 // ss[related philosophy.single-wake-up]
 impl<const LEN: usize> TxMetaDataHolder<LEN> {
     /// Creates a new holder with the specified array of transmitter metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub fn new(array: [TxMetaData; LEN]) -> Self {
         TxMetaDataHolder { array }
     }
@@ -237,6 +302,7 @@ pub type RxMetaData = Arc<ChannelMetaData>;
 // ss[related philosophy.single-wake-up]
 impl RxMetaDataProvider for Arc<ChannelMetaData> {
     /// Returns a clone of the receiver metadata.
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         self.clone()
     }
@@ -246,12 +312,14 @@ impl RxMetaDataProvider for Arc<ChannelMetaData> {
 // ss[related philosophy.single-wake-up]
 pub struct RxMetaDataHolder<const LEN: usize> {
     /// Array of receiver metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) array: [RxMetaData; LEN],
 }
 
 // ss[related philosophy.single-wake-up]
 impl<const LEN: usize> RxMetaDataHolder<LEN> {
     /// Creates a new holder with the specified array of receiver metadata.
+    // ss[related philosophy.structural-hierarchy]
     pub fn new(array: [RxMetaData; LEN]) -> Self {
         RxMetaDataHolder { array }
     }
@@ -264,19 +332,29 @@ impl<const LEN: usize> RxMetaDataHolder<LEN> {
 }
 
 #[cfg(test)]
+// ss[related philosophy.single-wake-up]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::{
         ActorMetaData, ActorStatus, ChannelMetaData, RxMetaDataHolder, TxMetaDataHolder,
         CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE,
         CALL_WAIT, METADATA_REGISTRY,
     };
+    // ss[related philosophy.single-wake-up]
     use crate::actor_builder_units::{MCPU, Percentile, Work};
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder_units::{Filled, Rate};
+    // ss[related philosophy.structural-hierarchy]
     use crate::metrics::{AlertColor, StdDev, Trigger};
+    // ss[related philosophy.single-wake-up]
     use crate::graph_liveliness::ActorIdentity;
+    // ss[related philosophy.structural-hierarchy]
     use crate::steady_rx::RxMetaDataProvider;
+    // ss[related philosophy.structural-hierarchy]
     use crate::steady_tx::TxMetaDataProvider;
+    // ss[related philosophy.single-wake-up]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
     #[test]
@@ -347,10 +425,12 @@ mod tests {
     #[test]
     // ss[verify philosophy.single-wake-up]
     fn metadata_registry_populated_by_eager_channel_build() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::channel_builder::ChannelBuilder;
+        // ss[related philosophy.structural-hierarchy]
         use std::sync::Arc;
 
-        let (tx, rx) = ChannelBuilder::default()
+        let (tx, rx) = ChannelBuilder::test_channel_builder()
             .with_capacity(32)
             .eager_build::<u64>();
 

@@ -31,6 +31,7 @@ pub struct Eye {
 // ss[related telemetry.dot-export]
 impl Eye {
 
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn veto_reason(&self) -> String {
         format!("{}:{}  {}",self.file, self.line, self.expression).to_string()
     }
@@ -85,6 +86,7 @@ pub fn i_take_expression() -> Option<Eye> {
 #[cfg(test)]
 // ss[related telemetry.dot-export]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     /// Tests that a `true` expression does not store anything.
@@ -132,6 +134,7 @@ mod tests {
         assert!(reason.contains("channel.is_closed()"));
     }
 
+    // ss[related telemetry.dot-export]
     use proptest::prelude::*;
 
     ss_proptest! {

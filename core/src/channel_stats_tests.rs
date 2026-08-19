@@ -1,17 +1,25 @@
 #[cfg(test)]
 // ss[related telemetry.channel-labels]
 mod channel_stats_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::cmp::Ordering;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
+    // ss[related telemetry.channel-labels]
     use std::time::Duration;
 
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     // ss[related telemetry.channel-labels]
     use crate::actor_stats::ChannelBlock;
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_stats::avg_rational;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_stats::{ChannelStatsComputer, DOT_GREY, DOT_RED, FilledVisualMode, PLACES_TENS};
+    // ss[related telemetry.channel-labels]
     use crate::monitor::ChannelMetaData;
+    // ss[related philosophy.structural-hierarchy]
     use crate::{ActorName, AlertColor, Filled, Rate, Trigger};
 
     // ss[related telemetry.channel-labels]
@@ -27,6 +35,7 @@ mod channel_stats_tests {
         })
     }
 
+    // ss[related telemetry.channel-labels]
     fn fresh_computer() -> ChannelStatsComputer {
         let mut computer = ChannelStatsComputer::default();
         computer.init(
@@ -38,6 +47,7 @@ mod channel_stats_tests {
         computer
     }
 
+    // ss[related telemetry.channel-labels]
     fn compute_frame(computer: &mut ChannelStatsComputer, send: i64, take: i64) {
         let mut label = String::new();
         let mut metric = String::new();
@@ -48,6 +58,7 @@ mod channel_stats_tests {
 
     // ss[verify telemetry.channel-labels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_avg_filled_percentage_none() {
         let computer = ChannelStatsComputer {
             capacity: 100,
@@ -58,6 +69,7 @@ mod channel_stats_tests {
 
     // ss[verify telemetry.channel-labels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_avg_latency_none() {
         let computer = ChannelStatsComputer::default();
         assert_eq!(
@@ -68,6 +80,7 @@ mod channel_stats_tests {
 
     // ss[verify telemetry.channel-labels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_zero_capacity_safety() {
         let mut computer = ChannelStatsComputer::default();
         computer.capacity = 0;
@@ -78,7 +91,9 @@ mod channel_stats_tests {
 
     // ss[verify telemetry.channel-labels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_histogram_creation_failure_handling() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::actor_builder_units::Percentile;
         let mut computer = ChannelStatsComputer::default();
         let mut meta = (*mock_meta()).clone();

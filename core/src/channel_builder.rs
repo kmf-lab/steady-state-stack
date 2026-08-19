@@ -7,15 +7,21 @@
 
 // ss[related channel.lazy.defer-allocation]
 use std::fmt::Debug;
+// ss[related philosophy.structural-hierarchy]
 use std::ops::Sub;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::storage::Heap;
 // ss[related channel.lazy.defer-allocation]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related channel.lazy.defer-allocation]
 use async_ringbuf::AsyncRb;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
 
 /** Type alias for the underlying storage backing of the channel, using a heap-based ring buffer. */
@@ -41,22 +47,30 @@ pub(crate) type InternalReceiver<T> = AsyncCons<Arc<AsyncRb<ChannelBacking<T>>>>
 
 // ss[related channel.lazy.defer-allocation]
 use async_ringbuf::wrap::{AsyncCons, AsyncProd};
+// ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
 #[allow(unused_imports)]
 // ss[related channel.lazy.defer-allocation]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::traits::Split;
+// ss[related philosophy.structural-hierarchy]
 use crate::{AlertColor, StdDev, SteadyRx, SteadyTx, Trigger, MONITOR_UNKNOWN};
 // ss[related channel.lazy.defer-allocation]
 use crate::actor_builder_units::Percentile;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder_lazy::{LazyChannel, LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle};
 // ss[related channel.lazy.defer-allocation]
 use crate::channel_builder_units::{Filled, Rate};
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle, LazyStream, LazyStreamRx, LazyStreamTx, RxChannelMetaDataWrapper, StreamControlItem, TxChannelMetaDataWrapper};
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::ChannelMetaData;
 // ss[related channel.lazy.defer-allocation]
 use crate::steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry_window::compute_refresh_window_frames;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::Rx;
 // ss[related channel.lazy.defer-allocation]
 use crate::steady_tx::Tx;
@@ -1269,8 +1283,22 @@ macro_rules! assert_steady_rx_eq_take {
 
 #[cfg(test)]
 // ss[related channel.lazy.defer-allocation]
+impl ChannelBuilder {
+    /// Isolated builder for unit tests (private shutdown vec, not shared with `Default`).
+    // ss[related philosophy.structural-hierarchy]
+    pub(crate) fn test_channel_builder() -> Self {
+        let channel_count = Arc::new(AtomicUsize::new(0));
+        let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
+        ChannelBuilder::new(channel_count, oneshot_shutdown_vec, 1000)
+    }
+}
+
+#[cfg(test)]
+// ss[related channel.lazy.defer-allocation]
 mod tests_inputs {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     ss_proptest! {
@@ -1438,13 +1466,16 @@ mod tests_inputs {
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod test_builder {
     // ss[related channel.lazy.defer-allocation]
     use super::*;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::Percentile;
     // ss[related channel.lazy.defer-allocation]
     use crate::steady_rx::RxMetaDataProvider;
+    // ss[related philosophy.structural-hierarchy]
     use crate::distributed::aqueduct_stream::StreamIngress;
 
     #[test]
@@ -1645,6 +1676,7 @@ pub(crate) mod test_builder {
 
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn test_channel_builder_with_memory_usage_sets_flag() {
         let builder = create_test_channel_builder();
         let with_mem = builder.with_memory_usage();
@@ -1677,9 +1709,6 @@ pub(crate) mod test_builder {
 
     // ss[related channel.lazy.defer-allocation]
     fn create_test_channel_builder() -> ChannelBuilder {
-        let channel_count = Arc::new(AtomicUsize::new(0));
-        let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
-        let frame_rate_ms = 1000;
-        ChannelBuilder::new(channel_count, oneshot_shutdown_vec, frame_rate_ms)
+        ChannelBuilder::test_channel_builder()
     }
 }

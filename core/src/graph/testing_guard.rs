@@ -1,3 +1,4 @@
+// ss[related philosophy.structural-hierarchy]
 use super::deps::*;
 
 /// A guard that provides access to the stage manager for testing purposes.
@@ -6,11 +7,13 @@ use super::deps::*;
 // ss[related graph.for-testing]
 pub struct StageManagerGuard<'a> {
     /// THE mutex guard holding the lock on the backplane.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) guard: MutexGuard<'a, Option<StageManager>>,
 }
 
 // ss[related graph.for-testing]
 impl Deref for StageManagerGuard<'_> {
+    // ss[related philosophy.structural-hierarchy]
     type Target = StageManager;
 
     /// Provides immutable access to the underlying stage manager.

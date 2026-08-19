@@ -5,11 +5,15 @@
 
 // ss[related platform.executor-features]
 use std::{env, fs};
+// ss[related philosophy.structural-hierarchy]
 use std::process::Command;
+// ss[related philosophy.structural-hierarchy]
 use log::*;
 // ss[related platform.executor-features]
 use std::path::Path;
+// ss[related philosophy.structural-hierarchy]
 use crate::dot::FrameHistory;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
 
 /// An enum representing the possible systemd commands.
@@ -493,6 +497,7 @@ WantedBy={}
 #[cfg(test)]
 // ss[related platform.executor-features]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     #[test]

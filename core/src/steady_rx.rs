@@ -1,29 +1,42 @@
 // ss[related philosophy.zero-copy-discipline]
 use std::sync::atomic::{AtomicIsize, AtomicU32, AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, task, FutureExt};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 // ss[related philosophy.zero-copy-discipline]
 use futures_util::lock::{Mutex, MutexLockFuture};
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use log::error;
 // ss[related philosophy.zero-copy-discipline]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{select_all, FusedFuture};
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::consumer::AsyncConsumer;
 // ss[related philosophy.zero-copy-discipline]
 use ringbuf::consumer::Consumer;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::{Debug, Formatter};
+// ss[related philosophy.structural-hierarchy]
 use std::ops::{Deref};
 // ss[related philosophy.zero-copy-discipline]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::InternalReceiver;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{ChannelMetaData};
 // ss[related philosophy.zero-copy-discipline]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::{RxBundle, SteadyRxBundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::RxChannelMetaDataWrapper;
 // ss[related philosophy.zero-copy-discipline]
 use crate::monitor_telemetry::SteadyTelemetrySend;
+// ss[related philosophy.structural-hierarchy]
 use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 
 /// Represents a receiver that consumes messages from a channel in a steady-state actor system.
@@ -37,37 +50,52 @@ use crate::{MONITOR_UNKNOWN, MONITOR_NOT};
 // ss[related philosophy.zero-copy-discipline]
 pub struct Rx<T> {
     /// Internal ring buffer consumer for managing message reception.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) rx: InternalReceiver<T>,
     /// Metadata wrapper for the channel, used in logging and telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_meta_data: RxChannelMetaDataWrapper,
     /// Index for local monitoring, set on first usage.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) local_monitor_index: usize,
     /// Oneshot receiver that signals when the channel is closed.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_closed: oneshot::Receiver<()>,
     /// Oneshot receiver that detects shutdown signals for graceful termination.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown: oneshot::Receiver<()>,
     /// Tracks the last checked instance of the transmitter to detect changes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_checked_tx_instance: u32,
     /// Atomic counter shared with the transmitter to monitor its version.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) tx_version: Arc<AtomicU32>,
     /// Atomic counter for the receiver's version, used for synchronization.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) rx_version: Arc<AtomicU32>,
     /// Timestamp of the last error sent, used to rate-limit error logging.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_error_send: Instant,
     /// Atomic counter incremented on each message take, for bad message detection.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) take_count: AtomicU32,
     /// Cached take count to detect repeated peeks without takes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) cached_take_count: AtomicU32,
     /// Atomic counter tracking repeated peeks of the same message.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) peek_repeats: AtomicUsize,
     /// Atomic counter for detecting iterator usage drift in telemetry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) iterator_count_drift: Arc<AtomicIsize>,
     /// Unique key for the global metadata registry.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) registry_key: usize,
 }
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T> Drop for Rx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if self.registry_key != 0 {
             crate::monitor::METADATA_REGISTRY.write().remove(&self.registry_key);
@@ -77,6 +105,7 @@ impl<T> Drop for Rx<T> {
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T> Debug for Rx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Rx") // TODO: Add more details for debugging purposes.
     }
@@ -84,6 +113,7 @@ impl<T> Debug for Rx<T> {
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T> RxMetaDataProvider for Rx<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         Arc::clone(&self.channel_meta_data.meta_data)
     }
@@ -653,6 +683,7 @@ pub trait RxMetaDataProvider: Debug {
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T: Send + Sync> RxMetaDataProvider for Mutex<Rx<T>> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_data(&self) -> Arc<ChannelMetaData> {
         loop {
             if let Some(guard) = self.try_lock() {
@@ -762,6 +793,7 @@ pub trait SteadyRxBundleTrait<T, const GIRTH: usize> {
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for SteadyRxBundle<T, GIRTH> {
+    // ss[related philosophy.structural-hierarchy]
     fn lock(&self) -> futures::future::JoinAll<MutexLockFuture<'_, Rx<T>>> {
         futures::future::join_all(self.iter().map(|m| m.lock()))
     }
@@ -886,6 +918,7 @@ pub trait RxBundleTrait {
 
 // ss[related philosophy.zero-copy-discipline]
 impl<T> RxBundleTrait for RxBundle<'_, T> {
+    // ss[related philosophy.structural-hierarchy]
     fn is_closed_and_empty(&mut self) -> bool {
         self.iter_mut().all(|f| f.is_closed_and_empty())
     }
@@ -963,6 +996,7 @@ impl RxDone {
 
 // ss[related philosophy.zero-copy-discipline]
 impl Deref for RxDone {
+    // ss[related philosophy.structural-hierarchy]
     type Target = usize;
 
     /// Allows dereferencing to the item count.
@@ -980,14 +1014,18 @@ impl Deref for RxDone {
 #[cfg(test)]
 // ss[related philosophy.zero-copy-discipline]
 mod rx_tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_rx::RxCore;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_tx::TxCore;
     // ss[related philosophy.zero-copy-discipline]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::*;
 
     // ss[verify bundle.index-wait-readiness]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_bundle() {
         let mut graph = GraphBuilder::for_testing().build(());
         let channel_builder = graph.channel_builder();
@@ -1038,9 +1076,13 @@ mod rx_tests {
 #[cfg(test)]
 // ss[related philosophy.zero-copy-discipline]
 mod steady_rx_tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
+    // ss[related philosophy.zero-copy-discipline]
     use crate::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     ss_proptest! {
@@ -1117,6 +1159,7 @@ mod steady_rx_tests {
             per_lane in 1usize..4,
         ) {
             prop_assume!(per_lane <= cap);
+            // ss[related philosophy.zero-copy-discipline]
             use crate::SteadyRxBundleTrait;
             let b0 = ChannelBuilder::default().with_capacity(cap);
             let (tx0, rx0) = b0.build_channel::<i32>();
@@ -1196,6 +1239,7 @@ mod steady_rx_tests {
         // ss[verify channel.memory-usage-telemetry]
         // ss[verify verify.process.proptest]
         fn proptest_rx_width_and_memory_bytes(cap in capacity()) {
+            // ss[related philosophy.structural-hierarchy]
             use std::mem::size_of;
             let builder = ChannelBuilder::default().with_capacity(cap);
             let (_tx_lazy, rx_lazy) = builder.build_channel::<u64>();
@@ -1214,7 +1258,9 @@ mod steady_rx_tests {
         fn proptest_rx_bundle_memory_bytes_is_lane_sum(
             caps in prop::collection::vec(capacity(), 4),
         ) {
+            // ss[related philosophy.zero-copy-discipline]
             use crate::SteadyRxBundleTrait;
+            // ss[related philosophy.structural-hierarchy]
             use std::mem::size_of;
             let b0 = ChannelBuilder::default().with_capacity(caps[0]);
             let (_tx0, rx0) = b0.build_channel::<u64>();
@@ -1234,6 +1280,7 @@ mod steady_rx_tests {
     /// Tests the `width()` and `memory_bytes()` accessors on an established Rx.
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_rx_width_and_memory_bytes() {
         let builder = ChannelBuilder::default().with_capacity(16);
         let (_tx_lazy, rx_lazy) = builder.build_channel::<u16>();
@@ -1247,7 +1294,9 @@ mod steady_rx_tests {
     /// Tests the bundle-level `memory_bytes()` rollup across lanes.
     // ss[verify channel.memory-usage-telemetry]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_rx_bundle_memory_bytes() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::SteadyRxBundleTrait;
         let b0 = ChannelBuilder::default().with_capacity(4);
         let (_tx0, rx0) = b0.build_channel::<u64>();

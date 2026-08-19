@@ -1,14 +1,20 @@
 // ss[related channel.stream-dual-buffer]
 use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, FutureExt};
 // ss[related channel.stream-dual-buffer]
 use ringbuf::traits::Observer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::consumer::Consumer;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::FusedFuture;
 // ss[related channel.stream-dual-buffer]
 use async_ringbuf::consumer::AsyncConsumer;
+// ss[related philosophy.structural-hierarchy]
 use crate::{yield_now, RxCore, RxDone, StreamControlItem, StreamRx, warn};
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
 
 /// Implementation of `RxCore` for stream-based channels (`StreamRx<T>`).
@@ -19,6 +25,7 @@ use crate::monitor_telemetry::SteadyTelemetrySend;
 // ss[related channel.stream-dual-buffer]
 impl<T: StreamControlItem> RxCore for StreamRx<T> {
     /// The type of message item stored in the channel.
+    // ss[related philosophy.structural-hierarchy]
     type MsgItem = T;
 
     /// The type of message that is taken out of the channel, a tuple of the control item and its payload.
@@ -41,6 +48,7 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
     // ss[related channel.stream-dual-buffer]
     type SliceTarget<'b> = (&'b mut [T], &'b mut [u8]) where T: 'b;
 
+    // ss[related philosophy.structural-hierarchy]
     fn telemetry_inc<const LEN: usize>(&mut self, done_count: RxDone, tel: &mut SteadyTelemetrySend<LEN>) {
         match done_count {
             RxDone::Normal(i) => {
@@ -290,10 +298,13 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
 #[cfg(test)]
 // ss[related channel.stream-dual-buffer]
 mod core_rx_stream_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
+    // ss[related philosophy.structural-hierarchy]
     use async_ringbuf::traits::Producer;
     // ss[related channel.stream-dual-buffer]
     use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, RxCore, core_exec, RxDone, steady_rx::RxMetaDataProvider};
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_tx::TxCore;
 
     #[test]
@@ -570,7 +581,9 @@ mod core_rx_stream_tests {
         })
     }
 
+    // ss[related channel.stream-dual-buffer]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::capacity;
 
     ss_proptest! {

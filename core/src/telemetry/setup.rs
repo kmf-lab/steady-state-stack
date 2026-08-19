@@ -1,36 +1,48 @@
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use std::collections::VecDeque;
+// ss[related philosophy.structural-hierarchy]
 use std::ops::{Deref, DerefMut, Sub};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use std::sync::{atomic::{AtomicU16, AtomicU64}, Mutex};
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::traits::Observer;
 #[allow(unused_imports)]
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use num_traits::Zero;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ActorIdentity, Graph, GraphLivelinessState, ScheduleAs, SendSaturation, MONITOR_NOT, MONITOR_UNKNOWN};
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use crate::channel_builder::ChannelBuilder;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_config::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{find_my_index, ChannelMetaData, RxTel};
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use crate::monitor_telemetry::{
     DotSubtitleMailbox, SteadyTelemetryActorSend, SteadyTelemetryRx, SteadyTelemetrySend,
     SteadyTelemetryTake,
 };
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use crate::telemetry::{metrics_collector, metrics_server};
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry::metrics_collector::CollectorDetail;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
 
 /// Serializes env mutation for ephemeral test telemetry HTTP binds (`127.0.0.1:0`).
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 static TEST_TELEMETRY_SERVER_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// Constructs telemetry channels for the given context and metadata.
@@ -44,7 +56,7 @@ static TEST_TELEMETRY_SERVER_ENV_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// # Returns
 /// A tuple containing optional TX send, RX send, and actor send telemetry.
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: usize>(
     that: &SteadyActorShadow,
     rx_meta_data: Vec<Arc<ChannelMetaData>>,
@@ -148,7 +160,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
 ///
 /// # Parameters
 /// - `graph`: The graph to build the telemetry for.
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
     #[cfg(any(
         feature = "telemetry_server_builtin",
@@ -244,7 +256,7 @@ pub(crate) fn build_telemetry_metric_features(graph: &mut Graph) {
 // }
 
 #[cfg(feature = "core_display")]
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn get_current_cpu() -> i32 {
     #[cfg(unix)]
     unsafe {
@@ -263,7 +275,7 @@ pub(crate) fn get_current_cpu() -> i32 {
 /// # Parameters
 /// - `this`: The local monitor to send telemetry for.
 #[inline]
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: usize>(
     this: &mut SteadyActorSpotlight<RX_LEN, TX_LEN>, elapsed_micros: Option<u64>
 ) {
@@ -482,7 +494,7 @@ pub(crate) fn try_send_all_local_telemetry<const RX_LEN: usize, const TX_LEN: us
 ///
 /// # Returns
 /// THE calculated backoff value.
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_units: usize) -> u32 {
     let bits_count = (capacity as f64).log2().ceil() as u32;
     let bit_to_represent_vacant_count = 32 - (vacant_units as u32).leading_zeros();
@@ -497,7 +509,7 @@ pub(crate) fn calculate_exponential_channel_backoff(capacity: usize, vacant_unit
 /// - `telemetry_state`: The telemetry state.
 /// - `telemetry_send_tx`: The TX send telemetry.
 /// - `telemetry_send_rx`: The RX send telemetry.
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: usize>(
     ident: ActorIdentity,
     iteration_count: u64,
@@ -562,10 +574,12 @@ pub(crate) fn send_all_local_telemetry_async<const RX_LEN: usize, const TX_LEN: 
 }
 
 #[cfg(test)]
-// ss[related telemetry.builtin-server]
+// ss[impl telemetry.builtin-server]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
+    // ss[impl telemetry.builtin-server]
     use crate::GraphBuilder;
 
     #[test]
@@ -589,17 +603,18 @@ mod tests {
         }
     }
 
-    // ss[related telemetry.builtin-server]
+    // ss[impl telemetry.builtin-server]
     use std::time::Duration;
-    // ss[related telemetry.builtin-server]
+    // ss[impl telemetry.builtin-server]
     pub struct TelemetrySetup {
         channel_meta_data: Arc<ChannelMetaData>,
         refresh_rate: Duration,
         window_size: Duration,
     }
 
-    // ss[related telemetry.builtin-server]
+    // ss[impl telemetry.builtin-server]
     impl TelemetrySetup {
+        // ss[related philosophy.structural-hierarchy]
         pub fn new(refresh_rate: Duration, window_size: Duration) -> Self {
             TelemetrySetup {
                 channel_meta_data: Arc::new(ChannelMetaData::default()),
@@ -608,12 +623,12 @@ mod tests {
             }
         }
 
-        // ss[related telemetry.builtin-server]
+        // ss[impl telemetry.builtin-server]
         pub fn configure(&self) {
             // Configuration logic here
         }
 
-        // ss[related telemetry.builtin-server]
+        // ss[impl telemetry.builtin-server]
         pub fn validate(&self) -> Result<(), String> {
             if self.refresh_rate.as_secs() == 0 {
                 return Err("Refresh rate must be greater than zero.".to_string());
@@ -689,6 +704,7 @@ mod tests {
     #[test]
     // ss[verify telemetry.builtin-server]
     fn send_all_local_telemetry_async_accepts_empty_state() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph_liveliness::ActorIdentity;
         let ident = ActorIdentity::new(7, "phase7_telemetry", None);
         send_all_local_telemetry_async::<0, 0>(ident, 0, None, None, None);
@@ -697,6 +713,7 @@ mod tests {
     #[test]
     // ss[verify telemetry.builtin-server]
     #[cfg(feature = "core_display")]
+    // ss[related philosophy.structural-hierarchy]
     fn get_current_cpu_returns_positive_on_linux() {
         let core = get_current_cpu();
         assert!(core >= 1, "expected one-based CPU index, got {core}");
@@ -708,9 +725,13 @@ mod tests {
         feature = "prometheus_metrics",
         feature = "telemetry_server_builtin"
     ))]
+    // ss[impl telemetry.builtin-server]
     fn build_telemetry_metric_features_starts_collector_and_server() {
+        // ss[related philosophy.structural-hierarchy]
         use std::thread::sleep;
+        // ss[related philosophy.structural-hierarchy]
         use std::time::Duration;
+        // ss[impl telemetry.builtin-server]
         use crate::GraphBuilder;
 
         let mut graph = GraphBuilder::for_testing().build(());
@@ -726,9 +747,13 @@ mod tests {
     #[test]
     // ss[verify telemetry.builtin-server]
     #[cfg(feature = "prometheus_metrics")]
+    // ss[related philosophy.structural-hierarchy]
     fn construct_telemetry_channels_registers_collector_detail() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::ChannelMetaData;
+        // ss[impl telemetry.builtin-server]
         use crate::GraphBuilder;
+        // ss[related philosophy.structural-hierarchy]
         use std::sync::Arc;
 
         let graph = GraphBuilder::for_testing().build(());
@@ -764,6 +789,7 @@ mod tests {
     #[test]
     // ss[verify telemetry.builtin-server]
     #[cfg(feature = "prometheus_metrics")]
+    // ss[related philosophy.structural-hierarchy]
     fn construct_telemetry_channels_zero_len_registers_actor_only() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("zero_channel_actor");
@@ -780,4 +806,5 @@ mod tests {
 
 #[cfg(test)]
 #[path = "setup_proptest.rs"]
+// ss[impl telemetry.builtin-server]
 mod setup_proptest;

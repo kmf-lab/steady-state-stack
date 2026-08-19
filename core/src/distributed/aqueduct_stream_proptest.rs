@@ -1,12 +1,16 @@
 //! Property tests for aqueduct stream ingress/egress control items.
 
+// ss[related distributed.aqueduct-stream]
 use std::time::{Duration, Instant};
 
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
 
+// ss[related distributed.aqueduct-stream]
 use crate::distributed::aqueduct_stream::{
     Defrag, StreamControlItem, StreamEgress, StreamIngress,
 };
+// ss[related distributed.aqueduct-stream]
 use crate::ss_proptest;
 
 ss_proptest! {
@@ -105,7 +109,9 @@ ss_proptest! {
         capacity in 1usize..64,
         bytes_per_item in 1usize..16,
     ) {
+        // ss[related distributed.aqueduct-stream]
         use std::mem::size_of;
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph::GraphBuilder;
         let mut graph = GraphBuilder::for_testing().build(());
         let cb = graph.channel_builder().with_capacity(capacity);

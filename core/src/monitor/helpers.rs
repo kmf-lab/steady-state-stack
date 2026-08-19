@@ -1,13 +1,18 @@
 // ss[related philosophy.single-wake-up]
 use std::ops::*;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicIsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.single-wake-up]
 use std::time::Instant;
 
+// ss[related philosophy.structural-hierarchy]
 use num_traits::One;
 
 // ss[related philosophy.single-wake-up]
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
+// ss[related philosophy.structural-hierarchy]
 use crate::MONITOR_NOT;
 
 /// Finds the local index corresponding to a global index within the telemetry's inverse local index.
@@ -34,14 +39,17 @@ pub(crate) fn find_my_index<const LEN: usize>(telemetry: &SteadyTelemetrySend<LE
 // ss[related philosophy.single-wake-up]
 pub(crate) struct FinallyRollupProfileGuard<'a> {
     /// Reference to the telemetry sender for updating profiling data.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) st: &'a SteadyTelemetryActorSend,
     /// Start time of the operation being profiled.
+    // ss[related philosophy.single-wake-up]
     pub(crate) start: Instant,
 }
 
 // ss[related philosophy.single-wake-up]
 impl Drop for FinallyRollupProfileGuard<'_> {
     /// Updates the await time and decrements the concurrent profile counter when dropped.
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if self.st.hot_profile_concurrent.fetch_sub(1, Ordering::SeqCst).is_one() {
             let p = self.st.hot_profile.load(Ordering::Relaxed);
@@ -98,6 +106,7 @@ where
 // ss[related philosophy.single-wake-up]
 impl<I> Drop for DriftCountIterator<I> {
     /// Adjusts the shared drift counter based on the difference between actual and expected counts.
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         let drift = self.actual_count as isize - self.expected_count as isize;
         if drift != 0 {
@@ -127,4 +136,5 @@ where
 
 #[cfg(test)]
 #[path = "helpers_proptest.rs"]
+// ss[related philosophy.single-wake-up]
 mod helpers_proptest;

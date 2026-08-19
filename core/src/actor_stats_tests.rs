@@ -1,16 +1,24 @@
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod test_actor_stats {
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
 
+    // ss[related telemetry.prometheus-metrics]
     use proptest::prelude::*;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::{MCPU, Percentile, Work};
+    // ss[related telemetry.prometheus-metrics]
     use crate::actor_stats::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_stats::DOT_GREEN;
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
+    // ss[related telemetry.prometheus-metrics]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};
 
+    // ss[related philosophy.structural-hierarchy]
     fn fill_window(actor_stats: &mut ActorStatsComputer, mcpu: u16, work: u16) {
         let total_frames = 1 << (1 + actor_stats.window_bucket_in_bits + actor_stats.refresh_rate_in_bits);
         for _ in 0..total_frames {
@@ -368,16 +376,24 @@ mod test_actor_stats {
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]
 mod extra_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
 
+    // ss[related telemetry.prometheus-metrics]
     use proptest::prelude::*;
 
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder_units::{Percentile, Work, MCPU};
+    // ss[related telemetry.prometheus-metrics]
     use crate::actor_stats::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_stats::{DOT_ORANGE, DOT_RED, DOT_YELLOW};
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
+    // ss[related telemetry.prometheus-metrics]
     use crate::{logging_util, ActorIdentity, AlertColor, StdDev, Trigger};
 
+    // ss[related philosophy.structural-hierarchy]
     fn setup_actor_with_triggers() -> ActorStatsComputer {
         let metadata = Arc::new(ActorMetaData {
             ident: ActorIdentity::new(1, "test", None),

@@ -1,5 +1,6 @@
 //! Logging initialization and configuration for Steady State applications.
 
+// ss[related philosophy.structural-hierarchy]
 use clap::ValueEnum;
 
 /// Initializes logging for the Steady State crate.
@@ -76,7 +77,9 @@ impl LogLevel {
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::{init_logging, LogFileConfig, LogLevel};
 
     #[test]

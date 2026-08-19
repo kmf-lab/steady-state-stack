@@ -1,7 +1,10 @@
-# Tracey unmapped baseline (rust-core) — recorded at sprint start
+# Tracey unmapped baseline (rust-core) — recorded after excellence sprint (2026-08-19)
 # Command: tracey query unmapped
-steady-state/rust-core: 2368 unmapped code units out of 2579 total (~8% mapped)
+steady-state/rust-core: 36 unmapped code units out of 2752 total (~98.7% mapped)
 
-# After sprint (automated ss[impl|related|verify] via scripts/tracey_map_unmapped.py)
-# steady-state/rust-core: ~306 unmapped / 2579 total (~88% mapped)
+# Sprint start: 565 unmapped / 2745 total (~79.4% mapped)
 # Gate: bash scripts/tracey-unmapped-gate.sh  (TRACEY_MAPPED_PERCENT=80)
+# Excellent target: TRACEY_MAPPED_PERCENT=90 bash scripts/tracey-unmapped-gate.sh
+
+# rust-core uncovered (expected): tooling.cargo-* (5, rust-cli scoped),
+# verify.process.fuzz, verify.process.mutants, platform.aeron-out-of-scope-coverage (waivers)

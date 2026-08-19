@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 490c3927d2bbb865b08c2f9be32bcf90187699ee99d21e45b24d0fc8df3bfb35 # shrinks to gen_values = [0], extra_hb = 0, early_shutdown = false
 cc 7b3b08b3971527bf5fbf240e66de72b8790744cbe03c31eec03e52cd5f9c0426 # shrinks to gen_values = [], use_staged_echo = false, early_shutdown = true
+cc 2e50fbf246be453a4867b79f7d0d92015eb11666abc4e6ded3631486dcedb7c5 # shrinks to gen_values = [], early_shutdown = true

@@ -3,11 +3,17 @@ use super::super::{
     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
     GraphLivelinessState, ShutdownVote, VoterStatus,
 };
+// ss[related graph.liveliness-voters]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ScheduleAs, SteadyActor};
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex as FutMutex;
+// ss[related graph.liveliness-voters]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Duration;
 
 // ss[related graph.for-testing]
@@ -27,7 +33,9 @@ fn new_liveliness(
 
 // ss[verify graph.actor-identity]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn actor_by_id_finds_catalog_entries() {
     let (l, _, cat) = new_liveliness(0);
     {
@@ -40,7 +48,9 @@ fn actor_by_id_finds_catalog_entries() {
 
 // ss[verify graph.liveliness-voters]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn remove_voter_marks_dead_when_registered() {
     let (l, _, _) = new_liveliness(0);
     let ident = ActorIdentity::new(0, "v", None);
@@ -55,7 +65,9 @@ fn remove_voter_marks_dead_when_registered() {
 
 // ss[verify graph.liveliness-voters]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn wait_for_registrations_waits_until_actor_count_matches() {
     let (l, count, _) = new_liveliness(1);
     let ident = ActorIdentity::new(0, "w", None);
@@ -70,7 +82,9 @@ fn wait_for_registrations_waits_until_actor_count_matches() {
 
 // ss[verify graph.liveliness-voters]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn vote_for_the_dead_casts_dead_actor_ballots() {
     let (rs, _, _) = new_liveliness(0);
     let ident = ActorIdentity::new(0, "dead", None);
@@ -102,7 +116,9 @@ fn vote_for_the_dead_casts_dead_actor_ballots() {
 
 // ss[verify telemetry.shutdown-complete]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn is_shutdown_telemetry_complete_counts_non_telemetry_voters() {
     let (l, _, _) = new_liveliness(0);
     {
@@ -128,7 +144,9 @@ fn is_shutdown_telemetry_complete_counts_non_telemetry_voters() {
 
 // ss[verify graph.shutdown.accept]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn is_running_accept_shutdown_transitions_vote() {
     let (l, _, _) = new_liveliness(0);
     let ident = ActorIdentity::new(0, "r", None);
@@ -156,7 +174,9 @@ fn is_running_accept_shutdown_transitions_vote() {
 
 // ss[verify graph.request-shutdown]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn internal_request_shutdown_from_running_sets_stop_requested() {
     let (rs, _, _) = new_liveliness(0);
     {
@@ -172,7 +192,9 @@ fn internal_request_shutdown_from_running_sets_stop_requested() {
 
 // ss[verify graph.actor-identity]
 
+// ss[verify graph.liveliness-voters]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn actor_identity_debug_includes_name_and_suffix() {
     let id = ActorIdentity::new(7, "ProbeActor", Some(2));
     let s = format!("{:?}", id);

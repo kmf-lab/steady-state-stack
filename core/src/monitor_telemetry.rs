@@ -1,43 +1,51 @@
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use crate::monitor::{
     ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData, RxTel, ThreadInfo,
 };
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use crate::steady_rx::Rx;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::Tx;
+// ss[related philosophy.structural-hierarchy]
 use crate::{MONITOR_NOT, MONITOR_UNKNOWN, SteadyRx, SteadyTx, monitor, steady_config};
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use futures_util::lock::Mutex;
+// ss[related philosophy.structural-hierarchy]
 use log::error;
+// ss[related philosophy.structural-hierarchy]
 use num_traits::Zero;
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use std::ops::DerefMut;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use std::thread;
+// ss[related philosophy.structural-hierarchy]
 use std::time::Instant;
 
 /// Maximum characters stored for a DOT node subtitle (after newline collapse).
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub(crate) const DOT_SUBTITLE_MAX_CHARS: usize = 256;
 
 /// Pending subtitle for Graphviz DOT labels; shared between [`SteadyTelemetryActorSend`] and
 /// [`SteadyTelemetryRx`] for the same actor registration.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub(crate) struct DotSubtitleMailbox {
     pending: parking_lot::Mutex<Option<DotSubtitlePending>>,
 }
 
 #[derive(Debug)]
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 enum DotSubtitlePending {
     Clear,
     Set(String),
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl DotSubtitleMailbox {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new() -> Self {
         Self {
             pending: parking_lot::Mutex::new(None),
@@ -45,7 +53,7 @@ impl DotSubtitleMailbox {
     }
 
     /// Queue a clear (`None`) or set (`Some`); coalesces to the latest value under one lock.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn record(&self, text: Option<&str>) {
         let mut lock = self.pending.lock();
         *lock = Some(match text {
@@ -59,7 +67,7 @@ impl DotSubtitleMailbox {
     }
 
     /// `None` = nothing to relay. `Some(None)` = clear subtitle. `Some(Some(s))` = set text.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn take_pending(&self) -> Option<Option<String>> {
         let mut lock = self.pending.lock();
         let pending = lock.take()?;
@@ -71,44 +79,66 @@ impl DotSubtitleMailbox {
 }
 
 /// Structure representing the receiver side of steady telemetry.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct SteadyTelemetryRx<const RXL: usize, const TXL: usize> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) send: Option<SteadyTelemetryTake<TXL>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) take: Option<SteadyTelemetryTake<RXL>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor: Option<SteadyRx<ActorStatus>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_metadata: Arc<ActorMetaData>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) dot_subtitle_mailbox: Option<Arc<DotSubtitleMailbox>>,
 }
 
 /// Structure representing the telemetry take side with a fixed length.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct SteadyTelemetryTake<const LENGTH: usize> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) rx: Arc<Mutex<Rx<[usize; LENGTH]>>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) details: Vec<Arc<ChannelMetaData>>,
 }
 
 /// Structure representing the actor send side of steady telemetry.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct SteadyTelemetryActorSend {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) tx: SteadyTx<ActorStatus>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_telemetry_error: Instant,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) instant_start: Instant,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) iteration_index_start: u64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) regeneration: u32,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_stop: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_blocking: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_info: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) hot_profile: AtomicU64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) hot_profile_concurrent: AtomicU16,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) calls: [AtomicU16; 6],
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) dot_subtitle_mailbox: Option<Arc<DotSubtitleMailbox>>,
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl SteadyTelemetryActorSend {
     /// Resets the status of the telemetry actor send.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn status_reset(&mut self, iteration_index: u64) {
         self.hot_profile_await_ns_unit = AtomicU64::new(0);
         self.instant_start = Instant::now();
@@ -121,7 +151,7 @@ impl SteadyTelemetryActorSend {
     //TODO: check the  calls for all zero?
 
     /// Generates a status message for the actor.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn status_message(&self, iteration_index: u64) -> ActorStatus {
         //this is a little expensive, and we should consider doing this every N calls
         //the consumer node already holds the previous and uses it until we see a change.
@@ -159,7 +189,7 @@ impl SteadyTelemetryActorSend {
         }
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn set_dot_display_text(&self, text: Option<&str>) {
         if let Some(m) = &self.dot_subtitle_mailbox {
             m.record(text);
@@ -174,27 +204,32 @@ impl SteadyTelemetryActorSend {
 ///
 /// # Type Parameters
 /// - `LENGTH`: The fixed size of the internal arrays used for tracking telemetry data.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct SteadyTelemetrySend<const LENGTH: usize> {
     /// The transmission channel for sending telemetry data.
     /// This is typically used for sending statistics or monitoring information.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) tx: SteadyTx<[usize; LENGTH]>,
 
     /// A fixed-size array tracking the count of specific telemetry events.
     /// Each index corresponds to a different event type or metric.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) count: [usize; LENGTH],
 
     /// The last recorded timestamp when a telemetry error occurred.
     /// Used for tracking and debugging issues in telemetry data collection.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_telemetry_error: Instant,
 
     /// A mapping of local indices to their inverse counterparts.
     /// This is used for quick lookups and efficient data processing.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) inverse_local_index: [usize; LENGTH],
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
+    // ss[related philosophy.structural-hierarchy]
     fn is_empty_and_closed(&self) -> bool {
         let s = if let Some(send) = &self.send {
             if let Some(mut rx) = send.rx.try_lock() {
@@ -229,7 +264,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         s & a & t
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn is_empty(&self) -> bool {
         let s = if let Some(send) = &self.send {
             if let Some(rx) = send.rx.try_lock() {
@@ -264,13 +299,13 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         s & a & t
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn actor_metadata(&self) -> Arc<ActorMetaData> {
         self.actor_metadata.clone()
     }
 
     #[inline]
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
         if let Some(send) = &self.send {
             send.details.to_vec()
@@ -280,7 +315,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     #[inline]
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
         if let Some(take) = &self.take {
             take.details.to_vec()
@@ -289,7 +324,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn actor_rx(&self, version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
         if let Some(act) = &self.actor {
             if let Some(mut act) = act.try_lock() {
@@ -303,7 +338,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn consume_actor(&self) -> Option<ActorStatus> {
         if let Some(act) = &self.actor {
             let mut buffer =
@@ -395,7 +430,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
         }
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn consume_dot_subtitle(&self) -> Option<Option<String>> {
         self.dot_subtitle_mailbox
             .as_ref()
@@ -410,7 +445,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     /// * `channel_state` - Vector of (current_take, current_limit) pairs for each channel.
     /// * `pending_takes` - Vector of postponed take values for each channel.
     /// * `pending_sends` - Vector of postponed send values for each channel.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn consume_take_into(
         &self,
         take_send_source: &mut Vec<(i64, i64)>,
@@ -468,7 +503,7 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 
     #[inline]
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     fn consume_send_into(
         &self,
         take_send_target: &mut Vec<(i64, i64)>,
@@ -503,9 +538,10 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
     }
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     /// Creates a new instance of SteadyTelemetrySend.
+    // ss[related philosophy.structural-hierarchy]
     pub fn new(
         tx: Arc<Mutex<Tx<[usize; LENGTH]>>>,
         count: [usize; LENGTH],
@@ -521,7 +557,7 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
     }
 
     /// Processes an event for telemetry.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn process_event(&mut self, index: usize, id: usize, done: isize) -> usize {
         let telemetry = self;
         if index < MONITOR_NOT {
@@ -550,19 +586,23 @@ impl<const LENGTH: usize> SteadyTelemetrySend<LENGTH> {
 }
 
 /// Main structure representing steady telemetry.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub(crate) struct SteadyTelemetry<const RX_LEN: usize, const TX_LEN: usize> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) send_tx: Option<SteadyTelemetrySend<TX_LEN>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) send_rx: Option<SteadyTelemetrySend<RX_LEN>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) state: Option<SteadyTelemetryActorSend>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) dirty: AtomicBool,
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
     /// Returns true if non zero channel data is waiting to be sent
     #[inline]
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub(crate) fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)
     }
@@ -570,11 +610,13 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyTelemetry<RX_LEN, TX_LEN> {
 
 //tests
 #[cfg(test)]
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 mod monitor_telemetry_old_tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::{ActorMetaData, RxTel};
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor_telemetry::SteadyTelemetryRx;
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     use std::sync::Arc;
 
     #[test]
@@ -597,19 +639,24 @@ mod monitor_telemetry_old_tests {
 
 // tests for the monitor telemetry module
 #[cfg(test)]
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 mod monitor_telemetry_tests {
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::{ActorMetaData, ChannelMetaData, RxTel};
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor_telemetry::{
         DotSubtitleMailbox, SteadyTelemetry, SteadyTelemetryActorSend, SteadyTelemetryRx,
         SteadyTelemetrySend, SteadyTelemetryTake, DOT_SUBTITLE_MAX_CHARS,
     };
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::Ordering;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Instant;
+    // ss[impl telemetry.prometheus-metrics]
     use crate::channel_builder::ChannelBuilder;
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     use crate::*;
 
     // // Helper function to create default ChannelMetaData
@@ -778,7 +825,7 @@ mod monitor_telemetry_tests {
             capacity: 8,
             ..Default::default()
         });
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (_take_tx, take_rx) = builder.eager_build::<[usize; 1]>();
         let (_send_tx, send_rx) = builder.eager_build::<[usize; 1]>();
         let telemetry_rx = SteadyTelemetryRx::<1, 1> {
@@ -860,7 +907,7 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_normal() {
-        let builder = ChannelBuilder::default().with_capacity(10);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
 
         let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
@@ -873,7 +920,7 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_unknown() {
-        let builder = ChannelBuilder::default().with_capacity(10);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
 
         let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
@@ -888,7 +935,7 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_not_monitored() {
-        let builder = ChannelBuilder::default().with_capacity(10);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 4]>();
 
         let mut send = SteadyTelemetrySend::new(tx, [0; 4], [0; 4], Instant::now());
@@ -901,7 +948,7 @@ mod monitor_telemetry_tests {
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_send_process_event_normal_inverse() {
         // Test that process_event with an index (not zero) works
-        let builder = ChannelBuilder::default().with_capacity(10);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(10);
         let (tx, _rx) = builder.eager_build::<[usize; 3]>();
 
         let mut send = SteadyTelemetrySend::new(tx, [10, 20, 30], [2, 1, 0], Instant::now());
@@ -928,11 +975,14 @@ mod monitor_telemetry_tests {
     #[ignore] // hangs under load..
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_actor_send_status_reset_and_message() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph_liveliness::ActorIdentity;
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::ActorStatus;
+        // ss[impl telemetry.prometheus-metrics]
         use std::sync::atomic::AtomicU64;
 
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (act_tx, _act_rx) = builder.eager_build::<ActorStatus>();
         let mailbox = Arc::new(DotSubtitleMailbox::new());
         let ident = ActorIdentity::new(9, "status_actor", None);
@@ -969,11 +1019,14 @@ mod monitor_telemetry_tests {
     #[ignore] //far too slow
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_actor_send_status_without_thread_info() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph_liveliness::ActorIdentity;
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::ActorStatus;
+        // ss[impl telemetry.prometheus-metrics]
         use std::sync::atomic::AtomicU64;
 
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (act_tx, _act_rx) = builder.eager_build::<ActorStatus>();
         let ident = ActorIdentity::new(11, "no_thread_info", None);
         let actor_send = SteadyTelemetryActorSend {
@@ -1000,11 +1053,14 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_consume_actor_aggregates_status() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_exec;
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph_liveliness::ActorIdentity;
+        // ss[impl telemetry.prometheus-metrics]
         use crate::monitor::ActorStatus;
 
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (act_tx, act_rx) = builder.eager_build::<ActorStatus>();
         let ident = ActorIdentity::new(3, "agg", None);
         let status = ActorStatus {
@@ -1042,10 +1098,12 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_consume_take_and_send_into_with_data() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_exec;
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::ChannelMetaData;
 
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (take_tx, take_rx) = builder.eager_build::<[usize; 1]>();
         let (send_tx, send_rx) = builder.eager_build::<[usize; 1]>();
         let meta_take = Arc::new(ChannelMetaData {
@@ -1104,9 +1162,10 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_consume_take_into_caps_future_send() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_exec;
 
-        let builder = ChannelBuilder::default().with_capacity(8);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(8);
         let (take_tx, take_rx) = builder.eager_build::<[usize; 1]>();
         let meta = Arc::new(ChannelMetaData {
             id: 0,
@@ -1143,9 +1202,10 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_is_empty_false_when_data_present() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_exec;
 
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (take_tx, take_rx) = builder.eager_build::<[usize; 1]>();
         let meta = Arc::new(ChannelMetaData {
             id: 0,
@@ -1174,9 +1234,10 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_actor_rx_sets_version() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::ActorStatus;
 
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (_act_tx, act_rx) = builder.eager_build::<ActorStatus>();
         let telemetry_rx = SteadyTelemetryRx::<0, 0> {
             send: None,
@@ -1221,9 +1282,10 @@ mod monitor_telemetry_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     fn test_steady_telemetry_rx_is_empty_and_closed_when_channels_closed() {
+        // ss[related philosophy.structural-hierarchy]
         use crate::core_exec;
 
-        let builder = ChannelBuilder::default().with_capacity(4);
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
         let (take_tx, take_rx) = builder.eager_build::<[usize; 1]>();
         let meta = Arc::new(ChannelMetaData {
             id: 0,
@@ -1251,4 +1313,5 @@ mod monitor_telemetry_tests {
 
 #[cfg(test)]
 #[path = "monitor_telemetry_proptest.rs"]
+// ss[impl telemetry.prometheus-metrics]
 mod monitor_telemetry_proptest;

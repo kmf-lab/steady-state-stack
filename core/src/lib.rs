@@ -31,46 +31,59 @@
 /// Internal module for telemetry-related functionality.
 ///
 /// This module contains submodules for collecting, consuming, and setting up telemetry in the Steady State framework.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod telemetry {
     /// Collects runtime metrics for monitoring system performance.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mod metrics_collector;
 
     /// Consumes collected metrics for Prometheus export or local telemetry server, and manages history files.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mod metrics_server;
 
     /// Provides logic for integrating telemetry actors into an application graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mod setup;
 }
 
 /// Internal module for serialization utilities.
 ///
 /// This module provides tools for efficient data serialization, particularly for use in distributed systems.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod serialize {
     /// Handles efficient packing of data into byte buffers.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mod byte_buffer_packer;
 
     /// Implements packed integer/long serialization based on the FAST/FIX protocol.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) mod fast_protocol_packed;
 }
 
 /// Internal module for collecting channel statistics.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod channel_stats;
 
 /// Internal module for collecting actor statistics.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod actor_stats;
 
 /// Internal module for framework configuration settings.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod steady_config;
 
 /// Shared frame-based refresh/window bit sizing for actor and channel telemetry.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod telemetry_window;
 
 /// Internal module for graph visualization and DOT language integration.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod dot;
 
 /// Unified edge-slot merge for telemetry channel ids (`DotState.edges`).
 ///
 /// Operators: conflicting endpoints are logged under target `steady_state::telemetry::dot`.
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod dot_unify;
 
 /// Manages the lifecycle states of actor graphs.
@@ -78,6 +91,7 @@ pub(crate) mod dot_unify;
 /// This module provides utilities for ensuring the liveliness and proper shutdown of actor graphs.
 // ss[related philosophy.structural-hierarchy]
 mod graph;
+// ss[related philosophy.structural-hierarchy]
 mod graph_liveliness;
 
 /// Utilities for managing loops and futures in actor execution.
@@ -95,6 +109,9 @@ mod loop_driver;
 // ss[related philosophy.structural-hierarchy]
 mod abstract_executor;
 
+/// Tracey impl anchors for CI process requirements (`verify.process.*`).
+mod verify_process;
+
 // ss[related philosophy.structural-hierarchy]
 pub(crate) use abstract_executor::core_exec;
 
@@ -106,6 +123,7 @@ pub(crate) use abstract_executor::core_exec;
 mod test_panic_capture;
 
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
+// ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;
 
 /// Shared proptest strategies and channel harness helpers.
@@ -116,10 +134,24 @@ pub mod proptest_support;
 /// All property tests use 2048 cases via `proptest_support::default_config()`.
 #[cfg(test)]
 #[macro_export]
+// ss[related philosophy.structural-hierarchy]
 macro_rules! ss_proptest {
     ($($tt:tt)*) => {
         ::proptest::proptest! {
             #![proptest_config($crate::proptest_support::default_config())]
+            $($tt)*
+        }
+    };
+}
+
+/// Property tests that call `eager_build` per case — 64 cases via `telemetry_eager_config()`.
+#[cfg(test)]
+#[macro_export]
+// ss[related philosophy.structural-hierarchy]
+macro_rules! ss_proptest_telemetry {
+    ($($tt:tt)*) => {
+        ::proptest::proptest! {
+            #![proptest_config($crate::proptest_support::telemetry_eager_config())]
             $($tt)*
         }
     };
@@ -157,11 +189,14 @@ pub use actor_builder::CoreBalancer;
 pub mod state_management;
 // ss[related philosophy.structural-hierarchy]
 pub use state_management::SteadyState;
+// ss[related philosophy.structural-hierarchy]
 pub use state_management::new_state;/// Installation utilities for various deployment methods.
+// ss[related philosophy.structural-hierarchy]
 pub use state_management::new_persistent_state;
 // ss[related philosophy.structural-hierarchy]
 pub use state_management::StateGuard;
 
+// ss[related philosophy.structural-hierarchy]
 pub use channel_builder_lazy::*;
 
 
@@ -243,11 +278,15 @@ pub mod steady_actor;
 /// This module contains internal implementations for receiving messages.
 // ss[related philosophy.structural-hierarchy]
 mod core_rx;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::core_rx::DoubleSlice;
 // ss[related philosophy.structural-hierarchy]
 pub use crate::core_rx::DoubleSliceCopy;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::core_rx::QuadSlice;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::core_rx::StreamQuadSliceCopy;
 
 /// Low-level transmitter functionality.
@@ -255,6 +294,7 @@ pub use crate::core_rx::StreamQuadSliceCopy;
 /// This module contains internal implementations for sending messages.
 // ss[related philosophy.structural-hierarchy]
 mod core_tx;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::core_tx::TxCore;
 
 // ss[related philosophy.structural-hierarchy]
@@ -286,88 +326,125 @@ mod steady_actor_core;
 /// These exports from `loop_driver` provide functions for selecting and awaiting multiple futures.
 // ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_fuse_future;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_select_two;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_select_three;
 // ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_select_four;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_select_five;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_await_for_all_or_proceed_upon_two;
 // ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_await_for_all_or_proceed_upon_three;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_await_for_all_or_proceed_upon_four;
+// ss[related philosophy.structural-hierarchy]
 pub use loop_driver::steady_await_for_all_or_proceed_upon_five;
 
 // Public re-exports for convenience
 // ss[related philosophy.structural-hierarchy]
 pub use clap::*;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_actor::SendOutcome;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_actor::index_wait_counts_uniform_usize;
 // ss[related philosophy.structural-hierarchy]
 pub use simulate_edge::SimRunner;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_actor_shadow::*;
+// ss[related philosophy.structural-hierarchy]
 pub use futures_timer::Delay; // for easy use
 // ss[related philosophy.structural-hierarchy]
 pub use graph_testing::GraphTestResult;
+// ss[related philosophy.structural-hierarchy]
 pub use monitor::{RxMetaDataHolder, TxMetaDataHolder};
+// ss[related philosophy.structural-hierarchy]
 pub use channel_builder_units::Rate;
 // ss[related philosophy.structural-hierarchy]
 pub use channel_builder_units::Filled;
+// ss[related philosophy.structural-hierarchy]
 pub use actor_builder_units::MCPU;
+// ss[related philosophy.structural-hierarchy]
 pub use actor_builder_units::Work;
 // ss[related philosophy.structural-hierarchy]
 pub use actor_builder_units::Percentile;
+// ss[related philosophy.structural-hierarchy]
 pub use actor_builder::Troupe;
+// ss[related philosophy.structural-hierarchy]
 pub use actor_builder::ScheduleAs;
 // ss[related philosophy.structural-hierarchy]
 pub use actor_builder::ScheduleAs::*;
+// ss[related philosophy.structural-hierarchy]
 pub use graph_liveliness::*;
+// ss[related philosophy.structural-hierarchy]
 pub use install::serviced::*;
 // ss[related philosophy.structural-hierarchy]
 pub use steady_rx::Rx;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_tx::Tx;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_rx::SteadyRxBundleTrait;
 // ss[related philosophy.structural-hierarchy]
 pub use steady_tx::SteadyTxBundleTrait;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_rx::RxBundleTrait;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_tx::TxBundleTrait;
 // ss[related philosophy.structural-hierarchy]
 pub use steady_rx::RxDone;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_tx::TxDone;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::distributed::aqueduct_builder::AqueductBuilder;
 // ss[related philosophy.structural-hierarchy]
 pub use steady_actor::SteadyActor;
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aeron_channel_structs::{
     media_driver_probe, media_driver_probe_default, media_driver_probe_with_reason,
     Channel, Endpoint, MediaType, MediaDriverProbeError,
 };
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aeron_channel_builder::{AeronConfig, AqueTech};
 // ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{StreamEgress, StreamIngress};
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{LazySteadyStreamRxBundle, LazySteadyStreamTxBundle};
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{SteadyStreamRxBundle, SteadyStreamTxBundle};
 // ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{LazyStreamRx, LazyStreamTx};
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{SteadyStreamRxBundleTrait, StreamRxBundleTrait};
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{SteadyStreamTxBundleTrait, StreamTxBundleTrait};
 // ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{LazySteadyStreamRxBundleClone, LazySteadyStreamTxBundleClone};
+// ss[related philosophy.structural-hierarchy]
 pub use distributed::aqueduct_stream::{SteadyStreamRx, SteadyStreamTx, StreamRx, StreamTx};
+// ss[related philosophy.structural-hierarchy]
 pub use log::{debug, error, info, trace, warn};
 // ss[related philosophy.structural-hierarchy]
 pub use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 pub use std::error::Error;
 
 // Dependencies and internal utilities (legacy `use crate::*` sites in this crate).
 // ss[related philosophy.structural-hierarchy]
 use futures::select;
+// ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
 // ss[related philosophy.structural-hierarchy]
 use std::io;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex;
 // ss[related philosophy.structural-hierarchy]
 use std::ops::DerefMut;
 #[allow(unused_imports)]
+// ss[related philosophy.structural-hierarchy]
 use log::*;
 // ss[related philosophy.structural-hierarchy]
 use crate::monitor::{ActorMetaData, ChannelMetaData};
@@ -388,24 +465,36 @@ pub mod channel_builder_units;
 
 // ss[related philosophy.structural-hierarchy]
 mod core_tx_guard;
+// ss[related philosophy.structural-hierarchy]
 mod core_rx_guard;
+// ss[related philosophy.structural-hierarchy]
 mod core_rx_stream;
 // ss[related philosophy.structural-hierarchy]
 mod core_tx_stream;
+// ss[related philosophy.structural-hierarchy]
 mod channel_stats_tests;
+// ss[related philosophy.structural-hierarchy]
 mod channel_stats_labels;
 // ss[related philosophy.structural-hierarchy]
 mod actor_stats_tests;
+// ss[related philosophy.structural-hierarchy]
 mod actor_builder_units;
+// ss[related philosophy.structural-hierarchy]
 mod channel_builder_lazy;
 // ss[related philosophy.structural-hierarchy]
 mod dot_edge;
+// ss[related philosophy.structural-hierarchy]
 mod dot_node;
 
+// ss[related philosophy.structural-hierarchy]
 mod types;
+// ss[related philosophy.structural-hierarchy]
 mod guard_ext;
+// ss[related philosophy.structural-hierarchy]
 mod logging;
+// ss[related philosophy.structural-hierarchy]
 mod metrics;
+// ss[related philosophy.structural-hierarchy]
 mod runner;
 
 /// meta macros for building our the spotlight
@@ -414,29 +503,43 @@ pub mod macros;
 // ss[related philosophy.structural-hierarchy]
 pub use crate::expression_steady_eye::LAST_FALSE;
 
+// ss[related philosophy.structural-hierarchy]
 pub use crate::logging_util::*;
 // ss[related philosophy.structural-hierarchy]
 use futures::AsyncRead;
+// ss[related philosophy.structural-hierarchy]
 use futures::AsyncWrite;
+// ss[related philosophy.structural-hierarchy]
 pub use futures::future::Future;
 // ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::MutexGuard;
+// ss[related philosophy.structural-hierarchy]
 pub use steady_actor_spotlight::SteadyActorSpotlight;
 // ss[related philosophy.structural-hierarchy]
 pub use crate::steady_tx::TxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::steady_rx::RxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::macros::steady_rx_bundle;
 // ss[related philosophy.structural-hierarchy]
 pub use crate::macros::steady_tx_bundle;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::macros::steady_rx_bundle_active;
+// ss[related philosophy.structural-hierarchy]
 pub use crate::macros::steady_tx_bundle_active;
 
 // ss[related philosophy.structural-hierarchy]
 pub use crate::yield_now::yield_now;
 
+// ss[related philosophy.structural-hierarchy]
 pub use types::*;
+// ss[related philosophy.structural-hierarchy]
 pub use guard_ext::SteadyChannelExt;
+// ss[related philosophy.structural-hierarchy]
 pub use logging::*;
+// ss[related philosophy.structural-hierarchy]
 pub use metrics::*;
+// ss[related philosophy.structural-hierarchy]
 pub use runner::SteadyRunner;

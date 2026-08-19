@@ -6,23 +6,27 @@
 //! `NodeDef`: numeric actor id, name, rx/tx channel telemetry ids plus `Arc` pointers—see
 //! [telemetry-edge-conflict.md](../../../docs/telemetry-edge-conflict.md).
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use std::collections::{VecDeque};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 use crate::telemetry::{metrics_collector, metrics_server};
 
 /// The name of the metrics collector actor.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub const NAME: &str = "metrics_collector";
 
 /// Represents a telemetry receiver and its associated metadata.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct CollectorDetail {
     /// The identity of the actor being monitored.
     pub ident: ActorIdentity,
@@ -32,7 +36,7 @@ pub struct CollectorDetail {
 
 /// Data packet sent to the metrics server for visualization.
 #[derive(Clone, Debug)]
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub enum DiagramData {
     /// Definition of a node and its connected channels.
     NodeDef(u64, Box<(Arc<ActorMetaData>, Box<[Arc<ChannelMetaData>]>, Box<[Arc<ChannelMetaData>]>)>),
@@ -45,7 +49,7 @@ pub enum DiagramData {
 }
 
 /// Entry point to run the MetricsCollector actor.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub async fn run(
     context: SteadyContext, 
     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>, 
@@ -57,7 +61,7 @@ pub async fn run(
 }
 
 /// The `MetricsCollector` actor gathers telemetry data from all actors and channels.
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 pub struct MetricsCollector {
     /// Shared telemetry receivers for all actors in the graph.
     all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
@@ -83,7 +87,7 @@ pub struct MetricsCollector {
 }
 
 #[inline]
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 fn telemetry_edge_diag_enabled() -> bool {
     matches!(
         std::env::var("STEADY_TELEMETRY_EDGE_DIAG").as_deref(),
@@ -91,7 +95,7 @@ fn telemetry_edge_diag_enabled() -> bool {
     )
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 fn format_diag_channel_slots(metas: &[Arc<ChannelMetaData>]) -> String {
     let mut pairs: Vec<(usize, usize)> =
         metas.iter().map(|m| (m.id, Arc::as_ptr(m) as usize)).collect();
@@ -103,9 +107,10 @@ fn format_diag_channel_slots(metas: &[Arc<ChannelMetaData>]) -> String {
         .join(";")
 }
 
-// ss[related telemetry.prometheus-metrics]
+// ss[impl telemetry.prometheus-metrics]
 impl MetricsCollector {
     /// Creates a new `MetricsCollector` instance.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fn new(
         all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
         targets: Arc<[SteadyTx<DiagramData>; 1]>,
@@ -126,7 +131,7 @@ impl MetricsCollector {
         }
     }
 
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub async fn run(self, context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
         // CRITICAL: MetricsCollector must use the raw SteadyActorShadow (context) to avoid telemetry
         // feedback loops and prevent this internal actor from appearing in user-facing charts.
@@ -134,7 +139,7 @@ impl MetricsCollector {
         Box::pin(self.internal_behavior(context)).await
     }
     /// The main loop for the `MetricsCollector` actor.
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     pub async fn internal_behavior(mut self, mut context: SteadyContext) -> Result<(), Box<dyn std::error::Error>> {
         let start_time = Instant::now();
         let runtime_state = context.runtime_state.clone();
@@ -332,8 +337,9 @@ impl MetricsCollector {
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod extra_tests {
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     use super::*;
 
     #[test]
@@ -348,12 +354,15 @@ pub(crate) mod extra_tests {
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod metric_collector_tests {
-    // ss[related telemetry.prometheus-metrics]
+    // ss[impl telemetry.prometheus-metrics]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     #[cfg(feature = "prometheus_metrics")]
+    // ss[impl telemetry.prometheus-metrics]
     async fn run_cooperative_shutdown_stub(
         ctx: SteadyActorShadow,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -365,11 +374,15 @@ pub(crate) mod metric_collector_tests {
     }
 
     #[cfg(feature = "prometheus_metrics")]
+    // ss[impl telemetry.prometheus-metrics]
     fn run_collector_graph_integration(
         build: impl FnOnce(&mut Graph) + Send + 'static,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // ss[impl telemetry.prometheus-metrics]
         use std::thread::sleep;
+        // ss[related philosophy.structural-hierarchy]
         use std::time::Duration;
+        // ss[related philosophy.structural-hierarchy]
         use crate::SteadyRunner;
 
         SteadyRunner::test_build().run((), move |mut graph| {
@@ -432,29 +445,42 @@ pub(crate) mod metric_collector_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     #[cfg(feature = "prometheus_metrics")]
+    // ss[related philosophy.structural-hierarchy]
     fn collector_run_processes_node_def_from_registry() {
+        // ss[related philosophy.structural-hierarchy]
         use std::sync::Arc;
+        // ss[impl telemetry.prometheus-metrics]
         use std::collections::VecDeque;
+        // ss[related philosophy.structural-hierarchy]
         use crate::graph_liveliness::ActorIdentity;
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+        // ss[impl telemetry.prometheus-metrics]
         use crate::SoloAct;
 
+        // ss[related philosophy.structural-hierarchy]
         struct EmptyTel {
             meta: Arc<ActorMetaData>,
         }
+        // ss[impl telemetry.prometheus-metrics]
         impl RxTel for EmptyTel {
+            // ss[related philosophy.structural-hierarchy]
             fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
                 Vec::new()
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
                 Vec::new()
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_actor(&self) -> Option<ActorStatus> {
                 None
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn actor_metadata(&self) -> Arc<ActorMetaData> {
                 self.meta.clone()
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_take_into(
                 &self,
                 _take_send_source: &mut Vec<(i64, i64)>,
@@ -463,6 +489,7 @@ pub(crate) mod metric_collector_tests {
             ) -> bool {
                 false
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_send_into(
                 &self,
                 _take_send_source: &mut Vec<(i64, i64)>,
@@ -470,12 +497,15 @@ pub(crate) mod metric_collector_tests {
             ) -> bool {
                 false
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn actor_rx(&self, _version: u32) -> Option<Box<crate::SteadyRx<ActorStatus>>> {
                 None
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn is_empty_and_closed(&self) -> bool {
                 true
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn is_empty(&self) -> bool {
                 true
             }
@@ -505,30 +535,42 @@ pub(crate) mod metric_collector_tests {
     #[test]
     // ss[verify telemetry.prometheus-metrics]
     #[cfg(feature = "prometheus_metrics")]
+    // ss[related philosophy.structural-hierarchy]
     fn collector_emits_node_def_when_edge_diag_enabled() {
+        // ss[related philosophy.structural-hierarchy]
         use std::sync::Arc;
+        // ss[impl telemetry.prometheus-metrics]
         use crate::graph_liveliness::ActorIdentity;
+        // ss[related philosophy.structural-hierarchy]
         use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData, RxTel};
+        // ss[related philosophy.structural-hierarchy]
         use crate::SoloAct;
 
+        // ss[impl telemetry.prometheus-metrics]
         struct DiagTel {
             meta: Arc<ActorMetaData>,
             rx_meta: Arc<ChannelMetaData>,
             tx_meta: Arc<ChannelMetaData>,
         }
+        // ss[impl telemetry.prometheus-metrics]
         impl RxTel for DiagTel {
+            // ss[related philosophy.structural-hierarchy]
             fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
                 vec![self.tx_meta.clone()]
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
                 vec![self.rx_meta.clone()]
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_actor(&self) -> Option<ActorStatus> {
                 None
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn actor_metadata(&self) -> Arc<ActorMetaData> {
                 self.meta.clone()
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_take_into(
                 &self,
                 _take_send_source: &mut Vec<(i64, i64)>,
@@ -537,6 +579,7 @@ pub(crate) mod metric_collector_tests {
             ) -> bool {
                 false
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn consume_send_into(
                 &self,
                 _take_send_source: &mut Vec<(i64, i64)>,
@@ -544,12 +587,15 @@ pub(crate) mod metric_collector_tests {
             ) -> bool {
                 false
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn actor_rx(&self, _version: u32) -> Option<Box<crate::SteadyRx<ActorStatus>>> {
                 None
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn is_empty_and_closed(&self) -> bool {
                 true
             }
+            // ss[impl telemetry.prometheus-metrics]
             fn is_empty(&self) -> bool {
                 true
             }

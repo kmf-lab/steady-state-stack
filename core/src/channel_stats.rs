@@ -1,25 +1,34 @@
 // ss[related telemetry.channel-labels]
 use std::backtrace::Backtrace;
+// ss[related philosophy.structural-hierarchy]
 use std::cmp::Ordering;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::VecDeque;
 #[allow(unused_imports)]
 // ss[related telemetry.channel-labels]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use hdrhistogram::{Histogram};
 
 // ss[related telemetry.channel-labels]
 use crate::actor_stats::{ChannelBlock};
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_stats_labels;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_stats_labels::{ComputeLabelsConfig, ComputeLabelsLabels};
 
 /// Constants representing the colors used in the dot graph.
 // ss[related telemetry.channel-labels]
 pub(crate) const DOT_GREEN: &str = "green";
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const DOT_YELLOW: &str = "yellow";
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const DOT_ORANGE: &str = "orange";
 // ss[related telemetry.channel-labels]
 pub(crate) const DOT_RED: &str = "red";
+// ss[related philosophy.structural-hierarchy]
 pub(crate) const DOT_GREY: &str = "grey";
 
 /// Array representing the pen width values for the dot graph.
@@ -34,57 +43,107 @@ static _DOT_PEN_WIDTH: [&str; 16] = [
 #[derive(Default, Debug)]
 // ss[related telemetry.channel-labels]
 pub struct ChannelStatsComputer {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) display_labels: Option<Vec<&'static str>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) line_expansion: f32,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_type: Option<&'static str>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) type_byte_count: usize, // Used to know bytes/sec sent
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_filled: Vec<Percentile>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_rate: Vec<Percentile>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) percentiles_latency: Vec<Percentile>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_filled: Vec<StdDev>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_rate: Vec<StdDev>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) std_dev_latency: Vec<StdDev>, // To show
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg_filled: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg_rate: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg_latency: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min_filled: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max_filled: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min_latency: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max_latency: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min_rate: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max_rate: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) rate_trigger: Vec<(Trigger<Rate>, AlertColor)>, // If used base is green
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) filled_trigger: Vec<(Trigger<Filled>, AlertColor)>, // If used base is green
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) latency_trigger: Vec<(Trigger<Duration>, AlertColor)>, // If used base is green
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) history_filled: VecDeque<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) history_rate: VecDeque<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) history_latency: VecDeque<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bucket_frames_count: usize, // When this bucket is full we add a new one
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) refresh_rate_in_bits: u8,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) window_bucket_in_bits: u8,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64, // Const at runtime but needed here for unit testing
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) time_label: String,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) prev_take: i64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) capacity: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_filled_histogram: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_rate_histogram: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) build_latency_histogram: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) current_filled: Option<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) current_rate: Option<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) current_latency: Option<ChannelBlock<u64>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) prometheus_labels: String,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_total: bool,
 
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) saturation_score: f64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_send: i64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_take: i64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_total: i64,
 
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) partner: Option<&'static str>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bundle_index: Option<usize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) girth: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) total_consumed: u128,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) memory_footprint: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_memory: bool,
 }
 
@@ -1003,10 +1062,13 @@ pub(crate) const PLACES_TENS: u64 = 1000u64;
 #[cfg(test)]
 // ss[related telemetry.channel-labels]
 mod channel_stats_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
     // ss[related telemetry.channel-labels]
     use crate::monitor::ChannelMetaData;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
 
     // ss[related telemetry.channel-labels]

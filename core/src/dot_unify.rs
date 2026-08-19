@@ -17,21 +17,28 @@
 // ss[related telemetry.dot-export]
 use std::sync::Arc;
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ss[related telemetry.dot-export]
 use log::{trace, warn};
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 use log::debug;
 
+// ss[related telemetry.dot-export]
 use crate::ActorName;
 // ss[related telemetry.dot-export]
 use crate::channel_stats::ChannelStatsComputer;
+// ss[related philosophy.structural-hierarchy]
 use crate::dot::DotState;
+// ss[related philosophy.structural-hierarchy]
 use crate::dot::EDGE_PEN_WIDTH;
 // ss[related telemetry.dot-export]
 use crate::dot_edge::Edge;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::ChannelMetaData;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_liveliness::ActorIdentity;
 
 /// Declares which endpoint of a unified edge this actor is registering (see module docs).
@@ -47,6 +54,7 @@ pub(crate) enum ChannelEdgeRole {
 // ss[related telemetry.dot-export]
 impl ChannelEdgeRole {
     #[inline]
+    // ss[related philosophy.structural-hierarchy]
     fn as_endpoint_str(self) -> &'static str {
         match self {
             ChannelEdgeRole::SetsEdgeTo => "to",
@@ -264,8 +272,11 @@ pub(crate) fn apply_channel_to_unified_edges(
 #[cfg(test)]
 // ss[related telemetry.dot-export]
 mod unify_edge_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::ss_proptest;
+    // ss[related telemetry.dot-export]
     use crate::graph_liveliness::ActorIdentity;
 
     // ss[related telemetry.dot-export]
@@ -307,6 +318,7 @@ mod unify_edge_tests {
         })
     }
 
+    // ss[related telemetry.dot-export]
     use proptest::prelude::*;
 
     ss_proptest! {
@@ -374,6 +386,7 @@ mod unify_edge_tests {
 
     // ss[verify telemetry.dot-export]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn default_channel_meta_id_zero_collides_by_design() {
         let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
         EDGE_CONFLICT_DIAG_COUNT.store(0, Ordering::Relaxed);

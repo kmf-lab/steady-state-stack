@@ -1,26 +1,35 @@
 #![allow(deprecated)] // legacy bundle-wait tests still exercise deprecated SteadyActor API
 // ss[related actor.shadow-spotlight]
 use std::sync::OnceLock;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::ActorMetaData;
 // ss[related philosophy.single-wake-up]
 use std::ops::DerefMut;
 // ss[related philosophy.single-wake-up]
 use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 // ss[related philosophy.single-wake-up]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures::FutureExt;
+// ss[related actor.shadow-spotlight]
 use std::time::Instant;
 // ss[related philosophy.single-wake-up]
 use std::sync::atomic::AtomicUsize;
+// ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::ChannelBuilder;
 // ss[related philosophy.single-wake-up]
 use crate::steady_actor::SendOutcome;
 // ss[related philosophy.single-wake-up]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_liveliness::GraphLiveliness;
 
 // ss[related philosophy.single-wake-up]

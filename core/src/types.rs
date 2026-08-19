@@ -1,13 +1,20 @@
 //! Thread-safe channel type aliases and guard bundles.
 
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::MutexGuard;
 
+// ss[related philosophy.structural-hierarchy]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::Rx;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::Tx;
 
 /// Type alias for a thread-safe transmitter wrapped in an `Arc` and `Mutex`.

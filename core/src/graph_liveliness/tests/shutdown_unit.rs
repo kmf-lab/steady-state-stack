@@ -3,12 +3,18 @@ use super::super::{
     watch_shutdown, ActorIdentity, GraphLiveliness, GraphLivelinessState, ShutdownVote,
     VoterStatus,
 };
+// ss[related philosophy.structural-hierarchy]
 use crate::expression_steady_eye::Eye;
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex as FutMutex;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::Ordering;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 
+// ss[related philosophy.structural-hierarchy]
 fn new_liveliness() -> Arc<parking_lot::RwLock<GraphLiveliness>> {
     let oss = Arc::new(FutMutex::new(Vec::new()));
     let actors_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -92,6 +98,7 @@ fn watch_shutdown_returns_err_on_unclean_timeout() {
 #[test]
 // ss[verify graph.shutdown.veto]
 fn watch_shutdown_unclean_reports_multiple_voters_with_backtrace() {
+    // ss[related philosophy.structural-hierarchy]
     use std::backtrace::Backtrace;
 
     let rs = new_liveliness();

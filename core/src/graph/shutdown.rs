@@ -1,6 +1,10 @@
+// ss[related graph.block-until-stopped]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use super::liveliness::GraphLiveliness;
+// ss[related philosophy.structural-hierarchy]
 use super::state::GraphLivelinessState;
+// ss[related graph.block-until-stopped]
 use log::{debug, warn};
 
 /// Minimum shutdown wait used by [`Graph::block_until_stopped`], derived from telemetry cadence.
@@ -124,4 +128,5 @@ fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
 
 #[cfg(test)]
 #[path = "shutdown_proptest.rs"]
+// ss[related graph.block-until-stopped]
 mod shutdown_proptest;

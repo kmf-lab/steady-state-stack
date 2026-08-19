@@ -1,18 +1,26 @@
 // ss[related channel.stream-dual-buffer]
 use log::{error, trace, warn};
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, FutureExt};
 // ss[related channel.stream-dual-buffer]
 use futures_util::future::{Either, FusedFuture};
+// ss[related philosophy.structural-hierarchy]
 use std::future::pending;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::traits::Observer;
 // ss[related channel.stream-dual-buffer]
 use ringbuf::producer::Producer;
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::producer::AsyncProducer;
+// ss[related philosophy.structural-hierarchy]
 use crate::{steady_config, ActorIdentity, SendOutcome, SendSaturation, StreamControlItem, StreamEgress, StreamIngress, StreamTx, TxCore, TxDone, MONITOR_NOT};
 // ss[related channel.stream-dual-buffer]
 use crate::loop_driver::pin_mut;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
+// ss[related philosophy.structural-hierarchy]
 use crate::yield_now::yield_now;
 // ss[related channel.stream-dual-buffer]
 use crate::core_exec;
@@ -25,6 +33,7 @@ use crate::core_exec;
 // ss[related channel.stream-dual-buffer]
 impl TxCore for StreamTx<StreamIngress> {
     /// The type of message sent into the channel, a tuple of a `StreamIngress` item and its payload bytes.
+    // ss[related philosophy.structural-hierarchy]
     type MsgIn<'a> = (StreamIngress, &'a [u8]);
 
     /// The type of message that comes out of the channel, the `StreamIngress` control item.
@@ -453,6 +462,7 @@ impl TxCore for StreamTx<StreamIngress> {
 // ss[related channel.stream-dual-buffer]
 impl TxCore for StreamTx<StreamEgress> {
     /// The type of message sent into the channel, a slice of payload bytes.
+    // ss[related philosophy.structural-hierarchy]
     type MsgIn<'a> = &'a [u8];
 
     /// The type of message that comes out of the channel, a `StreamEgress` control item.
@@ -871,10 +881,13 @@ impl TxCore for StreamTx<StreamEgress> {
 #[cfg(test)]
 // ss[related channel.stream-dual-buffer]
 mod core_tx_stream_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::time::{Duration, Instant};
+    // ss[related philosophy.structural-hierarchy]
     use crate::{GraphBuilder, ScheduleAs, SteadyActor, StreamEgress, StreamIngress, SendSaturation, TxCore, TxDone, ActorIdentity, core_exec, SendOutcome, StreamTx, steady_tx::TxMetaDataProvider};
     // ss[related channel.stream-dual-buffer]
     use crate::distributed::aqueduct_stream::Defrag;
+    // ss[related philosophy.structural-hierarchy]
     use async_ringbuf::traits::Producer;
 
     #[test]
@@ -1277,6 +1290,7 @@ mod core_tx_stream_tests {
         });
     }
 
+    // ss[related channel.stream-dual-buffer]
     use proptest::prelude::*;
 
     ss_proptest! {
@@ -1386,6 +1400,7 @@ mod core_tx_stream_tests {
             send_count in 1usize..4,
         ) {
             core_exec::block_on(async {
+                // ss[related channel.stream-dual-buffer]
                 use crate::RxCore;
                 let mut graph = GraphBuilder::for_testing().build(());
                 let (tx, rx) = graph.channel_builder()

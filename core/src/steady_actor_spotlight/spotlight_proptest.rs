@@ -1,15 +1,22 @@
 // ss[related actor.shadow-spotlight]
 #![allow(deprecated)]
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::Ordering;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, Mutex};
+// ss[related actor.shadow-spotlight]
 use std::time::Duration;
 
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
 
+// ss[related actor.shadow-spotlight]
 use crate::proptest_support::{capacity, lane_mask, vote_matrix};
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
 
 /// Minimal internal_behavior consumer: drains `rx` until shutdown veto accepts.
+// ss[related actor.shadow-spotlight]
 async fn spotlight_consumer_internal<A: SteadyActor>(
     mut actor: A,
     rx: SteadyRx<i32>,

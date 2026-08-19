@@ -5,39 +5,57 @@
 
 // ss[related testing.graph-for-testing]
 use std::any::Any;
+// ss[related testing.graph-for-testing]
 use std::collections::HashMap;
+// ss[related testing.graph-for-testing]
 use std::error::Error;
 // ss[related testing.graph-for-testing]
 use std::fmt::Debug;
+// ss[related testing.graph-for-testing]
 use std::ops::DerefMut;
+// ss[related testing.graph-for-testing]
 use std::sync::Arc;
 // ss[related testing.graph-for-testing]
 use std::sync::Mutex as StdMutex;
+// ss[related testing.graph-for-testing]
 use std::time::{Duration, Instant};
+// ss[related testing.graph-for-testing]
 use async_ringbuf::AsyncRb;
 // ss[related testing.graph-for-testing]
 use async_ringbuf::consumer::AsyncConsumer;
+// ss[related testing.graph-for-testing]
 use async_ringbuf::producer::AsyncProducer;
+// ss[related testing.graph-for-testing]
 use log::*;
 // ss[related testing.graph-for-testing]
 use futures_util::lock::{Mutex, MutexGuard};
+// ss[related testing.graph-for-testing]
 use async_ringbuf::traits::Split;
+// ss[related testing.graph-for-testing]
 use futures::channel::oneshot::Receiver;
 // ss[related testing.graph-for-testing]
 use futures_util::future::FusedFuture;
+// ss[related testing.graph-for-testing]
 use futures_util::select;
+// ss[related testing.graph-for-testing]
 use ringbuf::consumer::Consumer;
 // ss[related testing.graph-for-testing]
 use crate::{ActorIdentity, ActorName, Rx, RxBundle, SteadyActor, TxBundle};
+// ss[related testing.graph-for-testing]
 use crate::channel_builder::{ChannelBacking, InternalReceiver, InternalSender};
+// ss[related testing.graph-for-testing]
 use ringbuf::traits::Observer;
 // ss[related testing.graph-for-testing]
 use crate::actor_builder::NodeTxRx;
+// ss[related testing.graph-for-testing]
 use crate::steady_actor::SendOutcome;
+// ss[related testing.graph-for-testing]
 use crate::core_rx::RxCore;
 // ss[related testing.graph-for-testing]
 use crate::core_tx::TxCore;
+// ss[related testing.graph-for-testing]
 use ringbuf::producer::Producer;
+// ss[related testing.graph-for-testing]
 use crate::simulate_edge::SimStepResult;
 
 /// Represents the result of a graph test, which can be either success or error.
@@ -64,11 +82,13 @@ where
 // ss[impl testing.stage-manager-integration]
 pub struct StageManager {
     node: HashMap<ActorName, Arc<NodeTxRx>>,
+    // ss[related testing.graph-for-testing]
     pub(crate) backplane: HashMap<ActorName, Arc<Mutex<SideChannel>>>,
 }
 
 // ss[related testing.graph-for-testing]
 impl Debug for StageManager {
+    // ss[related testing.graph-for-testing]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SideChannelHub")
             .field("node", &self.node)
@@ -105,6 +125,7 @@ pub enum StageWaitFor<T: Debug + Eq> {
 
 // ss[related testing.graph-for-testing]
 impl<T: Debug + Eq> StageAction for StageWaitFor<T> {}
+// ss[related testing.graph-for-testing]
 impl<T: Debug + Clone> StageAction for StageDirection<T> {}
 
 // ss[related testing.graph-for-testing]
@@ -269,9 +290,12 @@ impl StageManager {
 #[derive(Clone)]
 // ss[related testing.graph-for-testing]
 pub struct SideChannelResponder {
+    // ss[related testing.graph-for-testing]
     pub(crate) arc: Arc<Mutex<(SideChannel, Receiver<()>)>>,
+    // ss[related testing.graph-for-testing]
     pub(crate) identity: ActorIdentity,
     /// Wall-clock start of the current [`StageWaitFor`] command (peeked, not yet completed).
+    // ss[related testing.graph-for-testing]
     pub(crate) stage_wait_start: Arc<StdMutex<Option<Instant>>>,
 }
 
@@ -279,6 +303,7 @@ pub struct SideChannelResponder {
 // ss[related testing.graph-for-testing]
 pub(crate) const OK_MESSAGE: &str = "ok";
 /// Constant for the "timeout" message.
+// ss[related testing.graph-for-testing]
 pub(crate) const TIMEOUT: &str = "timeout, no message";
 
 // ss[related testing.graph-for-testing]
@@ -677,23 +702,33 @@ impl SideChannelResponder {
 #[cfg(test)]
 // ss[related testing.graph-for-testing]
 mod graph_testing_tests {
+    // ss[related testing.graph-for-testing]
     use super::*;
+    // ss[related testing.graph-for-testing]
     use std::error::Error;
     // ss[related testing.graph-for-testing]
     use std::time::Duration;
+    // ss[related testing.graph-for-testing]
     use aeron::aeron::Aeron;
+    // ss[related testing.graph-for-testing]
     use futures::channel::oneshot;
     // ss[related testing.graph-for-testing]
     use crate::*;
+    // ss[related testing.graph-for-testing]
     use crate::ActorName;
+    // ss[related testing.graph-for-testing]
     use crate::ActorIdentity;
     // ss[related testing.graph-for-testing]
     use crate::distributed::aqueduct_stream::Defrag;
+    // ss[related testing.graph-for-testing]
     use crate::simulate_edge::IntoSimRunner;
+    // ss[related testing.graph-for-testing]
     use crate::channel_builder::ChannelBuilder;
+    // ss[related testing.graph-for-testing]
     use crate::RxCoreBundle;
     // ss[related testing.graph-for-testing]
     use crate::steady_actor::BlockingCallFuture;
+    // ss[related testing.graph-for-testing]
     use crate::TxCoreBundle;
 
     // ss[related testing.graph-for-testing]
@@ -703,23 +738,33 @@ mod graph_testing_tests {
 
     // ss[related testing.graph-for-testing]
     impl SteadyActor for DummyActor {
+        // ss[related testing.graph-for-testing]
         fn frame_rate_ms(&self) -> u64 { 0 }
+        // ss[related testing.graph-for-testing]
         fn regeneration(&self) -> u32 { 0 }
         // ss[related testing.graph-for-testing]
         fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> { None }
+        // ss[related testing.graph-for-testing]
         async fn simulated_behavior(self, _sims: Vec<&dyn IntoSimRunner<Self>>) -> Result<(), Box<dyn Error>> { Ok(()) }
+        // ss[related testing.graph-for-testing]
         fn loglevel(&self, _loglevel: crate::LogLevel) {}
         // ss[related testing.graph-for-testing]
         fn relay_stats_smartly(&mut self) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn relay_stats(&mut self) {}
+        // ss[related testing.graph-for-testing]
         async fn relay_stats_periodic(&mut self, _duration_rate: Duration) -> bool { false }
         // ss[related testing.graph-for-testing]
         fn is_liveliness_in(&self, _target: &[GraphLivelinessState]) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn is_liveliness_building(&self) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn is_liveliness_running(&self) -> bool { false }
         // ss[related testing.graph-for-testing]
         fn is_liveliness_stop_requested(&self) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn is_liveliness_shutdown_timeout(&self) -> Option<Duration> { None }
+        // ss[related testing.graph-for-testing]
         fn flush_defrag_messages<S: StreamControlItem>(
             &mut self,
             _item: &mut Tx<S>,
@@ -728,10 +773,13 @@ mod graph_testing_tests {
         ) -> (u32, u32, Option<i32>) { (0, 0, None) }
         // ss[related testing.graph-for-testing]
         async fn wait_periodic(&self, _duration_rate: Duration) -> bool { false }
+        // ss[related testing.graph-for-testing]
         async fn wait_timeout(&self, _timeout: Duration) -> bool { false }
+        // ss[related testing.graph-for-testing]
         async fn wait(&self, _duration: Duration) {}
         // ss[related testing.graph-for-testing]
         async fn wait_avail<T: RxCore>(&self, _this: &mut T, _size: usize) -> bool { true }
+        // ss[related testing.graph-for-testing]
         async fn wait_avail_bundle<T: RxCore>(
             &self,
             _this: &mut RxCoreBundle<'_, T>,
@@ -746,7 +794,9 @@ mod graph_testing_tests {
         ) -> Option<usize> { Some(0) }
         // ss[related testing.graph-for-testing]
         async fn wait_future_void<F>(&self, _fut: F) -> bool where F: FusedFuture<Output = ()> + 'static + Send + Sync { false }
+        // ss[related testing.graph-for-testing]
         async fn wait_vacant<T: TxCore>(&self, _this: &mut T, _count: T::MsgSize) -> bool { true }
+        // ss[related testing.graph-for-testing]
         async fn wait_vacant_bundle<T: TxCore>(
             &self,
             _this: &mut TxCoreBundle<'_, T>,
@@ -769,7 +819,9 @@ mod graph_testing_tests {
         ) -> Option<usize> { Some(0) }
         // ss[related testing.graph-for-testing]
         async fn wait_shutdown(&self) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn peek_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceSource<'b> where T: RxCore { unimplemented!() }
+        // ss[related testing.graph-for-testing]
         fn advance_take_index<T: RxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> RxDone { unimplemented!() }
         // ss[related testing.graph-for-testing]
         fn take_slice<T: RxCore>(
@@ -785,7 +837,9 @@ mod graph_testing_tests {
         ) -> TxDone where T::MsgOut: Copy { unimplemented!() }
         // ss[related testing.graph-for-testing]
         fn poke_slice<'b, T>(&self, _this: &'b mut T) -> T::SliceTarget<'b> where T: TxCore { unimplemented!() }
+        // ss[related testing.graph-for-testing]
         fn advance_send_index<T: TxCore>(&mut self, _this: &mut T, _count: T::MsgSize) -> TxDone { unimplemented!() }
+        // ss[related testing.graph-for-testing]
         fn try_peek<'a, T>(&'a self, _this: &'a mut Rx<T>) -> Option<&'a T> { None }
         // ss[related testing.graph-for-testing]
         fn try_peek_iter<'a, T>(
@@ -794,7 +848,9 @@ mod graph_testing_tests {
         ) -> impl Iterator<Item = &'a T> + 'a { std::iter::empty() }
         // ss[related testing.graph-for-testing]
         fn is_empty<T: RxCore>(&self, _this: &mut T) -> bool { !self.has_data }
+        // ss[related testing.graph-for-testing]
         fn avail_units<T: RxCore>(&self, this: &mut T) -> T::MsgSize { if self.has_data { this.one() } else { unimplemented!() } }
+        // ss[related testing.graph-for-testing]
         async fn peek_async<'a, T: RxCore>(
             &'a self,
             _this: &'a mut T,
@@ -828,16 +884,20 @@ mod graph_testing_tests {
                 None
             }
         }
+        // ss[related testing.graph-for-testing]
         fn is_full<T: TxCore>(&self, _this: &mut T) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn vacant_units<T: TxCore>(&self, this: &mut T) -> T::MsgSize { this.one() }
         // ss[related testing.graph-for-testing]
         async fn wait_empty<T: TxCore>(&self, _this: &mut T) -> bool { false }
+        // ss[related testing.graph-for-testing]
         fn take_into_iter<'a, T: Sync + Send>(
             &mut self,
             _this: &'a mut Rx<T>,
         ) -> impl Iterator<Item = T> + 'a { std::iter::empty() }
         // ss[related testing.graph-for-testing]
         async fn call_async<F>(&self, _operation: F) -> Option<F::Output> where F: Future { None }
+        // ss[related testing.graph-for-testing]
         fn call_blocking<F, T>(&self, f: F) -> BlockingCallFuture<T>
         where
             F: FnOnce() -> T + Send + 'static,
@@ -853,6 +913,7 @@ mod graph_testing_tests {
         ) -> SendOutcome<T::MsgOut> { SendOutcome::Success }
         // ss[related testing.graph-for-testing]
         async fn take_async<T>(&mut self, _this: &mut Rx<T>) -> Option<T> { None }
+        // ss[related testing.graph-for-testing]
         async fn take_async_with_timeout<T>(
             &mut self,
             _this: &mut Rx<T>,
@@ -860,15 +921,20 @@ mod graph_testing_tests {
         ) -> Option<T> { None }
         // ss[related testing.graph-for-testing]
         async fn yield_now(&self) {}
+        // ss[related testing.graph-for-testing]
         fn sidechannel_responder(&self) -> Option<SideChannelResponder> { None }
+        // ss[related testing.graph-for-testing]
         fn is_running<F: FnMut() -> bool>(&mut self, _accept_fn: F) -> bool { true }
         // ss[related testing.graph-for-testing]
         async fn request_shutdown(&mut self) {}
+        // ss[related testing.graph-for-testing]
         fn args<A: Any>(&self) -> Option<&A> { None }
+        // ss[related testing.graph-for-testing]
         fn identity(&self) -> ActorIdentity { ActorIdentity::default() }
         // ss[related testing.graph-for-testing]
         fn is_showstopper<T>(&self, _rx: &mut Rx<T>, _threshold: usize) -> bool { false }
 
+        // ss[related testing.graph-for-testing]
         fn set_dot_display_text(&mut self, _text: Option<&str>) {}
     }
 
@@ -877,6 +943,7 @@ mod graph_testing_tests {
     // ss[verify testing.mock-main-thread]
     // ss[verify testing.deterministic-no-sleep]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_graph_test_result() -> Result<(), Box<dyn Error>> {
         let ok: GraphTestResult<i32, String> = GraphTestResult::Ok(42);
         if let GraphTestResult::Ok(val) = ok {
@@ -897,6 +964,7 @@ mod graph_testing_tests {
 
     // ss[verify testing.stage-manager-integration]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_stack_guarded_graph() -> Result<(), Box<dyn Error>> {
         SteadyRunner::test_build()
             .with_stack_size(16 * 1024 * 1024)
@@ -911,6 +979,7 @@ mod graph_testing_tests {
 
     // ss[verify testing.stage-manager-integration]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_stage_manager_default() -> Result<(), Box<dyn Error>> {
         let manager = StageManager::default();
         assert!(manager.node.is_empty());
@@ -920,6 +989,7 @@ mod graph_testing_tests {
 
     // ss[verify testing.stage-manager-integration]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_stage_manager_clone() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
         let (_shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -933,6 +1003,7 @@ mod graph_testing_tests {
 
     // ss[verify testing.stage-manager-integration]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_stage_manager_debug() -> Result<(), Box<dyn Error>> {
         let manager = StageManager::default();
         let debug_str = format!("{:?}", manager);
@@ -1009,6 +1080,7 @@ mod graph_testing_tests {
 
     // ss[verify testing.deterministic-no-sleep]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn test_avail() -> Result<(), Box<dyn Error>> {
         let mut manager = StageManager::default();
         let (_shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -1184,6 +1256,7 @@ mod graph_testing_tests {
     // ss[verify actor.shadow-spotlight]
     // ss[verify testing.internal-behavior-direct]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn staged_single_sim_producer_and_real_consumer_shuts_down_cleanly() -> Result<(), Box<dyn Error>> {
         SteadyRunner::test_build().run((), |mut graph| {
             let (prod_tx, prod_rx) = graph.channel_builder().with_capacity(8).build::<u64>();
@@ -1218,11 +1291,15 @@ mod graph_testing_tests {
     // ss[verify philosophy.structural-hierarchy]
     // ss[verify actor.internal-behavior-logic]
     #[test]
+    // ss[related testing.graph-for-testing]
     fn staged_pipeline_four_actor_graph_regression() -> Result<(), Box<dyn Error>> {
+        // ss[related testing.graph-for-testing]
         const NAME_GENERATOR: &str = "GENERATOR";
         // ss[related testing.graph-for-testing]
         const NAME_HEARTBEAT: &str = "HEARTBEAT";
+        // ss[related testing.graph-for-testing]
         const NAME_WORKER: &str = "WORKER";
+        // ss[related testing.graph-for-testing]
         const NAME_LOGGER: &str = "LOGGER";
 
         SteadyRunner::test_build().run((), |mut graph| {
@@ -1306,8 +1383,10 @@ mod graph_testing_tests {
         Ok(())
     }
 
+    // ss[related testing.graph-for-testing]
     use proptest::prelude::*;
 
+    // ss[related testing.graph-for-testing]
     fn build_shutdown_proptest_pipeline(
         graph: &mut Graph,
     ) -> (
@@ -1315,9 +1394,13 @@ mod graph_testing_tests {
         LazySteadyTx<u64>,
         SteadyRx<u64>,
     ) {
+        // ss[related testing.graph-for-testing]
         const NAME_GENERATOR: &str = "GENERATOR";
+        // ss[related testing.graph-for-testing]
         const NAME_HEARTBEAT: &str = "HEARTBEAT";
+        // ss[related testing.graph-for-testing]
         const NAME_WORKER: &str = "WORKER";
+        // ss[related testing.graph-for-testing]
         const NAME_LOGGER: &str = "LOGGER";
 
         let (gen_lazy, generator_rx) = graph.channel_builder().with_capacity(64).build::<u64>();
@@ -1379,10 +1462,15 @@ mod graph_testing_tests {
         (gen_lazy, hb_lazy, log_rx_out)
     }
 
+    // ss[related testing.graph-for-testing]
     fn build_staged_puppet_pipeline(graph: &mut Graph) {
+        // ss[related testing.graph-for-testing]
         const NAME_GENERATOR: &str = "GENERATOR";
+        // ss[related testing.graph-for-testing]
         const NAME_HEARTBEAT: &str = "HEARTBEAT";
+        // ss[related testing.graph-for-testing]
         const NAME_WORKER: &str = "WORKER";
+        // ss[related testing.graph-for-testing]
         const NAME_LOGGER: &str = "LOGGER";
 
         let (gen_lazy, gen_rx) = graph.channel_builder().with_capacity(32).build::<u64>();
@@ -1407,6 +1495,7 @@ mod graph_testing_tests {
             .build(move |ctx| pipeline_logger_edge(ctx, log_rx.clone()), SoloAct);
     }
 
+    // ss[related testing.graph-for-testing]
     fn setup_side_channel_responder(capacity: usize) -> (StageManager, SideChannelResponder) {
         let mut manager = StageManager::default();
         let (_shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -1417,11 +1506,13 @@ mod graph_testing_tests {
     }
 
     /// Voting-phase bound for graph integration properties (work must finish before shutdown).
+    // ss[related testing.graph-for-testing]
     fn integration_vote_timeout() -> Duration {
         Duration::from_millis(500)
     }
 
     /// Poll logger availability until `pred` holds or the deadline elapses.
+    // ss[related testing.graph-for-testing]
     fn poll_log_avail<F>(log_rx: &SteadyRx<u64>, deadline: Duration, mut pred: F)
     where
         F: FnMut(usize) -> bool,
@@ -1440,6 +1531,7 @@ mod graph_testing_tests {
     }
 
     /// Request shutdown and bound only the cooperative voting/drain phase.
+    // ss[related testing.graph-for-testing]
     fn shutdown_started_graph(mut graph: Graph) -> Result<(), Box<dyn Error>> {
         graph.request_shutdown();
         graph.block_until_stopped(integration_vote_timeout())
@@ -1473,6 +1565,9 @@ mod graph_testing_tests {
                     gen_tx.testing_send_all(gen_values_clone.clone(), true);
                     if hb_beats > 0 {
                         hb_tx.testing_send_all(vec![0u64; hb_beats], true);
+                    } else {
+                        // Worker veto requires closed inputs; empty traffic still must close hb.
+                        hb_tx.testing_close();
                     }
                     graph.start();
                     if !early_shutdown && !gen_values_clone.is_empty() {

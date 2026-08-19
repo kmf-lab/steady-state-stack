@@ -1,46 +1,56 @@
 // ss[related bundle.split-macro]
 use crate::{LazySteadyRx, LazySteadyRxBundle, LazySteadyTx, LazySteadyTxBundle, SteadyRx, SteadyTx, SteadyActor, SteadyTxBundle, SteadyRxBundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::simulate_edge::IntoSimRunner;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{SteadyStreamRx, SteadyStreamTx, StreamControlItem};
 // ss[related bundle.split-macro]
 use async_ringbuf::Arc;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::RxMetaDataProvider;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::TxMetaDataProvider;
 
 /// Trait to allow uniform flattening of channels and bundles into simulation runners.
 // ss[related bundle.split-macro]
 pub trait SimIndexable<C: SteadyActor + 'static> {
     /// Pushes references to simulation runners into the provided vector.
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>);
 }
 
 // ss[related bundle.split-macro]
 impl<T, C> SimIndexable<C> for SteadyRx<T>
     where SteadyRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
 // ss[related bundle.split-macro]
 impl<T, C> SimIndexable<C> for SteadyTx<T>
     where SteadyTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
 // ss[related bundle.split-macro]
 impl<T, C> SimIndexable<C> for SteadyStreamRx<T>
     where SteadyStreamRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
 // ss[related bundle.split-macro]
 impl<T, C> SimIndexable<C> for SteadyStreamTx<T>
     where SteadyStreamTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) { vec.push(self); }
 }
 
 // ss[related bundle.split-macro]
 impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyRx<T>; N]>
     where SteadyRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
         for item in self.iter() { vec.push(item); }
     }
@@ -49,6 +59,7 @@ impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyRx<T>; N]>
 // ss[related bundle.split-macro]
 impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyTx<T>; N]>
     where SteadyTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
         for item in self.iter() { vec.push(item); }
     }
@@ -57,6 +68,7 @@ impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyTx<T>; N]>
 // ss[related bundle.split-macro]
 impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamRx<T>; N]>
     where SteadyStreamRx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
         for item in self.iter() { vec.push(item); }
     }
@@ -65,6 +77,7 @@ impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamRx<T>; N]>
 // ss[related bundle.split-macro]
 impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamTx<T>; N]>
     where SteadyStreamTx<T>: IntoSimRunner<C>, C: SteadyActor + 'static, T: StreamControlItem {
+    // ss[related philosophy.structural-hierarchy]
     fn push_to<'a>(&'a self, vec: &mut Vec<&'a dyn IntoSimRunner<C>>) {
         for item in self.iter() { vec.push(item); }
     }
@@ -75,6 +88,7 @@ impl<T, C, const N: usize> SimIndexable<C> for Arc<[SteadyStreamTx<T>; N]>
 // ss[related bundle.split-macro]
 pub trait MetaIndexable<T: ?Sized> {
     /// Returns a reference to the metadata at the specified index.
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, index: usize) -> &T;
     /// Returns the number of metadata items in the collection.
     // ss[related bundle.split-macro]
@@ -84,33 +98,43 @@ pub trait MetaIndexable<T: ?Sized> {
 // Implementation for bundles (Arc of array of providers)
 // ss[related bundle.split-macro]
 impl<T: RxMetaDataProvider + 'static, const N: usize> MetaIndexable<dyn RxMetaDataProvider> for Arc<[T; N]> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, index: usize) -> &(dyn RxMetaDataProvider + 'static) { &self[index] }
+    // ss[related philosophy.structural-hierarchy]
     fn meta_len(&self) -> usize { N }
 }
 
 // ss[related bundle.split-macro]
 impl<T: TxMetaDataProvider + 'static, const N: usize> MetaIndexable<dyn TxMetaDataProvider> for Arc<[T; N]> {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, index: usize) -> &(dyn TxMetaDataProvider + 'static) { &self[index] }
+    // ss[related philosophy.structural-hierarchy]
     fn meta_len(&self) -> usize { N }
 }
 
 // Implementation for single channels or already-extracted metadata
 // ss[related bundle.split-macro]
 impl<M: RxMetaDataProvider + 'static> MetaIndexable<dyn RxMetaDataProvider> for M {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, _index: usize) -> &(dyn RxMetaDataProvider + 'static) { self }
+    // ss[related philosophy.structural-hierarchy]
     fn meta_len(&self) -> usize { 1 }
 }
 
 // ss[related bundle.split-macro]
 impl<M: TxMetaDataProvider + 'static> MetaIndexable<dyn TxMetaDataProvider> for M {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, _index: usize) -> &(dyn TxMetaDataProvider + 'static) { self }
+    // ss[related philosophy.structural-hierarchy]
     fn meta_len(&self) -> usize { 1 }
 }
 
 // Implementation for raw arrays of references (output of bundle.meta_data())
 // ss[related bundle.split-macro]
 impl<'a, T: ?Sized + 'a, const N: usize> MetaIndexable<T> for [&'a T; N] {
+    // ss[related philosophy.structural-hierarchy]
     fn meta_at(&self, index: usize) -> &T { self[index] }
+    // ss[related philosophy.structural-hierarchy]
     fn meta_len(&self) -> usize { N }
 }
 
@@ -324,6 +348,7 @@ macro_rules! into_monitor {
 /// at compile time.
 // ss[impl bundle.split-macro]
 #[macro_export]
+// ss[related philosophy.structural-hierarchy]
 macro_rules! split_bundle {
     ($bundle:expr, $($size:expr),+ $(,)?) => {{
         let bundle = $bundle;
@@ -399,11 +424,14 @@ pub fn steady_rx_bundle_active<T, const GIRTH: usize>(
 #[cfg(test)]
 // ss[related bundle.split-macro]
 mod macros_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
 
     // ss[verify bundle.split-macro]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_split_bundle_partitions_lazy_tx_bundle() {
         let builder = ChannelBuilder::default().with_capacity(2);
         let (t0, _) = builder.build_channel::<u8>();
@@ -468,9 +496,13 @@ mod macros_tests {
 #[cfg(test)]
 // ss[related bundle.split-macro]
 mod macros_proptest {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
+    // ss[related bundle.split-macro]
     use crate::ss_proptest;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     ss_proptest! {

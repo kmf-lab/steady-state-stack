@@ -1,8 +1,14 @@
+// ss[related graph.for-testing]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use super::graph::Graph;
+// ss[related philosophy.structural-hierarchy]
 use super::liveliness::GraphLiveliness;
+// ss[related graph.for-testing]
 use super::shutdown::watch_shutdown;
+// ss[related philosophy.structural-hierarchy]
 use super::state::GraphLivelinessState;
+// ss[related philosophy.structural-hierarchy]
 use log::{debug, trace, warn};
 
 /// Configures and builds a `Graph` instance with customizable options.
@@ -13,24 +19,34 @@ use log::{debug, trace, warn};
 // ss[related graph.for-testing]
 pub struct GraphBuilder {
     /// Indicates whether the graph is intended for testing purposes.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_for_testing: bool,
     /// Enables or disables telemetry metric features.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry_metric_features: bool,
     /// An optional backplane for testing side-channel communications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) backplane: Option<StageManager>,
     /// THE rate at which telemetry data is produced, in milliseconds.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemtry_production_rate_ms: u64,
     /// An optional hex color for the telemetry top bar.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry_colors: Option<(String, String)>,
     /// An optional barrier for synchronizing actor shutdown.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
     /// Default stack size for all actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) default_stack_size: Option<usize>,
     /// Flag to block fail-fast behavior during tests.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) block_fail_fast: bool,
     /// Minimum size for bundles.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) bundle_floor_size: usize,
     /// Actor base names that use real `internal_behavior` in test graphs (StageManager on edges).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) test_pipeline_internal_names: HashSet<&'static str>,
 }
 
@@ -288,4 +304,5 @@ impl GraphBuilder {
 
 #[cfg(test)]
 #[path = "builder_proptest.rs"]
+// ss[related graph.for-testing]
 mod builder_proptest;

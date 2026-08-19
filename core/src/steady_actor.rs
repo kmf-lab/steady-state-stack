@@ -1,38 +1,56 @@
 // ss[related actor.run-dispatcher]
 use futures::FutureExt;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related actor.run-dispatcher]
 use futures_util::future::{FusedFuture};
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
+// ss[related philosophy.structural-hierarchy]
 use std::error::Error;
 // ss[related actor.run-dispatcher]
 use std::pin::Pin;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::task::{Context, Poll};
 // ss[related actor.run-dispatcher]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::select;
+// ss[related philosophy.structural-hierarchy]
 use log::*;
 // ss[related actor.run-dispatcher]
 use crate::{steady_config, ActorIdentity, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, Tx, TxCoreBundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::SideChannelResponder;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{RxMetaData, TxMetaData};
 // ss[related actor.run-dispatcher]
 use crate::monitor_telemetry::SteadyTelemetry;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::{RxDone, RxMetaDataProvider};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::{TxDone, TxMetaDataProvider};
 // ss[related actor.run-dispatcher]
 use crate::telemetry::setup;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_spotlight::SteadyActorSpotlight;
 // ss[related actor.run-dispatcher]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 // ss[related actor.run-dispatcher]
 use crate::loop_driver::pin_mut;
+// ss[related philosophy.structural-hierarchy]
 use crate::simulate_edge::IntoSimRunner;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::Mutex;
 // ss[related actor.run-dispatcher]
 use std::sync::atomic::AtomicBool;
@@ -282,6 +300,7 @@ pub enum SendOutcome<X> {
 // ss[related actor.run-dispatcher]
 impl<X> SendOutcome<X> {
     /// Returns `true` if the send operation succeeded.
+    // ss[related philosophy.structural-hierarchy]
     pub fn is_sent(&self) -> bool {
         match self {
             SendOutcome::Success => true,
@@ -304,10 +323,12 @@ impl<X> SendOutcome<X> {
 // ss[related actor.run-dispatcher]
 pub struct BlockingCallFuture<T>(pub Pin<Box<dyn FusedFuture<Output = T> + Send>>);
 
+// ss[related philosophy.structural-hierarchy]
 impl<T> std::future::Future for BlockingCallFuture<T> {
     // ss[related actor.run-dispatcher]
     type Output = T;
 
+    // ss[related philosophy.structural-hierarchy]
     fn poll(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -319,6 +340,7 @@ impl<T> std::future::Future for BlockingCallFuture<T> {
 
 // ss[related actor.run-dispatcher]
 impl<T> FusedFuture for BlockingCallFuture<T> {
+    // ss[related philosophy.structural-hierarchy]
     fn is_terminated(&self) -> bool {
         self.0.is_terminated()
     }
@@ -368,6 +390,7 @@ impl<T> BlockingCallFuture<T> {
 // ss[related actor.run-dispatcher]
 pub trait SteadyActor {
     /// Returns the frame rate in milliseconds for this actor.
+    // ss[related philosophy.structural-hierarchy]
     fn frame_rate_ms(&self) -> u64;
 
     /// which regeneration is this actor. starts at zero and goes up each time the actor is restarted.
@@ -381,6 +404,7 @@ pub trait SteadyActor {
     // ss[impl philosophy.structural-hierarchy]
     // ss[impl testing.stage-manager-integration]
     /// Runs the actor in a simulated environment with the provided simulation runners.
+    // ss[related philosophy.structural-hierarchy]
     async fn simulated_behavior(
         self,
         sims: Vec<&dyn IntoSimRunner<Self>>,
@@ -407,6 +431,7 @@ pub trait SteadyActor {
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool;
 
     /// Checks if the actor's liveliness state matches any of the provided states.
@@ -447,12 +472,14 @@ pub trait SteadyActor {
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_periodic(&self, duration_rate: Duration) -> bool;
     /// Waits for a fixed interval between calls, regardless of work time.
     ///
     /// Returns `true` if the full interval elapsed, `false` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_timeout(&self, timeout: Duration) -> bool;
 
 
@@ -465,6 +492,7 @@ pub trait SteadyActor {
     /// Returns `true` if available, `false` if interrupted.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_avail<T: RxCore>(&self, this: &mut T, size: usize) -> bool;
 
     /// Waits until at least `count` units are available in a bundle of receivers.
@@ -476,6 +504,7 @@ pub trait SteadyActor {
     // ss[impl bundle.deprecated-bundle-waits]
     #[deprecated(since = "0.3.0", note = "Use wait_avail_index instead, which returns the index of the first ready channel")]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_avail_bundle<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -508,6 +537,7 @@ pub trait SteadyActor {
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_avail_index<T: RxCore>(
         &self,
         this: &mut RxCoreBundle<'_, T>,
@@ -519,6 +549,7 @@ pub trait SteadyActor {
     /// Returns `true` if the future completed, `false` if shutdown occurred.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_future_void<F>(&self, fut: F) -> bool
     where
         F: FusedFuture<Output = ()> + 'static + Send + Sync;
@@ -528,6 +559,7 @@ pub trait SteadyActor {
     /// Returns `true` if available, `false` if interrupted.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_vacant<T: TxCore>(&self, this: &mut T, count: T::MsgSize) -> bool;
 
     /// Waits until at least `count` vacant units are available in a bundle of transmitters.
@@ -568,6 +600,7 @@ pub trait SteadyActor {
     /// Returns `Some(index)` of the chosen ready channel, or `None` if interrupted by shutdown.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_vacant_index<T: TxCore>(
         &self,
         this: &mut TxCoreBundle<'_, T>,
@@ -593,6 +626,7 @@ pub trait SteadyActor {
     /// [`wait_vacant`](SteadyActor::wait_vacant) telemetry-dirty yield path.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: Some(index) = lane ready, None = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_avail_vacant_index<R: RxCore, T: TxCore>(
         &self,
         rx: &mut RxCoreBundle<'_, R>,
@@ -606,6 +640,7 @@ pub trait SteadyActor {
     /// Always returns `true`.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_shutdown(&self) -> bool;
 
     /// Peeks at the next available slice in the receiver without advancing the index.
@@ -727,6 +762,7 @@ pub trait SteadyActor {
     /// Asynchronously waits until the transmitter is empty.
     // ss[related actor.run-dispatcher]
     #[must_use = "wake result: true = condition met, false = interrupted (shutdown) — a dirty wake must drain, not assume readiness"]
+    // ss[related philosophy.structural-hierarchy]
     async fn wait_empty<T: TxCore>(&self, this: &mut T) -> bool;
 
     /// Takes all available messages from the receiver into an iterator.
@@ -827,7 +863,9 @@ pub trait SteadyActor {
 #[cfg(test)]
 // ss[related actor.run-dispatcher]
 mod steady_actor_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_exec;
 
     #[test]
@@ -888,12 +926,14 @@ mod steady_actor_tests {
 
     // ss[related actor.run-dispatcher]
     mod index_wait_pure {
+        // ss[related philosophy.structural-hierarchy]
         use super::super::{
             index_wait_avoid_repeat_lane, index_wait_counts_uniform_usize, next_index_wait_start,
         };
 
         // ss[verify actor.index-wait-round-robin]
         #[test]
+        // ss[related philosophy.structural-hierarchy]
         fn next_index_wait_start_empty_len() {
             assert_eq!(next_index_wait_start(0, 0), 0);
             assert_eq!(next_index_wait_start(5, 0), 0);
@@ -901,6 +941,7 @@ mod steady_actor_tests {
 
         // ss[verify actor.index-wait-round-robin]
         #[test]
+        // ss[related philosophy.structural-hierarchy]
         fn next_index_wait_start_wrap_and_invalid_last() {
             assert_eq!(next_index_wait_start(usize::MAX, 3), 0);
             assert_eq!(next_index_wait_start(3, 3), 0);
@@ -908,6 +949,7 @@ mod steady_actor_tests {
             assert_eq!(next_index_wait_start(3, 4), 0);
         }
 
+        // ss[related actor.run-dispatcher]
         use proptest::prelude::*;
 
         ss_proptest! {
@@ -980,14 +1022,20 @@ mod steady_actor_tests {
 
     // ss[related actor.wait-avail-vacant]
     mod wait_helpers_proptest {
+        // ss[related philosophy.structural-hierarchy]
         use super::super::{
             wait_paired_lane_ready, wait_rx_until_avail_items_ready,
             wait_tx_until_vacant_satisfied,
         };
+        // ss[related actor.run-dispatcher]
         use super::*;
+        // ss[related philosophy.structural-hierarchy]
         use crate::proptest_support::{capacity, vote_matrix};
+        // ss[related philosophy.structural-hierarchy]
         use crate::{GraphBuilder, SteadyActor};
+        // ss[related actor.run-dispatcher]
         use crate::steady_actor_shadow::SteadyActorShadow;
+        // ss[related philosophy.structural-hierarchy]
         use proptest::prelude::*;
 
         ss_proptest! {

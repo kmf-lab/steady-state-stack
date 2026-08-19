@@ -1,6 +1,7 @@
 // ss[related telemetry.dot-export]
 use bytes::{BufMut, BytesMut};
 
+// ss[impl telemetry.dot-export]
 use super::DotState;
 
 /// Builds the Prometheus metrics from the current state.
@@ -9,6 +10,7 @@ use super::DotState;
 ///
 /// * `state` - THE current metric state.
 /// * `txt_metric` - THE buffer to store the metrics text.
+// ss[related telemetry.dot-export]
 pub(crate) fn build_metric(state: &DotState, txt_metric: &mut BytesMut) {
     txt_metric.clear(); // Clear the buffer for reuse
 

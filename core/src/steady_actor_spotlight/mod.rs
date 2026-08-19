@@ -4,35 +4,51 @@
 
 // ss[related actor.shadow-spotlight]
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related actor.shadow-spotlight]
 use std::sync::{Arc, OnceLock};
+// ss[related philosophy.structural-hierarchy]
 use async_lock::Barrier;
+// ss[related philosophy.structural-hierarchy]
 use parking_lot::RwLock;
 // ss[related actor.shadow-spotlight]
 use futures_util::lock::{Mutex};
+// ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
 // ss[related actor.shadow-spotlight]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{FusedFuture, Shared};
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related actor.shadow-spotlight]
 use futures_util::{select, FutureExt, StreamExt};
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use num_traits::Zero;
 // ss[related actor.shadow-spotlight]
 use std::task::Poll;
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::stream::FuturesUnordered;
 // ss[related actor.shadow-spotlight]
 use ringbuf::traits::Observer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::consumer::Consumer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::producer::Producer;
 // ss[related actor.shadow-spotlight]
 use crate::monitor::{DriftCountIterator, FinallyRollupProfileGuard, CALL_BATCH_READ, CALL_BATCH_WRITE, CALL_OTHER, CALL_SINGLE_READ, CALL_SINGLE_WRITE, CALL_WAIT};
+// ss[related philosophy.structural-hierarchy]
 use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle, MONITOR_NOT};
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_builder::NodeTxRx;
 // ss[related actor.shadow-spotlight]
 use crate::steady_actor::{
@@ -41,19 +57,27 @@ use crate::steady_actor::{
 };
 // ss[related actor.shadow-spotlight]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
 // ss[related actor.shadow-spotlight]
 use crate::graph_testing::SideChannelResponder;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetry;
+// ss[related philosophy.structural-hierarchy]
 use crate::simulate_edge::IntoSimRunner;
 // ss[related actor.shadow-spotlight]
 use crate::steady_config::{TELEMETRY_SAMPLES_PER_FRAME};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::RxDone;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::TxDone;
 // ss[related actor.shadow-spotlight]
 use crate::telemetry::setup;
+// ss[related philosophy.structural-hierarchy]
 use crate::telemetry::setup::send_all_local_telemetry_async;
+// ss[related philosophy.structural-hierarchy]
 use crate::logging_util::steady_logger;
 // ss[related actor.shadow-spotlight]
 use crate::core_exec;
@@ -69,6 +93,7 @@ const TELEMETRY_DELAY_THRESHOLD_MULTIPLIER: u64 = 2; // e.g., 2 times the frame 
 /// Automatically sends the last telemetry data when a `LocalMonitor` instance is dropped.
 // ss[related actor.shadow-spotlight]
 impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL> {
+    // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if self.is_in_graph {
             let tel = &mut self.telemetry;
@@ -92,41 +117,62 @@ impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL>
 /// - `TX_LEN`: THE length of the transmitter array.
 // ss[related actor.shadow-spotlight]
 pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_in_graph: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) telemetry: SteadyTelemetry<RX_LEN, TX_LEN>,
 
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_telemetry_send: Instant,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_periodic_wait: AtomicU64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
     /// A shared future that resolves when a shutdown is requested.
     /// Using `Shared` allows multiple generations of an actor (after restarts)
     /// to await the same signal without consuming it.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown: Shared<oneshot::Receiver<()>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_start_time: Instant,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_running_iteration_count: u64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) _team_id: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
     /// When true, Aeron client init uses a short retry budget (see [`Graph::aeron_init_timeouts`]).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_init_for_tests: bool,
     /// If true, the monitor uses its internal simulation behavior for events.
     pub use_internal_behavior: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) regeneration: u32,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
     /// Last lane index returned by [`SteadyActor::wait_avail_index`] (round-robin).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail: AtomicUsize,
     /// Last lane index returned by [`SteadyActor::wait_vacant_index`] (round-robin).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_vacant: AtomicUsize,
     /// Last lane index returned by [`SteadyActor::wait_avail_vacant_index`] (round-robin).
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
 }
 
 // ss[related actor.shadow-spotlight]
 impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
     /// Checks if telemetry data has not been sent for longer than the threshold and logs a warning.
+    // ss[related philosophy.structural-hierarchy]
     fn check_telemetry_delay(&self) {
         let elapsed_since_last_send = self.last_telemetry_send.elapsed();
         let threshold_duration_ms = self.frame_rate_ms * TELEMETRY_DELAY_THRESHOLD_MULTIPLIER;
@@ -186,6 +232,7 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
 
 // ss[related actor.shadow-spotlight]
 impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotlight<RX_LEN, TX_LEN> {
+    // ss[related philosophy.structural-hierarchy]
     fn aeron_media_driver(&self) -> Option<Arc<Mutex<Aeron>>> {
         Graph::aeron_media_driver_internal(&self.aeron_meda_driver, self.aeron_init_for_tests)
     }
@@ -1315,18 +1362,23 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 mod tests;
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 mod spotlight_proptest;
 
 #[cfg(test)]
 // ss[related actor.shadow-spotlight]
 mod steady_actor_spotlight_tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::{Ordering};
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
     // ss[related actor.shadow-spotlight]
     use crate::*;
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
 
     #[test]

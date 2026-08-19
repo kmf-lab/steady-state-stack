@@ -1,12 +1,18 @@
 // ss[related telemetry.dot-export]
 use std::sync::Arc;
 
+// ss[impl telemetry.dot-export]
 use crate::actor_stats::ActorStatsComputer;
+// ss[related telemetry.dot-export]
 use crate::dot_node::Node;
+// ss[impl telemetry.dot-export]
 use crate::dot_unify::ChannelEdgeRole;
+// ss[impl telemetry.dot-export]
 use crate::graph_liveliness::ActorIdentity;
+// ss[related telemetry.dot-export]
 use crate::monitor::{ActorMetaData, ChannelMetaData};
 
+// ss[impl telemetry.dot-export]
 use super::{DotState, NODE_PEN_WIDTH};
 
 /// Applies the node definition to the local state.
@@ -26,6 +32,7 @@ use super::{DotState, NODE_PEN_WIDTH};
 /// * `channels_in` - THE input channels.
 /// * `channels_out` - THE output channels.
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
+// ss[related telemetry.dot-export]
 pub fn apply_node_def(
     local_state: &mut DotState,
     actor: Arc<ActorMetaData>,
@@ -95,6 +102,7 @@ pub fn apply_node_def(
 /// * `mdvec` - THE metadata of the channels.
 /// * `role` - Incoming vs outgoing registration for [`DotState.edges`].
 /// * `frame_rate_ms` - THE frame rate in milliseconds.
+// ss[related telemetry.dot-export]
 pub(crate) fn define_unified_edges(
     local_state: &mut DotState,
     actor_ident: ActorIdentity,

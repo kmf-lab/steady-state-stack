@@ -6,7 +6,9 @@
 
 // ss[impl philosophy.mechanical-sympathy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use std::pin::Pin;
+// ss[related philosophy.structural-hierarchy]
 use std::task::{Context, Poll};
 
 /// A simple future that yields once before completing, using a tuple struct for simplicity.
@@ -17,6 +19,7 @@ use std::task::{Context, Poll};
 // ss[impl philosophy.mechanical-sympathy]
 pub struct YieldNow(bool);
 
+// ss[related philosophy.structural-hierarchy]
 impl YieldNow {
     /// Creates a new `YieldNow` instance.
     ///
@@ -30,6 +33,7 @@ impl YieldNow {
 
 // ss[impl philosophy.mechanical-sympathy]
 impl Future for YieldNow {
+    // ss[related philosophy.structural-hierarchy]
     type Output = ();
 
     /// Polls the future to determine if it is ready to complete.
@@ -75,17 +79,23 @@ pub fn yield_now() -> impl Future<Output = ()> {
 #[cfg(test)]
 // ss[impl philosophy.mechanical-sympathy]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::task::{Context, Poll, Waker};
     // ss[impl philosophy.mechanical-sympathy]
     use std::future::Future;
+    // ss[related philosophy.structural-hierarchy]
     use std::pin::Pin;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::{Arc};
 
     // A simple waker that does nothing, used for testing.
     // ss[impl philosophy.mechanical-sympathy]
     fn noop_waker() -> Waker {
+        // ss[related philosophy.structural-hierarchy]
         struct NoopWaker;
+        // ss[related philosophy.structural-hierarchy]
         impl std::task::Wake for NoopWaker {
             // ss[impl philosophy.mechanical-sympathy]
             fn wake(self: Arc<Self>) {}

@@ -1,7 +1,9 @@
 // ss[related philosophy.single-wake-up]
 use std::sync::Arc;
 
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::metadata::{ActorMetaData, ActorStatus, ChannelMetaData};
+// ss[related philosophy.single-wake-up]
 use crate::SteadyRx;
 
 /// Defines methods for telemetry receivers to manage and access telemetry data.
@@ -10,6 +12,7 @@ use crate::SteadyRx;
 // ss[related philosophy.single-wake-up]
 pub trait RxTel: Send + Sync {
     /// Returns a vector of metadata for all transmitter channels.
+    // ss[related philosophy.structural-hierarchy]
     fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>>;
 
     /// Returns a vector of metadata for all receiver channels.
@@ -64,41 +67,54 @@ pub trait RxTel: Send + Sync {
 }
 
 #[cfg(test)]
+// ss[related philosophy.single-wake-up]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
 
+    // ss[related philosophy.single-wake-up]
     use super::RxTel;
+    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::{ActorMetaData, ActorStatus, ChannelMetaData};
+    // ss[related philosophy.structural-hierarchy]
     use crate::SteadyRx;
 
     /// Minimal `RxTel` stub that relies on the trait default for `consume_dot_subtitle`.
+    // ss[related philosophy.single-wake-up]
     struct StubRxTel {
         actor_metadata: Arc<ActorMetaData>,
     }
 
     /// Stub that overrides `consume_dot_subtitle` to exercise the trait method path.
+    // ss[related philosophy.single-wake-up]
     struct SubtitleRxTel {
         actor_metadata: Arc<ActorMetaData>,
         pending: Option<Option<String>>,
     }
 
+    // ss[related philosophy.single-wake-up]
     impl RxTel for StubRxTel {
+        // ss[related philosophy.structural-hierarchy]
         fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
             Vec::new()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
             Vec::new()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_actor(&self) -> Option<ActorStatus> {
             None
         }
 
+        // ss[related philosophy.single-wake-up]
         fn actor_metadata(&self) -> Arc<ActorMetaData> {
             self.actor_metadata.clone()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_take_into(
             &self,
             _take_send_source: &mut Vec<(i64, i64)>,
@@ -108,6 +124,7 @@ mod tests {
             false
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_send_into(
             &self,
             _take_send_source: &mut Vec<(i64, i64)>,
@@ -116,40 +133,50 @@ mod tests {
             false
         }
 
+        // ss[related philosophy.single-wake-up]
         fn actor_rx(&self, _version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
             None
         }
 
+        // ss[related philosophy.single-wake-up]
         fn is_empty_and_closed(&self) -> bool {
             true
         }
 
+        // ss[related philosophy.single-wake-up]
         fn is_empty(&self) -> bool {
             true
         }
     }
 
+    // ss[related philosophy.single-wake-up]
     impl RxTel for SubtitleRxTel {
+        // ss[related philosophy.structural-hierarchy]
         fn tx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
             Vec::new()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn rx_channel_id_vec(&self) -> Vec<Arc<ChannelMetaData>> {
             Vec::new()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_actor(&self) -> Option<ActorStatus> {
             None
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_dot_subtitle(&self) -> Option<Option<String>> {
             self.pending.clone()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn actor_metadata(&self) -> Arc<ActorMetaData> {
             self.actor_metadata.clone()
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_take_into(
             &self,
             _take_send_source: &mut Vec<(i64, i64)>,
@@ -159,6 +186,7 @@ mod tests {
             false
         }
 
+        // ss[related philosophy.single-wake-up]
         fn consume_send_into(
             &self,
             _take_send_source: &mut Vec<(i64, i64)>,
@@ -167,14 +195,17 @@ mod tests {
             false
         }
 
+        // ss[related philosophy.single-wake-up]
         fn actor_rx(&self, _version: u32) -> Option<Box<SteadyRx<ActorStatus>>> {
             None
         }
 
+        // ss[related philosophy.single-wake-up]
         fn is_empty_and_closed(&self) -> bool {
             true
         }
 
+        // ss[related philosophy.single-wake-up]
         fn is_empty(&self) -> bool {
             true
         }

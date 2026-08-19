@@ -1,10 +1,14 @@
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 use std::ops::{Add, Sub};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicBool, Ordering};
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 use bytes::{Bytes, BytesMut};
+// ss[related philosophy.structural-hierarchy]
 use num_traits::Zero;
+// ss[related philosophy.structural-hierarchy]
 use crate::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigned, write_long_signed, write_long_unsigned};
 
 /// PackedVecWriter is a helper class for writing history data.
@@ -13,16 +17,20 @@ use crate::serialize::fast_protocol_packed::{read_long_signed, read_long_unsigne
 /// # Generics
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Into<i128>`, `Copy`, `Zero`, and `PartialEq` traits.
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 pub(crate) struct PackedVecWriter<T> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) previous: Vec<T>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) delta_write_count: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) sync_required: Arc<AtomicBool>, // Indicates if the next write should be a full sync rather than a delta
 }
 
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 impl<T> PackedVecWriter<T> {
     /// Creates a new `PackedVecWriter` instance.
+    // ss[related philosophy.structural-hierarchy]
     pub fn new() -> Self {
         PackedVecWriter {
             previous: Vec::new(),
@@ -32,13 +40,13 @@ impl<T> PackedVecWriter<T> {
     }
 
     /// Marks the data as requiring a full sync on the next write.
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     pub fn sync_data(&mut self) {
         self.sync_required = Arc::new(AtomicBool::from(true));
     }
 
     /// Returns the count of delta writes performed.
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     pub fn delta_write_count(&self) -> usize {
         self.delta_write_count
     }
@@ -49,7 +57,7 @@ impl<T> PackedVecWriter<T> {
 /// # Generics
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Into<i128>`, `Copy`, `Zero`, and `PartialEq` traits.
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 impl<T> PackedVecWriter<T>
     where
         T: Sub<Output = T> + Into<i128> + Copy + Zero + PartialEq,
@@ -63,7 +71,7 @@ impl<T> PackedVecWriter<T>
     /// # Returns
     ///
     /// A vector of `u64` values.
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     fn consume_to_u64(bits: &[u8]) -> Vec<u64> {
         let mut u64_values = Vec::with_capacity(1 + (bits.len() >> 6));
         let mut p: usize = 0;
@@ -92,7 +100,7 @@ impl<T> PackedVecWriter<T>
     /// # Panics
     ///
     /// Panics if the length of the source vector is smaller than the length of the previous vector.
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     pub(crate) fn add_vec(&mut self, target: &mut BytesMut, source: &[T]) {
         assert!(
             source.len() >= self.previous.len(),
@@ -155,12 +163,13 @@ impl<T> PackedVecWriter<T>
 ///
 /// * `T` - The type of the elements in the vector. It must implement the `Sub`, `Add`, `Copy`, and `From<i64>` traits.
 #[allow(dead_code)]
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 pub(crate) struct PackedVecReader<T> {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) previous: Vec<T>,
 }
 
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 impl<T> PackedVecReader<T>
     where
         T: From<i64> + Sub<Output = T> + Add<Output = T> + Copy,
@@ -175,7 +184,7 @@ impl<T> PackedVecReader<T>
     ///
     /// An `Option` containing the restored vector or `None` if the read failed.
     #[allow(dead_code)]
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     fn restore_vec(&mut self, buffer: &mut Bytes) -> Option<Vec<T>> {
         // Read the length of chunks
         let chunks_len = read_long_signed(buffer)?;
@@ -218,12 +227,15 @@ impl<T> PackedVecReader<T>
 }
 
 #[cfg(test)]
-// ss[related stream.control-payload]
+// ss[impl stream.control-payload]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::ss_proptest;
+    // ss[impl stream.control-payload]
     use bytes::BytesMut;
-    // ss[related stream.control-payload]
+    // ss[impl stream.control-payload]
     use log::trace;
 
     #[test]
@@ -356,6 +368,7 @@ mod tests {
         assert_eq!(restored, vec![4, 5, 6]);
     }
 
+    // ss[impl stream.control-payload]
     use proptest::prelude::*;
 
     ss_proptest! {

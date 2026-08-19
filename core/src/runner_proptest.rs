@@ -1,11 +1,18 @@
 //! Property tests for [`SteadyRunner`] orchestration and test-graph allowlists.
 
+// ss[related graph.for-testing]
 use super::SteadyRunner;
+// ss[related philosophy.structural-hierarchy]
 use crate::graph::GraphBuilder;
+// ss[related philosophy.structural-hierarchy]
 use crate::logging::LogLevel;
+// ss[related graph.for-testing]
 use crate::ss_proptest;
+// ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::HashSet;
+// ss[related graph.for-testing]
 use std::time::Duration;
 
 ss_proptest! {

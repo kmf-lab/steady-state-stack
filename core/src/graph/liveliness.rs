@@ -1,7 +1,12 @@
+// ss[related graph.liveliness-voters]
 use super::deps::*;
+// ss[related philosophy.structural-hierarchy]
 use super::identity::ActorIdentity;
+// ss[related philosophy.structural-hierarchy]
 use super::state::GraphLivelinessState;
+// ss[related graph.liveliness-voters]
 use super::vote::{ShutdownVote, VoterStatus};
+// ss[related philosophy.structural-hierarchy]
 use log::{debug, error, trace, warn};
 
 /// Manages the liveliness state of the graph and coordinates the shutdown voting process.
@@ -11,22 +16,31 @@ use log::{debug, error, trace, warn};
 // ss[related graph.for-testing]
 pub struct GraphLiveliness {
     /// A list of statuses for all registered voters.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) registered_voters: Vec<VoterStatus>,
     /// THE current state of the graph's liveliness.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) state: GraphLivelinessState,
     /// A thread-safe collection of shutdown votes from actors.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) votes: Arc<Box<[Mutex<ShutdownVote>]>>,
     /// THE total number of votes in favor of shutdown.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) vote_in_favor_total: AtomicUsize,
     /// A shared vector of oneshot channels for sending shutdown notifications.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_one_shot_vec: Arc<Mutex<Vec<Sender<()>>>>,
     /// THE count of actors currently registered as voters.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) registered_voter_count: AtomicUsize,
     /// A shared count of the total number of actors in the graph.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actors_count: Arc<AtomicUsize>,
     /// An optional timeout duration for the shutdown process.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_timeout: Option<Duration>,
     /// Full catalog of all actors
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
 }
 

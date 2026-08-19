@@ -1,14 +1,20 @@
 // ss[related telemetry.dot-export]
 use std::collections::BTreeMap;
+// ss[impl telemetry.dot-export]
 use std::fmt::Write;
 
+// ss[related telemetry.dot-export]
 use crate::channel_stats::ChannelStatsComputer;
+// ss[impl telemetry.dot-export]
 use crate::dot_edge::Edge;
 
+// ss[related telemetry.dot-export]
 use super::colors::rgb_to_hex_into;
+// ss[impl telemetry.dot-export]
 use super::MAX_INLINE_AVG_FILL_LANES;
 
 /// Single hex color: arithmetic mean of lane RGBs (DOT multi-lane / bundle rollup).
+// ss[related telemetry.dot-export]
 pub(crate) fn hex_color_average_into(out: &mut String, lane_rgbs: &[(u32, u32, u32)]) {
     if lane_rgbs.is_empty() {
         rgb_to_hex_into(out, 128, 128, 128);
@@ -23,6 +29,7 @@ pub(crate) fn hex_color_average_into(out: &mut String, lane_rgbs: &[(u32, u32, u
 
 /// Per-resolved-edge color name counts for tooltips (e.g. `Lane colors: 3 red, 120 grey`).
 /// Reuses `counts` across calls to avoid allocating a new `BTreeMap` per line.
+// ss[related telemetry.dot-export]
 pub(crate) fn format_lane_color_histogram_into(
     counts: &mut BTreeMap<&'static str, usize>,
     out: &mut String,
@@ -46,6 +53,7 @@ pub(crate) fn format_lane_color_histogram_into(
 
 /// Mean whole-percent avg fill from channel edges; ignores lanes with no `Some` sample
 /// or with a zero percent (idle/cold channels).
+// ss[related telemetry.dot-export]
 pub(crate) fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
@@ -63,6 +71,7 @@ pub(crate) fn mean_avg_fill_from_edge_slice(edges: &[&Edge]) -> Option<u8> {
 /// Multi-lane `Avg fill` for DOT: comma list when `edges.len() <=` [`MAX_INLINE_AVG_FILL_LANES`], else
 /// a single `mean, N ch` line (see module constant). Omits the line entirely when no lane has a sample
 /// (`None`) or all samples are zero (idle/cold channels).
+// ss[related telemetry.dot-export]
 pub(crate) fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]) {
     out.clear();
     if edges.is_empty() {
@@ -96,6 +105,7 @@ pub(crate) fn format_avg_fill_rollup_line_into(out: &mut String, edges: &[&Edge]
 }
 
 /// Integer mean of `Some` percent values; skips zero values (idle/cold channels). `None` if there are no samples.
+// ss[related telemetry.dot-export]
 pub(crate) fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter: I) -> Option<u8> {
     let mut sum = 0u32;
     let mut count = 0u32;
@@ -111,6 +121,7 @@ pub(crate) fn mean_avg_fill_percent<'a, I: Iterator<Item = &'a Option<u8>>>(iter
 }
 
 /// Per-channel hover line: rolling-window avg fill when enabled, else snapshot inflight/capacity.
+// ss[related telemetry.dot-export]
 pub(crate) fn append_channel_fill_tooltip(
     tooltip: &mut String,
     stats: &ChannelStatsComputer,

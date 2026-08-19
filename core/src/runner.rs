@@ -1,10 +1,15 @@
 //! Production orchestration thread builder and entry point.
 
+// ss[related graph.for-testing]
 use std::any::Any;
+// ss[related philosophy.structural-hierarchy]
 use std::collections::HashSet;
+// ss[related philosophy.structural-hierarchy]
 use std::io;
 
+// ss[related graph.for-testing]
 use crate::graph::{Graph, GraphBuilder};
+// ss[related philosophy.structural-hierarchy]
 use crate::logging::{init_logging, LogFileConfig, LogLevel};
 
 /// Builder for the orchestration environment, ensuring sufficient stack size.
@@ -31,6 +36,7 @@ pub struct SteadyRunner {
 // ss[related philosophy.structural-hierarchy]
 impl SteadyRunner {
     /// Creates a new SteadyRunner with default settings.
+    // ss[related philosophy.structural-hierarchy]
     pub fn test_build() -> Self {
         Self {
             stack_size: 16 * 1024 * 1024, // 16 MiB default for main
@@ -241,10 +247,14 @@ impl SteadyRunner {
 }
 
 #[cfg(test)]
+// ss[related graph.for-testing]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use std::collections::HashSet;
 
+    // ss[related graph.for-testing]
     use super::SteadyRunner;
+    // ss[related philosophy.structural-hierarchy]
     use crate::logging::LogLevel;
 
     #[test]
@@ -335,4 +345,5 @@ mod tests {
 
 #[cfg(test)]
 #[path = "runner_proptest.rs"]
+// ss[related graph.for-testing]
 mod runner_proptest;

@@ -1,18 +1,29 @@
 // ss[related actor.regeneration-survives]
 use super::affinity::{pin_thread_to_core, CoreBalancer};
+// ss[related philosophy.structural-hierarchy]
 use super::builder::ActorBuilder;
+// ss[related philosophy.structural-hierarchy]
 use super::context::{
     build_actor_context, build_actor_registration, exit_actor_registration, DynCall,
     NonSendWrapper, SteadyContextArchetype,
 };
+// ss[related actor.regeneration-survives]
 use super::troupe::{Troupe, TroupeGuard};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
+// ss[related philosophy.structural-hierarchy]
 use crate::*;
+// ss[related actor.regeneration-survives]
 use futures_util::lock::Mutex;
+// ss[related philosophy.structural-hierarchy]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related actor.regeneration-survives]
 use std::panic::{catch_unwind, AssertUnwindSafe};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::Ordering;
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 
 /// Launches an actor by blocking on its future until completion.
@@ -69,6 +80,7 @@ impl ScheduleAs<'_> {
 
 // ss[related actor.regeneration-survives]
 impl ActorBuilder {
+    // ss[related philosophy.structural-hierarchy]
     fn build_spawn<F, I>(self, build_actor_exec: I)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
@@ -155,6 +167,22 @@ impl ActorBuilder {
                             error!("PANIC in actor {:?}: {}", context_archetype.ident, msg);
                             // ss[impl actor.regeneration-survives]
                             // ss[impl graph.panic-restart]
+                            if context_archetype
+                                .runtime_state
+                                .read()
+                                .is_in_state(&[
+                                    GraphLivelinessState::StopRequested,
+                                    GraphLivelinessState::Stopped,
+                                    GraphLivelinessState::StoppedUncleanly,
+                                ])
+                            {
+                                error!(
+                                    "Actor {:?} panicked during shutdown; not restarting",
+                                    context_archetype.ident
+                                );
+                                exit_actor_registration(&context_archetype);
+                                break;
+                            }
                             master_ctx.regeneration += 1;
                             info!("Restarting actor: {:?}", context_archetype.ident);
                         }
@@ -233,7 +261,9 @@ impl ActorBuilder {
 #[cfg(test)]
 // ss[related actor.regeneration-survives]
 mod spawn_proptest {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     ss_proptest! {
@@ -299,8 +329,11 @@ mod spawn_proptest {
             use_balancer in any::<bool>(),
             timeout_ms in 200u64..1_500,
         ) {
+            // ss[related actor.regeneration-survives]
             use crate::SteadyRunner;
+            // ss[related philosophy.structural-hierarchy]
             use std::thread::sleep;
+            // ss[related philosophy.structural-hierarchy]
             use std::time::Duration;
 
             SteadyRunner::test_build()
@@ -337,8 +370,11 @@ mod spawn_proptest {
             n in 1u8..6,
             timeout_ms in 400u64..1_500,
         ) {
+            // ss[related actor.regeneration-survives]
             use crate::SteadyRunner;
+            // ss[related philosophy.structural-hierarchy]
             use std::thread::sleep;
+            // ss[related philosophy.structural-hierarchy]
             use std::time::Duration;
 
             SteadyRunner::test_build()
@@ -394,15 +430,21 @@ mod spawn_proptest {
         // ss[verify actor.regeneration-survives]
         // ss[verify platform.executor-features]
         // ss[verify verify.process.proptest]
-        fn proptest_solo_panic_restarts_then_shutdown(timeout_ms in 400u64..1_500) {
+        fn proptest_solo_panic_restarts_then_shutdown(timeout_ms in 800u64..2_500) {
+            // ss[related philosophy.structural-hierarchy]
             use crate::SteadyRunner;
+            // ss[related philosophy.structural-hierarchy]
             use std::sync::atomic::{AtomicU32, Ordering};
+            // ss[related actor.regeneration-survives]
             use std::sync::Arc;
+            // ss[related philosophy.structural-hierarchy]
             use std::thread::sleep;
-            use std::time::Duration;
+            // ss[related philosophy.structural-hierarchy]
+            use std::time::{Duration, Instant};
 
             let gens = Arc::new(AtomicU32::new(0));
             let gens_actor = gens.clone();
+            let gens_check = gens.clone();
             SteadyRunner::test_build()
                 .run((), move |mut graph| {
                     graph.actor_builder().with_name("PANIC_ONCE").build(
@@ -423,12 +465,16 @@ mod spawn_proptest {
                         ScheduleAs::SoloAct,
                     );
                     graph.start();
-                    sleep(Duration::from_millis(120));
+                    let restart_deadline =
+                        Instant::now() + Duration::from_millis(timeout_ms.saturating_sub(200));
+                    while gens.load(Ordering::SeqCst) < 1 && Instant::now() < restart_deadline {
+                        sleep(Duration::from_millis(5));
+                    }
                     graph.request_shutdown();
                     graph.block_until_stopped(Duration::from_millis(timeout_ms))
                 })
                 .expect("solo panic restart");
-            prop_assert!(gens.load(Ordering::SeqCst) >= 1);
+            prop_assert!(gens_check.load(Ordering::SeqCst) >= 1);
         }
     }
 }
@@ -436,11 +482,17 @@ mod spawn_proptest {
 #[cfg(all(test, feature = "tokio"))]
 // ss[related platform.executor-features]
 mod tokio_reactor_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::SteadyRunner;
+    // ss[related actor.regeneration-survives]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::rc::Rc;
+    // ss[related philosophy.structural-hierarchy]
     use std::thread::sleep;
+    // ss[related actor.regeneration-survives]
     use std::time::Duration;
 
     #[test]
@@ -525,29 +577,48 @@ mod tokio_reactor_tests {
         // ss[verify platform.executor-features]
         // ss[verify actor.regeneration-survives]
         // ss[verify verify.process.proptest]
-        fn proptest_tokio_solo_panic_restarts(timeout_ms in 400u64..1_500) {
+        fn proptest_tokio_solo_panic_restarts(timeout_ms in 800u64..2_500) {
+            // ss[related philosophy.structural-hierarchy]
+            use std::sync::atomic::{AtomicU32, Ordering};
+            // ss[related philosophy.structural-hierarchy]
+            use std::sync::Arc;
+            // ss[related actor.regeneration-survives]
+            use std::time::Instant;
+
+            let gens = Arc::new(AtomicU32::new(0));
+            let gens_actor = gens.clone();
+            let gens_check = gens.clone();
             SteadyRunner::test_build()
                 .run((), move |mut graph| {
                     graph.actor_builder().with_name("TOKIO_PANIC").build(
-                        |ctx| async move {
-                            if ctx.regeneration == 0 {
-                                panic!("tokio first-generation panic");
+                        move |ctx| {
+                            let gens_actor = gens_actor.clone();
+                            async move {
+                                gens_actor.store(ctx.regeneration, Ordering::SeqCst);
+                                if ctx.regeneration == 0 {
+                                    panic!("tokio first-generation panic");
+                                }
+                                tokio::time::sleep(Duration::from_millis(1)).await;
+                                let mut actor = ctx.into_spotlight([], []);
+                                while actor.is_running(|| true) {
+                                    actor.wait_periodic(Duration::from_millis(5)).await;
+                                }
+                                Ok(())
                             }
-                            tokio::time::sleep(Duration::from_millis(1)).await;
-                            let mut actor = ctx.into_spotlight([], []);
-                            while actor.is_running(|| true) {
-                                actor.wait_periodic(Duration::from_millis(5)).await;
-                            }
-                            Ok(())
                         },
                         ScheduleAs::SoloAct,
                     );
                     graph.start();
-                    sleep(Duration::from_millis(120));
+                    let restart_deadline =
+                        Instant::now() + Duration::from_millis(timeout_ms.saturating_sub(200));
+                    while gens.load(Ordering::SeqCst) < 1 && Instant::now() < restart_deadline {
+                        sleep(Duration::from_millis(5));
+                    }
                     graph.request_shutdown();
                     graph.block_until_stopped(Duration::from_millis(timeout_ms))
                 })
                 .expect("tokio panic restart");
+            prop_assert!(gens_check.load(Ordering::SeqCst) >= 1);
         }
 
         #[test]

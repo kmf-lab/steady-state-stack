@@ -1,6 +1,8 @@
 // ss[related distributed.media-driver-testing]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 
 /// this implementation requires we never schedule for more than this in the future
@@ -104,12 +106,19 @@ where
 #[cfg(test)]
 // ss[related distributed.media-driver-testing]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_exec;
+    // ss[related distributed.media-driver-testing]
     use futures::lock::Mutex;
+    // ss[related philosophy.structural-hierarchy]
     use futures_timer::Delay;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::{AtomicBool, Ordering};
+    // ss[related distributed.media-driver-testing]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::Duration;
 
     #[test]

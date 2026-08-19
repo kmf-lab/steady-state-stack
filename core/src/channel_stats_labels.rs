@@ -1,27 +1,38 @@
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 use hdrhistogram::Counter;
+// ss[related philosophy.structural-hierarchy]
 use log::error;
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_stats::{ActorStatsComputer, ChannelBlock};
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 use crate::channel_stats::{ChannelStatsComputer, PLACES_TENS};
+// ss[related philosophy.structural-hierarchy]
 use crate::{actor_stats, StdDev};
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_builder_units::Percentile;
 
 /// Struct for configuring the computation of labels.
 #[derive(Copy, Clone)]
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 pub(crate) struct ComputeLabelsConfig {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runner_adjust: (u64, u64),
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) block_adjust: (u64, u64),
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) max_value: u64,
     window_in_bits: u8,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_avg: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_min: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_max: bool,
 }
 
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 impl ComputeLabelsConfig {
     /// Creates a new `ComputeLabelsConfig` for a channel.
     ///
@@ -36,7 +47,7 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    // ss[related telemetry.channel-labels]
+    // ss[impl telemetry.channel-labels]
     pub(crate) fn channel_config(that: &ChannelStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
 
         Self {
@@ -64,7 +75,7 @@ impl ComputeLabelsConfig {
     ///
     /// A new instance of `ComputeLabelsConfig`.
     #[inline]
-    // ss[related telemetry.channel-labels]
+    // ss[impl telemetry.channel-labels]
     pub(crate) fn actor_config(that: &ActorStatsComputer, runner_adjust: (u64, u64), block_adjust: (u64, u64), max_value: u64, show_avg: bool, show_min: bool, show_max: bool) -> Self {
         Self {
             frame_rate_ms: that.frame_rate_ms,
@@ -81,14 +92,19 @@ impl ComputeLabelsConfig {
 
 /// Struct for holding label information for computing labels.
 #[derive(Copy, Clone)]
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 pub(crate) struct ComputeLabelsLabels<'a> {
 
 
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) label: &'a str,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) unit: &'a str,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) _prometheus_labels: &'a str, //TODO: work in progress.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) int_only: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) fixed_digits: usize
 }
 
@@ -104,7 +120,7 @@ pub(crate) struct ComputeLabelsLabels<'a> {
 /// * `metric_target` - A mutable reference to a string for storing the metric target.
 /// * `label_target` - A mutable reference to a string for storing the label target.
 #[inline]
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 pub(crate) fn compute_labels<T: Counter>(
     config: ComputeLabelsConfig,
     current: &ChannelBlock<T>,
@@ -219,7 +235,7 @@ pub(crate) fn compute_labels<T: Counter>(
     });
 }
 
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, telemetry_name: &str, prometheus_name: &str) {
     // Prefix the label
     label_target.push_str(telemetry_name);
@@ -239,7 +255,7 @@ fn format_label_prefix(labels: ComputeLabelsLabels, _metric_target: &mut String,
 }
 
 /// Formats a large number into a compressed string with K, M, B, T suffixes.
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     let mut b = itoa::Buffer::new();
     let t = b.format(val);
@@ -260,7 +276,7 @@ pub(crate) fn format_compressed_u128(val: u128, target: &mut String) {
     }
 }
 
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_target: &mut String, int_value: u128, float_value: Option<f32>) {
     // Format the label based on int_only flag
     if labels.int_only {
@@ -311,13 +327,14 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
             } else {
                 // Genuine fraction: format with 3 decimal places
                 let mut value_buf = [0u8; 32];
-                // ss[related telemetry.channel-labels]
+                // ss[impl telemetry.channel-labels]
                 struct SliceWriter<'a> {
                     buf: &'a mut [u8],
                     pos: usize,
                 }
-                // ss[related telemetry.channel-labels]
+                // ss[impl telemetry.channel-labels]
                 impl core::fmt::Write for SliceWriter<'_> {
+                    // ss[related philosophy.structural-hierarchy]
                     fn write_str(&mut self, s: &str) -> core::fmt::Result {
                         let bytes = s.as_bytes();
                         if self.pos + bytes.len() > self.buf.len() {
@@ -332,7 +349,7 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
                     buf: &mut value_buf,
                     pos: 0,
                 };
-                // ss[related telemetry.channel-labels]
+                // ss[impl telemetry.channel-labels]
                 use std::fmt::Write;
                 write!(&mut writer, " {:.3}", fv).unwrap();
                 let offset = writer.pos;
@@ -355,10 +372,13 @@ fn format_value(labels: ComputeLabelsLabels, _metric_target: &mut String, label_
 }
 
 #[cfg(test)]
-// ss[related telemetry.channel-labels]
+// ss[impl telemetry.channel-labels]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_stats::ChannelBlock;
+    // ss[impl telemetry.channel-labels]
     use proptest::prelude::*;
 
     #[test]
@@ -509,6 +529,7 @@ mod tests {
             record_val in 1u64..100,
             runner in 100u128..10_000,
         ) {
+            // ss[impl telemetry.channel-labels]
             use hdrhistogram::Histogram;
             let mut h = Histogram::<u64>::new_with_bounds(1, 100, 0).expect("histogram");
             let _ = h.record(record_val.min(100));
@@ -548,6 +569,7 @@ mod tests {
         fn proptest_compute_labels_percentile_from_histogram(
             record_val in 1u64..100,
         ) {
+            // ss[impl telemetry.channel-labels]
             use hdrhistogram::Histogram;
             let mut h = Histogram::<u64>::new_with_bounds(1, 100, 0).expect("histogram");
             let _ = h.record(record_val.min(100));

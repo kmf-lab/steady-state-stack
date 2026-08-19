@@ -15,12 +15,17 @@
 //! Re-exported at the crate root so a glob import (`use steady_state::*;`) brings the
 //! method into scope next to [`SteadyRx`] / [`SteadyTx`].
 
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
 
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::MutexGuard;
 
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::Rx;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::Tx;
+// ss[related philosophy.structural-hierarchy]
 use crate::{SteadyRx, SteadyTx};
 
 /// Guard-first acquisition for [`SteadyRx`] / [`SteadyTx`] handles.
@@ -28,8 +33,10 @@ use crate::{SteadyRx, SteadyTx};
 /// `acquire_guard().await` is the preferred spelling of `.lock().await` on Steady
 /// channel handles. It yields the same guard; only the vocabulary changes. See the
 /// [module documentation](self) for why Steady says "guard" and not "lock".
+// ss[related philosophy.structural-hierarchy]
 pub trait SteadyChannelExt {
     /// The guard type bound to this actor instance for the borrow of the handle.
+    // ss[related philosophy.structural-hierarchy]
     type Guard<'a>
     where
         Self: 'a;
@@ -40,39 +47,50 @@ pub trait SteadyChannelExt {
     /// Bind once at actor entry, keep the guard for the actor's lifetime, and
     /// guard every `wait_*` with it. On shutdown or panic, drop the guard — the
     /// ring keeps its messages.
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard(&self) -> impl Future<Output = Self::Guard<'_>> + Send + '_;
 }
 
+// ss[related philosophy.structural-hierarchy]
 impl<T: Send> SteadyChannelExt for SteadyRx<T> {
+    // ss[related philosophy.structural-hierarchy]
     type Guard<'a>
         = MutexGuard<'a, Rx<T>>
     where
         Self: 'a;
 
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard(&self) -> impl Future<Output = Self::Guard<'_>> + Send + '_ {
         self.lock()
     }
 }
 
+// ss[related philosophy.structural-hierarchy]
 impl<T: Send> SteadyChannelExt for SteadyTx<T> {
+    // ss[related philosophy.structural-hierarchy]
     type Guard<'a>
         = MutexGuard<'a, Tx<T>>
     where
         Self: 'a;
 
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard(&self) -> impl Future<Output = Self::Guard<'_>> + Send + '_ {
         self.lock()
     }
 }
 
 #[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
 mod guard_ext_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::*;
 
     /// The alias must yield a guard over the same live channel state as `.lock().await`.
     // ss[verify actor.lock-first.channels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard_equivalent_to_lock_single_channel() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = graph.channel_builder();
@@ -102,6 +120,7 @@ mod guard_ext_tests {
     /// Bundle trait alias must bind every lane, same as `.lock().await`.
     // ss[verify actor.lock-first.channels]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard_equivalent_to_lock_bundle() {
         let mut graph = GraphBuilder::for_testing().build(());
         let builder = graph.channel_builder();
@@ -126,6 +145,7 @@ mod guard_ext_tests {
     /// `SteadyState::acquire_guard` initializes once, exactly like `lock`.
     // ss[verify state.lock-init-once]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard_equivalent_to_lock_steady_state() {
         let state: SteadyState<u64> = new_state();
         core_exec::block_on(async {
@@ -148,6 +168,7 @@ mod guard_ext_tests {
     /// Builder-context (`NonSendWrapper`) alias guards the same value as `lock`.
     // ss[verify actor.regeneration-survives]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn acquire_guard_equivalent_to_lock_builder_context() {
         let wrapped = crate::actor_builder::NonSendWrapper::new(7u32);
         core_exec::block_on(async {

@@ -8,6 +8,7 @@
 // ss[related actor.regeneration-survives]
 pub struct CoreBalancer {
     /// A vector where each element represents the number of actors assigned to that core.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) core_usage: Vec<usize>,
 }
 
@@ -100,8 +101,11 @@ pub(crate) fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
 
 
 #[cfg(test)]
+// ss[related actor.regeneration-survives]
 mod affinity_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
     #[test]

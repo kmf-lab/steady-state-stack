@@ -1,22 +1,32 @@
 // ss[related philosophy.zero-copy-discipline]
 use std::fmt::Debug;
+// ss[related philosophy.structural-hierarchy]
 use log::*;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, task};
 // ss[related philosophy.zero-copy-discipline]
 use std::sync::atomic::Ordering;
+// ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::traits::Observer;
 // ss[related philosophy.zero-copy-discipline]
 use futures_util::future::FusedFuture;
+// ss[related philosophy.structural-hierarchy]
 use async_ringbuf::consumer::AsyncConsumer;
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related philosophy.zero-copy-discipline]
 use ringbuf::consumer::Consumer;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::SteadyTelemetrySend;
+// ss[related philosophy.structural-hierarchy]
 use crate::{steady_config, Rx, MONITOR_NOT};
 // ss[related philosophy.zero-copy-discipline]
 use crate::distributed::aqueduct_stream::{StreamControlItem};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::RxDone;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::FutureExt;
 // ss[related philosophy.zero-copy-discipline]
 use crate::yield_now;
@@ -54,6 +64,7 @@ pub trait DoubleSlice<'a, T: 'a> {
 /// vector conversion, and length calculation.
 // ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a> DoubleSlice<'a, T> for (&'a [T], &'a [T]) {
+    // ss[related philosophy.structural-hierarchy]
     fn as_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         Box::new(self.0.iter().chain(self.1.iter()))
     }
@@ -91,6 +102,7 @@ pub trait DoubleSliceCopy<'a, T: 'a> {
 /// ensuring the target is filled to its capacity or until the source data is exhausted.
 // ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a> DoubleSliceCopy<'a, T> for (&'a [T], &'a [T]) {
+    // ss[related philosophy.structural-hierarchy]
     fn copy_into_slice(&self, target: &mut [T]) -> RxDone where T: Copy {
         let (a, b) = *self;
         let mut copied = 0;
@@ -163,6 +175,7 @@ pub trait QuadSlice<'a, T: 'a, U: 'a> {
 /// supporting iteration, vector conversion, and length calculation for both item and payload data.
 // ss[related philosophy.zero-copy-discipline]
 impl<'a, T: 'a, U: 'a> QuadSlice<'a, T, U> for (&'a [T], &'a [T], &'a [U], &'a [U]) {
+    // ss[related philosophy.structural-hierarchy]
     fn items_iter(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         Box::new(self.0.iter().chain(self.1.iter()))
     }
@@ -216,6 +229,7 @@ pub trait StreamQuadSliceCopy<'a, T: StreamControlItem> {
 /// the requirements of each item.
 // ss[related philosophy.zero-copy-discipline]
 impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T], &'a [u8], &'a [u8]) {
+    // ss[related philosophy.structural-hierarchy]
     fn copy_items_and_payloads(&self, item_target: &mut [T], payload_target: &mut [u8]) -> (usize, usize) where T: Copy {
         let (a, b, c, d) = self;
         let items_iter = a.iter().chain(b.iter());
@@ -266,6 +280,7 @@ impl<'a, T: StreamControlItem> StreamQuadSliceCopy<'a, T> for (&'a [T], &'a [T],
 // ss[related philosophy.zero-copy-discipline]
 pub trait RxCore {
     /// The type of message item stored in the channel.
+    // ss[related philosophy.structural-hierarchy]
     type MsgItem;
 
     /// The type of message that is taken out of the channel.
@@ -425,15 +440,20 @@ pub trait RxCore {
 /// synchronous and asynchronous message receiving, zero-copy operations, and telemetry integration.
 // ss[related philosophy.zero-copy-discipline]
 impl<T> RxCore for Rx<T> {
+    // ss[related philosophy.structural-hierarchy]
     type MsgItem = T;
+    // ss[related philosophy.structural-hierarchy]
     type MsgOut = T;
     // ss[related philosophy.zero-copy-discipline]
     type MsgPeek<'a> = &'a T where T: 'a;
+    // ss[related philosophy.structural-hierarchy]
     type MsgSize = usize;
+    // ss[related philosophy.structural-hierarchy]
     type SliceSource<'a> = (&'a [T], &'a [T]) where Self: 'a;
     // ss[related philosophy.zero-copy-discipline]
     type SliceTarget<'b> = &'b mut [T] where T: 'b;
 
+    // ss[related philosophy.structural-hierarchy]
     fn is_closed_and_empty(&mut self) -> bool {
         if self.is_closed.is_terminated() {
             self.shared_is_empty()
@@ -651,15 +671,21 @@ impl<T> RxCore for Rx<T> {
 #[cfg(test)]
 // ss[related philosophy.zero-copy-discipline]
 mod core_rx_async_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::steady_rx::Rx;
     // ss[related philosophy.zero-copy-discipline]
     use crate::steady_tx::Tx;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::{Duration, Instant};
     // ss[related philosophy.zero-copy-discipline]
     use futures::lock::Mutex;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_tx::TxCore;
+    // ss[related philosophy.structural-hierarchy]
     use crate::{ActorIdentity, SendSaturation};
     // ss[related philosophy.zero-copy-discipline]
     use crate::*;
@@ -689,6 +715,7 @@ mod core_rx_async_tests {
 
     // ss[verify actor.wait-avail-vacant]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_wait_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -702,6 +729,7 @@ mod core_rx_async_tests {
 
     // ss[verify actor.wait-avail-vacant]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_wait_closed_or_avail_units() {
         let (tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -763,6 +791,7 @@ mod core_rx_async_tests {
 
     // ss[verify actor.wait-avail-vacant]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_wait_avail_units_shutdown() {
         let (_tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -777,6 +806,7 @@ mod core_rx_async_tests {
 
     // ss[verify actor.wait-avail-vacant]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_wait_shutdown_or_avail_units_shutdown() {
         let (_tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -791,6 +821,7 @@ mod core_rx_async_tests {
 
     // ss[verify philosophy.zero-copy-discipline]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_try_take_empty() {
         let (_tx, rx, _) = setup_channel::<i32>(1, None);
         let mut rx_guard = rx.try_lock().expect("");
@@ -834,8 +865,11 @@ mod core_rx_async_tests {
         assert_eq!(rx_guard.one(), 1);
     }
 
+    // ss[related philosophy.zero-copy-discipline]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
+    // ss[related philosophy.structural-hierarchy]
     use crate::proptest_support::{capacity, channel_fifo_take, message_vec};
 
     ss_proptest! {

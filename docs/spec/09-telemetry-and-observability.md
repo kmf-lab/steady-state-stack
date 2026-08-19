@@ -18,6 +18,8 @@ ss[telemetry.builtin-server]
 
 The framework MAY start a builtin metrics HTTP server when configured via steady config / graph options.
 
+When `TELEMETRY_SERVER_PORT` is unset, the default port (9900) MAY auto-increment by one on `Address already in use`, up to 256 ports walked and below port 32768; the process MUST log the port used for that run. When `TELEMETRY_SERVER_PORT` is explicitly set, binding MUST NOT scan to alternate ports.
+
 **Tier:** 1
 
 ---

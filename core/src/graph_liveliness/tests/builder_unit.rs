@@ -3,15 +3,23 @@ use super::super::{
     effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
     GraphLivelinessState, ShutdownVote, VoterStatus,
 };
+// ss[related graph.for-testing]
 use crate::core_exec;
+// ss[related philosophy.structural-hierarchy]
 use crate::{ScheduleAs, SteadyActor};
+// ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex as FutMutex;
+// ss[related graph.for-testing]
 use std::sync::atomic::{AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use std::thread;
+// ss[related graph.for-testing]
 use std::time::{Duration, Instant};
 
 #[test]
+// ss[verify graph.for-testing]
 fn start_with_timeout_empty_graph_reaches_running() {
     let mut graph = GraphBuilder::for_testing().build(());
     assert!(graph.start_with_timeout(Duration::from_secs(1)));
@@ -94,7 +102,9 @@ fn graph_args_roundtrip() {
 
 // ss[verify distributed.media-driver-testing]
 
+// ss[verify graph.for-testing]
 #[test]
+// ss[related philosophy.structural-hierarchy]
 fn graph_aeron_init_timeouts_depend_on_test_mode() {
     let (t_wait, t_retry) = Graph::aeron_init_timeouts(true);
     let (p_wait, p_retry) = Graph::aeron_init_timeouts(false);

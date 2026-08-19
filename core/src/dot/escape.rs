@@ -1,6 +1,7 @@
 // ss[related telemetry.dot-export]
 
 #[inline]
+// ss[impl telemetry.dot-export]
 pub(crate) fn escape_dot_quotes(out: &mut String, src: &str) {
     out.clear();
     out.reserve(src.len());
@@ -14,6 +15,7 @@ pub(crate) fn escape_dot_quotes(out: &mut String, src: &str) {
 }
 
 #[inline]
+// ss[related telemetry.dot-export]
 pub(crate) fn escape_node_tooltip_text(out: &mut String, src: &str) {
     out.clear();
     out.reserve(src.len().saturating_mul(2));

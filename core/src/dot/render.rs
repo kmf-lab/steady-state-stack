@@ -1,8 +1,10 @@
 // ss[related telemetry.dot-export]
 use bytes::{BufMut, BytesMut};
 
+// ss[impl telemetry.dot-export]
 use super::escape::escape_dot_quotes;
 
+// ss[related telemetry.dot-export]
 pub(crate) fn render_edge_internal(
     dot_graph: &mut BytesMut,
     from_name: &'static str,
@@ -78,10 +80,14 @@ pub(crate) fn render_edge_internal(
 #[cfg(test)]
 // ss[related telemetry.dot-export]
 mod render_proptest {
+    // ss[impl telemetry.dot-export]
     use super::*;
+    // ss[impl telemetry.dot-export]
     use crate::ss_proptest;
+    // ss[related telemetry.dot-export]
     use proptest::prelude::*;
 
+    // ss[impl telemetry.dot-export]
     fn render_sample(
         from: &'static str,
         from_suffix: Option<usize>,
@@ -170,6 +176,7 @@ mod render_proptest {
         // ss[verify verify.process.proptest]
         fn proptest_render_edge_sidecar_rank_same(_case in 0..1u8) {
             let dot = render_sample("x", Some(1), "y", Some(2), "CH", true, "", "", "");
+            // ss[impl telemetry.dot-export]
             const RANK_SAME: &str = "{rank=same;";
             prop_assert!(dot.contains(RANK_SAME));
             prop_assert!(dot.contains("\"x1\""));

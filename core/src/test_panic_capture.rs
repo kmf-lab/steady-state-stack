@@ -13,11 +13,15 @@
 #[cfg(test)]
 // ss[related testing.never-run-in-unit]
 mod simple_graph_test {
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::{AtomicUsize, Ordering};
     // ss[related testing.never-run-in-unit]
     use std::time::Duration;
+    // ss[related philosophy.structural-hierarchy]
     use crate::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::actor_builder::ScheduleAs::SoloAct;
 
     /// Tests the capture of panics within the graph.

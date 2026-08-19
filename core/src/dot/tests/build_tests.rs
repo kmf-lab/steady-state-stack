@@ -1,13 +1,22 @@
 // ss[related telemetry.dot-export]
 use super::super::*;
+// ss[impl telemetry.dot-export]
 use super::test_dot_frames;
+// ss[impl telemetry.dot-export]
 use crate::dot_unify::ChannelEdgeRole;
+// ss[related telemetry.dot-export]
 use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
+// ss[impl telemetry.dot-export]
 use crate::telemetry::metrics_server::async_write_all;
+// ss[impl telemetry.dot-export]
 use bytes::BytesMut;
+// ss[related telemetry.dot-export]
 use std::fs::remove_file;
+// ss[impl telemetry.dot-export]
 use std::path::PathBuf;
+// ss[impl telemetry.dot-export]
 use std::sync::Arc;
+// ss[related telemetry.dot-export]
 use std::time::Instant;
 
 #[test]
@@ -193,6 +202,7 @@ fn test_edge_compute_and_refresh() {
 #[test]
 // ss[verify telemetry.dot-export]
 fn test_large_bundle_avg_fill_uses_mean_summary() {
+    // ss[impl telemetry.dot-export]
     use crate::actor_stats::ChannelBlock;
 
     let from = ActorName::new("from", None);
@@ -296,6 +306,7 @@ fn test_large_bundle_avg_fill_uses_mean_summary() {
 #[test]
 // ss[verify telemetry.dot-export]
 fn test_stage1_avg_fill_mean_when_lanes_exceed_inline_cap() {
+    // ss[impl telemetry.dot-export]
     use crate::actor_stats::ChannelBlock;
 
     let from = ActorName::new("from", None);
@@ -487,6 +498,7 @@ fn test_edge_tooltip_uses_total_consumed() {
 #[test]
 // ss[verify telemetry.dot-export]
 fn test_edge_tooltip_prefers_avg_fill_when_enabled() {
+    // ss[impl telemetry.dot-export]
     use crate::actor_stats::ChannelBlock;
 
     let from = ActorName::new("from", None);
@@ -669,6 +681,7 @@ fn test_edge_tooltip_omits_avg_fill_when_no_window_sample() {
 #[test]
 // ss[verify telemetry.dot-export]
 fn test_multi_lane_avg_fill_omits_when_all_zero_percent() {
+    // ss[impl telemetry.dot-export]
     use crate::actor_stats::ChannelBlock;
 
     let from = ActorName::new("from", None);
@@ -1214,6 +1227,7 @@ fn test_node_compute_refresh_full_busy_when_await_zero() {
 }
 
 /// Builds a minimal two-node `DotState` wrapping the given edges for memory display tests.
+// ss[related telemetry.dot-export]
 fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
     let from = ActorName::new("from", None);
     let to = ActorName::new("to", None);
@@ -1243,6 +1257,7 @@ fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
 }
 
 /// Builds one edge with memory display enabled: capacity 100 × 8-byte items = 800B.
+// ss[related telemetry.dot-export]
 fn memory_edge(id: usize, partner: Option<&'static str>, bundle_index: Option<usize>) -> Edge {
     let mut stats = ChannelStatsComputer::default();
     stats.capacity = 100;

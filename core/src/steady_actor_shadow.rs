@@ -1,30 +1,44 @@
 // ss[related actor.shadow-spotlight]
 use std::time::{Duration, Instant};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+// ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, OnceLock};
 // ss[related actor.shadow-spotlight]
 use async_lock::Barrier;
+// ss[related philosophy.structural-hierarchy]
 use parking_lot::RwLock;
+// ss[related philosophy.structural-hierarchy]
 use std::any::Any;
 // ss[related actor.shadow-spotlight]
 use std::error::Error;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::lock::{Mutex};
+// ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
 // ss[related actor.shadow-spotlight]
 use futures_util::stream::FuturesUnordered;
+// ss[related philosophy.structural-hierarchy]
 use std::future::Future;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::{select, FutureExt, StreamExt};
 // ss[related actor.shadow-spotlight]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{FusedFuture, Shared};
+// ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
 // ss[related actor.shadow-spotlight]
 use log::warn;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::traits::Observer;
+// ss[related philosophy.structural-hierarchy]
 use ringbuf::consumer::Consumer;
 // ss[related actor.shadow-spotlight]
 use ringbuf::producer::Producer;
+// ss[related philosophy.structural-hierarchy]
 use crate::{simulate_edge, ActorIdentity, Graph, GraphLiveliness, GraphLivelinessState, Rx, RxCoreBundle, SendSaturation, SteadyActor, Tx, TxCoreBundle};
+// ss[related philosophy.structural-hierarchy]
 use crate::actor_builder::NodeTxRx;
 // ss[related actor.shadow-spotlight]
 use crate::steady_actor::{
@@ -33,54 +47,85 @@ use crate::steady_actor::{
 };
 // ss[related actor.shadow-spotlight]
 use crate::core_rx::RxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_tx::TxCore;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_core::SteadyActorCore;
 // ss[related actor.shadow-spotlight]
 use crate::distributed::aqueduct_stream::{Defrag, StreamControlItem};
+// ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::SideChannelResponder;
+// ss[related philosophy.structural-hierarchy]
 use crate::monitor::{ActorMetaData};
 // ss[related actor.shadow-spotlight]
 use crate::simulate_edge::{IntoSimRunner};
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_rx::RxDone;
+// ss[related philosophy.structural-hierarchy]
 use crate::steady_tx::TxDone;
 // ss[related actor.shadow-spotlight]
 use crate::telemetry::metrics_collector::CollectorDetail;
+// ss[related philosophy.structural-hierarchy]
 use crate::logging_util::steady_logger;
+// ss[related philosophy.structural-hierarchy]
 use crate::core_exec;
 
 /// Context for managing actor state and interactions within the Steady framework.
 // ss[related actor.shadow-spotlight]
 pub struct SteadyActorShadow {
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) regeneration: u32,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) is_in_graph: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) channel_count: Arc<AtomicUsize>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) all_telemetry_rx: Arc<RwLock<Vec<CollectorDetail>>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) runtime_state: Arc<RwLock<GraphLiveliness>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) args: Arc<Box<dyn Any + Send + Sync>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_metadata: Arc<ActorMetaData>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown_vec: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     /// A shared future that resolves when a shutdown is requested.
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) oneshot_shutdown: Shared<oneshot::Receiver<()>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) last_periodic_wait: AtomicU64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_start_time: Instant,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) node_tx_rx: Option<Arc<NodeTxRx>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) frame_rate_ms: u64,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) team_id: usize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) show_thread_info: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_meda_driver: OnceLock<Option<Arc<Mutex<Aeron>>>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) aeron_init_for_tests: bool,
     // ss[impl actor.internal-behavior-logic]
     /// When true, run real actor logic (e.g. Aeron I/O); when false, use simulation.
     pub use_internal_behavior: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail: AtomicUsize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_vacant: AtomicUsize,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
 }
 
 // ss[related actor.shadow-spotlight]
 impl Clone for SteadyActorShadow {
+    // ss[related philosophy.structural-hierarchy]
     fn clone(&self) -> Self {
         SteadyActorShadow {
             ident: self.ident,
@@ -144,6 +189,7 @@ impl SteadyActor for SteadyActorShadow {
     // ss[related actor.shadow-spotlight]
     fn relay_stats(&mut self) {}
 
+    // ss[related philosophy.structural-hierarchy]
     async fn relay_stats_periodic(&mut self, duration_rate: Duration) -> bool {
         self.wait_periodic(duration_rate).await
     }
@@ -839,6 +885,7 @@ impl SteadyActor for SteadyActorShadow {
     // ss[related actor.shadow-spotlight]
     fn set_dot_display_text(&mut self, _text: Option<&str>) {}
 
+    // ss[related philosophy.structural-hierarchy]
     fn frame_rate_ms(&self) -> u64 {
         self.frame_rate_ms
     }
@@ -852,10 +899,13 @@ impl SteadyActor for SteadyActorShadow {
 #[cfg(test)]
 // ss[related actor.shadow-spotlight]
 mod tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::*;
     // ss[related actor.shadow-spotlight]
     use std::time::Duration;
+    // ss[related philosophy.structural-hierarchy]
     use futures_util::future::ready;
 
     #[test]
@@ -910,6 +960,7 @@ mod tests {
 
     // ss[verify actor.index-wait-paired]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_shadow_wait_avail_vacant_index_direct() {
     crate::core_exec::block_on(async {
 
@@ -1049,6 +1100,7 @@ mod tests {
 
     // ss[verify bundle.index-wait-shutdown-none]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_request_shutdown() {
         let mut graph = GraphBuilder::for_testing().build(());
         graph.start();
@@ -1112,6 +1164,7 @@ mod tests {
 
     // ss[verify bundle.index-wait-shutdown-none]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_liveliness_shutdown_timeout() {
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("test");
@@ -1165,6 +1218,7 @@ mod tests {
 
     // ss[verify actor.wait-avail-vacant]
     #[test]
+    // ss[related philosophy.structural-hierarchy]
     fn test_is_full_and_vacant_units() {
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, _rx) = graph.channel_builder().with_capacity(3).build_channel::<u8>();
@@ -1275,4 +1329,5 @@ mod tests {
 
 #[cfg(test)]
 #[path = "steady_actor_shadow/tests/mod.rs"]
+// ss[related actor.shadow-spotlight]
 mod shadow_proptest_suite;

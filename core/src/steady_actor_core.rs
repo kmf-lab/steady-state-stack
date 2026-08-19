@@ -8,14 +8,19 @@
 
 // ss[impl actor.run-dispatcher]
 use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
 use futures::channel::oneshot;
+// ss[related philosophy.structural-hierarchy]
 use futures_util::future::{FusedFuture, Shared};
 // ss[impl actor.run-dispatcher]
 use futures_util::{select, FutureExt};
+// ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
+// ss[related philosophy.structural-hierarchy]
 use parking_lot::RwLock;
 // ss[impl actor.run-dispatcher]
 use std::sync::Arc;
+// ss[related philosophy.structural-hierarchy]
 use crate::{
     ActorIdentity, GraphLiveliness, Rx, RxCore, RxDone, SendOutcome,
     SendSaturation, Tx, TxCore, TxDone,
@@ -33,12 +38,14 @@ use crate::yield_now;
 // ss[impl actor.run-dispatcher]
 pub struct SteadyActorCore;
 
+// ss[related philosophy.structural-hierarchy]
 impl SteadyActorCore {
     /// Returns `true` if the actor should keep running, `false` if it should stop.
     /// `accept_fn` is called only when `StopRequested` to determine the actor’s vote.
     #[inline]
     // ss[impl actor.run-dispatcher]
     #[allow(dead_code)] // exercised in unit tests; integration builds omit cfg(test) on the lib
+    // ss[related philosophy.structural-hierarchy]
     pub fn is_running<F: FnMut() -> bool>(
         runtime_state: &parking_lot::RwLock<GraphLiveliness>,
         ident: ActorIdentity,
@@ -194,6 +201,7 @@ impl SteadyActorCore {
     /// Low-level async send (no telemetry wrappers).
     // ss[impl actor.run-dispatcher]
     #[allow(dead_code)] // exercised in unit tests; integration builds omit cfg(test) on the lib
+    // ss[related philosophy.structural-hierarchy]
     pub async fn send_async<T: TxCore>(
         this: &mut T,
         msg: T::MsgIn<'_>,
@@ -297,19 +305,27 @@ impl SteadyActorCore {
 #[cfg(test)]
 // ss[impl actor.run-dispatcher]
 mod steady_actor_core_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[impl actor.run-dispatcher]
     use crate::core_exec;
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_rx::{DoubleSlice, RxCore};
+    // ss[related philosophy.structural-hierarchy]
     use crate::core_tx::TxCore;
     // ss[impl actor.run-dispatcher]
     use crate::steady_rx::Rx;
+    // ss[related philosophy.structural-hierarchy]
     use crate::steady_tx::Tx;
+    // ss[related philosophy.structural-hierarchy]
     use crate::{ActorIdentity, GraphBuilder, SendSaturation, SendOutcome, RxDone, TxDone};
     // ss[impl actor.run-dispatcher]
     use std::time::Duration;
+    // ss[related philosophy.structural-hierarchy]
     use futures::channel::oneshot;
+    // ss[related philosophy.structural-hierarchy]
     use futures_util::future::Shared;
     // ss[impl actor.run-dispatcher]
     use parking_lot::RwLock;

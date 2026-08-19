@@ -5,17 +5,27 @@
 //! gain `Send` bounds. Do not use `futures::executor::block_on` here — it is not nestable
 //! and fails graph-build nested awaits with `EnterError`.
 
+// ss[related philosophy.structural-hierarchy]
 pub(crate) mod core_exec {
     // ss[impl platform.executor-features]
     use futures::FutureExt;
+    // ss[related philosophy.structural-hierarchy]
     use futures::channel::oneshot;
+    // ss[related philosophy.structural-hierarchy]
     use futures_util::future::FusedFuture;
+    // ss[related philosophy.structural-hierarchy]
     use log::warn;
+    // ss[related philosophy.structural-hierarchy]
     use std::any::Any;
+    // ss[related philosophy.structural-hierarchy]
     use std::error::Error;
+    // ss[related philosophy.structural-hierarchy]
     use std::future::Future;
+    // ss[related philosophy.structural-hierarchy]
     use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+    // ss[related philosophy.structural-hierarchy]
     use std::pin::Pin;
+    // ss[related philosophy.structural-hierarchy]
     use std::thread;
 
     /// Spawns a future on a dedicated OS thread and detaches it.
@@ -57,6 +67,7 @@ pub(crate) mod core_exec {
     #[cfg(all(unix, feature = "libc"))]
     // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
+        // ss[related philosophy.structural-hierarchy]
         use libc::{cpu_set_t, pthread_self, pthread_setaffinity_np};
         let mut cpu_set: cpu_set_t = unsafe { std::mem::zeroed() };
         unsafe {
@@ -77,7 +88,9 @@ pub(crate) mod core_exec {
     #[cfg(all(windows, feature = "winapi"))]
     // ss[related platform.executor-features]
     fn set_thread_affinity(core: usize) -> std::result::Result<(), Box<dyn Error>> {
+        // ss[related philosophy.structural-hierarchy]
         use winapi::shared::basetsd::DWORD_PTR;
+        // ss[related philosophy.structural-hierarchy]
         use winapi::um::processthreadsapi::GetCurrentThread;
 
         let mask = 1u64 << core;
@@ -165,15 +178,24 @@ pub(crate) mod core_exec {
 #[cfg(test)]
 // ss[related platform.executor-features]
 mod executor_tests {
+    // ss[related philosophy.structural-hierarchy]
     use super::core_exec::{block_on, spawn_blocking, spawn_detached};
+    // ss[related philosophy.structural-hierarchy]
     use crate::ss_proptest;
+    // ss[related philosophy.structural-hierarchy]
     use futures_timer::Delay;
+    // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    // ss[related philosophy.structural-hierarchy]
     use std::sync::Arc;
+    // ss[related philosophy.structural-hierarchy]
     use std::thread;
+    // ss[related philosophy.structural-hierarchy]
     use std::time::{Duration, Instant};
 
+    // ss[related philosophy.structural-hierarchy]
     fn wait_flag(flag: &AtomicBool, timeout: Duration) -> bool {
         let start = Instant::now();
         while start.elapsed() < timeout {

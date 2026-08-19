@@ -1,44 +1,68 @@
 // ss[related telemetry.dot-export]
 use log::*;
+// ss[impl telemetry.dot-export]
 use std::fmt::Write;
+// ss[impl telemetry.dot-export]
 use std::fs::{OpenOptions, create_dir_all};
+// ss[related telemetry.dot-export]
 use std::path::PathBuf;
+// ss[impl telemetry.dot-export]
 use std::sync::Arc;
+// ss[impl telemetry.dot-export]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+// ss[related telemetry.dot-export]
 use bytes::BytesMut;
+// ss[impl telemetry.dot-export]
 use time::OffsetDateTime;
+// ss[impl telemetry.dot-export]
 use time::macros::format_description;
 
+// ss[related telemetry.dot-export]
 use crate::core_exec;
+// ss[impl telemetry.dot-export]
 use crate::monitor::ChannelMetaData;
+// ss[impl telemetry.dot-export]
 use crate::serialize::byte_buffer_packer::PackedVecWriter;
+// ss[related telemetry.dot-export]
 use crate::serialize::fast_protocol_packed::write_long_unsigned;
+// ss[impl telemetry.dot-export]
 use crate::telemetry::metrics_server;
 
+// ss[related telemetry.dot-export]
 pub(crate) const REC_NODE: u64 = 1;
+// ss[impl telemetry.dot-export]
 pub(crate) const REC_EDGE: u64 = 0;
+// ss[impl telemetry.dot-export]
 pub(crate) const HISTORY_WRITE_BLOCK_SIZE: usize = 1 << (12 + 4); // Must be power of 2 and 4096 or larger, 64k is good
 
 /// Represents the frame history for a graph, including packed data and output paths.
+// ss[related telemetry.dot-export]
 pub struct FrameHistory {
+    // ss[impl telemetry.dot-export]
     pub(crate) packed_sent_writer: PackedVecWriter<i64>,
+    // ss[impl telemetry.dot-export]
     pub(crate) packed_take_writer: PackedVecWriter<i64>,
+    // ss[impl telemetry.dot-export]
     pub(crate) history_buffer: BytesMut,
+    // ss[impl telemetry.dot-export]
     pub(crate) guid: String,
     output_log_path: PathBuf,
     file_bytes_written: Arc<AtomicUsize>,
     last_file_to_append_onto: String,
+    // ss[impl telemetry.dot-export]
     pub(crate) buffer_bytes_count: usize,
     local_thread_bytes_cache: usize,
 }
 
+// ss[related telemetry.dot-export]
 impl FrameHistory {
     /// Creates a new `FrameHistory` instance.
     ///
     /// # Returns
     ///
     /// A new `FrameHistory` instance.
+    // ss[related telemetry.dot-export]
     pub fn new(ms_rate: u64) -> FrameHistory {
         let mut buf = BytesMut::with_capacity(HISTORY_WRITE_BLOCK_SIZE * 2);
 
@@ -103,6 +127,7 @@ impl FrameHistory {
     }
 
     /// Marks the current position in the history buffer.
+    // ss[related telemetry.dot-export]
     pub fn mark_position(&mut self) {
         self.buffer_bytes_count = self.history_buffer.len();
     }
@@ -115,6 +140,7 @@ impl FrameHistory {
     /// * `id` - THE ID of the node.
     /// * `chin` - THE input channels.
     /// * `chout` - THE output channels.
+    // ss[related telemetry.dot-export]
     pub fn apply_node(
         &mut self,
         name: &'static str,
@@ -161,6 +187,7 @@ impl FrameHistory {
     ///
     /// * `total_take_send` - THE total take and send values.
     /// * `frame_rate_ms` - THE frame rate in milliseconds.
+    // ss[related telemetry.dot-export]
     pub fn apply_edge(&mut self, total_take_send: &[(i64, i64)], frame_rate_ms: u64) {
         write_long_unsigned(REC_EDGE, &mut self.history_buffer); // Message type
 
@@ -193,6 +220,7 @@ impl FrameHistory {
     /// # Arguments
     ///
     /// * `flush_all` - A boolean indicating if all data should be flushed to disk.
+    // ss[related telemetry.dot-export]
     pub async fn update(&mut self, flush_all: bool) {
         // We write to disk in blocks just under a fixed power of two size
         // If we are about to enter a new block ensure we write the old one
@@ -240,6 +268,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// THE history file path.
+    // ss[related telemetry.dot-export]
     pub(crate) fn build_history_path(&mut self) -> PathBuf {
         let format = format_description!("[year]_[month]_[day]");
         let log_time = OffsetDateTime::now_utc();
@@ -265,6 +294,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// `true` if the next block will span into the next file write block, `false` otherwise.
+    // ss[related telemetry.dot-export]
     fn will_span_into_next_block(&self) -> bool {
         let old_blocks = (self.file_bytes_written.load(Ordering::SeqCst) + self.buffer_bytes_count)
             / HISTORY_WRITE_BLOCK_SIZE;
@@ -284,6 +314,7 @@ impl FrameHistory {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
+    // ss[related telemetry.dot-export]
     pub(crate) async fn truncate_file(path: PathBuf, data: BytesMut) -> Result<(), std::io::Error> {
         let file = OpenOptions::new()
             .write(true)
@@ -293,6 +324,7 @@ impl FrameHistory {
         metrics_server::async_write_all(data, false, file).await
     }
 
+    // ss[related telemetry.dot-export]
     async fn append_to_file(
         path: PathBuf,
         data: BytesMut,

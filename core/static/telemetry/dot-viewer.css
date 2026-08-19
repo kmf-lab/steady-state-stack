@@ -1,5 +1,6 @@
 body {
-  font-family: sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
   margin: 0;
   /* The following should prevent bounce on overscroll,
      but Chrome still does it. */
@@ -129,6 +130,7 @@ nav > div {
 
 #speedSpan {
   font-size: 20px;
+  font-variant-numeric: tabular-nums;
   margin: 0 10px;
   width: 94px;
 }
@@ -192,6 +194,10 @@ nav > div {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#diagram svg text {
+  font-family: Helvetica, Arial, Liberation Sans, sans-serif !important;
 }
 
 /* Ensure paths remain visible when zoomed out. 
