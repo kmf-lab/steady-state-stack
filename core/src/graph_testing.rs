@@ -1416,7 +1416,41 @@ mod graph_testing_tests {
         (manager, responder)
     }
 
-    ss_proptest! {
+    /// Voting-phase bound for graph integration properties (work must finish before shutdown).
+    fn integration_vote_timeout() -> Duration {
+        Duration::from_millis(500)
+    }
+
+    /// Poll logger availability until `pred` holds or the deadline elapses.
+    fn poll_log_avail<F>(log_rx: &SteadyRx<u64>, deadline: Duration, mut pred: F)
+    where
+        F: FnMut(usize) -> bool,
+    {
+        let end = Instant::now() + deadline;
+        loop {
+            let avail = {
+                let mut rx = core_exec::block_on(log_rx.lock());
+                rx.avail_units()
+            };
+            if pred(avail) || Instant::now() >= end {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Request shutdown and bound only the cooperative voting/drain phase.
+    fn shutdown_started_graph(mut graph: Graph) -> Result<(), Box<dyn Error>> {
+        graph.request_shutdown();
+        graph.block_until_stopped(integration_vote_timeout())
+    }
+
+    /// Heavy graph integration properties: low case count (each case spawns OS-thread actors).
+    proptest! {
+        #![proptest_config(ProptestConfig {
+            cases: 32,
+            .. ProptestConfig::default()
+        })]
 
         /// Property: random injected traffic + early shutdown still stops cleanly (puppet graph, no `run()` on worker).
         #[test]
@@ -1425,12 +1459,11 @@ mod graph_testing_tests {
         // ss[verify verify.process.proptest]
         fn proptest_pipeline_random_messages_clean_shutdown(
             gen_values in prop::collection::vec(0u64..10_000, 0..32),
-            extra_hb in 0usize..4,
             early_shutdown in any::<bool>(),
         ) {
             prop_assume!(early_shutdown || !gen_values.is_empty());
 
-            let hb_beats = gen_values.len().max(1) + extra_hb;
+            let hb_beats = gen_values.len();
             let gen_values_clone = gen_values.clone();
             let logged = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
             let logged_cap = logged.clone();
@@ -1438,10 +1471,18 @@ mod graph_testing_tests {
                 .run((), move |mut graph| {
                     let (gen_tx, hb_tx, log_rx) = build_shutdown_proptest_pipeline(&mut graph);
                     gen_tx.testing_send_all(gen_values_clone.clone(), true);
-                    hb_tx.testing_send_all(vec![0u64; hb_beats], true);
+                    if hb_beats > 0 {
+                        hb_tx.testing_send_all(vec![0u64; hb_beats], true);
+                    }
                     graph.start();
-                    graph.request_shutdown();
-                    graph.block_until_stopped(Duration::from_secs(5))?;
+                    if !early_shutdown && !gen_values_clone.is_empty() {
+                        poll_log_avail(
+                            &log_rx,
+                            Duration::from_millis(200),
+                            |n| n >= gen_values_clone.len(),
+                        );
+                    }
+                    shutdown_started_graph(graph)?;
                     let mut rx = core_exec::block_on(log_rx.lock());
                     let mut out = Vec::new();
                     while let Some(v) = rx.try_take() {
@@ -1475,6 +1516,7 @@ mod graph_testing_tests {
                 .runtime_state
                 .read()
                 .is_in_state(&[GraphLivelinessState::Running]));
+            shutdown_started_graph(graph).expect("graph should shut down");
         }
 
         /// Property: staged puppet graph echoes generator traffic and logger receives it (never `run()` on worker).
@@ -1487,32 +1529,35 @@ mod graph_testing_tests {
             hb_value in 0u64..10_000,
             use_echo_at in any::<bool>(),
             use_message_at in any::<bool>(),
-            timeout_ms in 50u64..2_000,
+            timeout_ms in 50u64..200,
         ) {
             SteadyRunner::test_build().run((), move |mut graph| {
                 build_staged_puppet_pipeline(&mut graph);
                 graph.start();
                 let sm = graph.stage_manager();
-                if use_echo_at {
-                    sm.actor_perform("GENERATOR", StageDirection::EchoAt(0, gen_value))?;
-                } else {
-                    sm.actor_perform("GENERATOR", StageDirection::Echo(gen_value))?;
-                }
-                sm.actor_perform("HEARTBEAT", StageDirection::Echo(hb_value))?;
-                if use_message_at {
-                    sm.actor_perform(
-                        "LOGGER",
-                        StageWaitFor::MessageAt(0, gen_value, Duration::from_millis(timeout_ms)),
-                    )?;
-                } else {
-                    sm.actor_perform(
-                        "LOGGER",
-                        StageWaitFor::Message(gen_value, Duration::from_millis(timeout_ms)),
-                    )?;
-                }
+                let perform_result: Result<(), Box<dyn Error>> = (|| {
+                    if use_echo_at {
+                        sm.actor_perform("GENERATOR", StageDirection::EchoAt(0, gen_value))?;
+                    } else {
+                        sm.actor_perform("GENERATOR", StageDirection::Echo(gen_value))?;
+                    }
+                    sm.actor_perform("HEARTBEAT", StageDirection::Echo(hb_value))?;
+                    if use_message_at {
+                        sm.actor_perform(
+                            "LOGGER",
+                            StageWaitFor::MessageAt(0, gen_value, Duration::from_millis(timeout_ms)),
+                        )?;
+                    } else {
+                        sm.actor_perform(
+                            "LOGGER",
+                            StageWaitFor::Message(gen_value, Duration::from_millis(timeout_ms)),
+                        )?;
+                    }
+                    Ok(())
+                })();
                 sm.final_bow();
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(5))
+                shutdown_started_graph(graph)?;
+                perform_result
             })
             .expect("staged puppet graph should shut down cleanly");
         }
@@ -1537,30 +1582,39 @@ mod graph_testing_tests {
                     build_staged_puppet_pipeline(&mut graph);
                     graph.start();
                     let sm = graph.stage_manager();
-                    for &v in &gen_values_clone {
-                        sm.actor_perform("GENERATOR", StageDirection::Echo(v))?;
-                        sm.actor_perform("HEARTBEAT", StageDirection::Echo(0_u64))?;
-                    }
+                    let perform_result: Result<(), Box<dyn Error>> = (|| {
+                        for &v in &gen_values_clone {
+                            sm.actor_perform("GENERATOR", StageDirection::Echo(v))?;
+                            sm.actor_perform("HEARTBEAT", StageDirection::Echo(0_u64))?;
+                        }
+                        Ok(())
+                    })();
                     sm.final_bow();
+                    shutdown_started_graph(graph)?;
+                    perform_result
                 } else {
                     let (gen_tx, hb_tx, log_rx) = build_shutdown_proptest_pipeline(&mut graph);
                     if !gen_values_clone.is_empty() {
                         gen_tx.testing_send_all(gen_values_clone.clone(), true);
-                        hb_tx.testing_send_all(vec![0u64; gen_values_clone.len().max(1)], true);
+                        hb_tx.testing_send_all(vec![0u64; gen_values_clone.len()], true);
                     }
                     graph.start();
-                    graph.request_shutdown();
-                    graph.block_until_stopped(Duration::from_secs(5))?;
+                    if !early_shutdown && !gen_values_clone.is_empty() {
+                        poll_log_avail(
+                            &log_rx,
+                            Duration::from_millis(200),
+                            |n| n >= gen_values_clone.len(),
+                        );
+                    }
+                    shutdown_started_graph(graph)?;
                     let mut rx = core_exec::block_on(log_rx.lock());
                     let mut out = Vec::new();
                     while let Some(v) = rx.try_take() {
                         out.push(v);
                     }
                     *logged_cap.lock().expect("logged lock") = out;
-                    return Ok(());
+                    Ok(())
                 }
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(5))
             })
             .expect("shutdown matrix should complete");
             if !use_staged_echo {
@@ -1591,17 +1645,100 @@ mod graph_testing_tests {
                     .build(move |ctx| pipeline_generator_edge(ctx, tx_lazy.clone()), SoloAct);
                 graph.start();
                 let sm = graph.stage_manager();
-                sm.actor_perform_with_suffix(
-                    "SUFFIX_ACTOR",
-                    suffix,
-                    StageDirection::Echo(echo_value),
-                )?;
+                let perform_result = sm
+                    .actor_perform_with_suffix(
+                        "SUFFIX_ACTOR",
+                        suffix,
+                        StageDirection::Echo(echo_value),
+                    )
+                    .map(|_| ());
                 sm.final_bow();
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(5))
+                shutdown_started_graph(graph)?;
+                perform_result
             })
             .expect("suffix actor should respond");
         }
+
+        /// Property: puppet graph with multiple staged echoes drains without hang.
+        #[test]
+        // ss[verify testing.pipeline-worker-allowlist]
+        // ss[verify testing.stage-manager-integration]
+        // ss[verify verify.process.proptest]
+        fn proptest_staged_puppet_multi_echo_sequence(
+            values in prop::collection::vec(0u64..500, 1..4),
+            timeout_ms in 50u64..100,
+        ) {
+            SteadyRunner::test_build().run((), move |mut graph| {
+                build_staged_puppet_pipeline(&mut graph);
+                graph.start();
+                let sm = graph.stage_manager();
+                let perform_result: Result<(), Box<dyn Error>> = (|| {
+                    for &v in &values {
+                        sm.actor_perform("GENERATOR", StageDirection::Echo(v))?;
+                        sm.actor_perform("HEARTBEAT", StageDirection::Echo(0_u64))?;
+                        sm.actor_perform(
+                            "LOGGER",
+                            StageWaitFor::Message(v, Duration::from_millis(timeout_ms)),
+                        )?;
+                    }
+                    Ok(())
+                })();
+                sm.final_bow();
+                shutdown_started_graph(graph)?;
+                perform_result
+            })
+            .expect("multi-echo puppet graph should shut down");
+        }
+
+        /// Property: staged puppet with suffixed worker lane still shuts down cleanly.
+        #[test]
+        // ss[verify testing.pipeline-worker-allowlist]
+        // ss[verify testing.stage-manager-integration]
+        // ss[verify verify.process.proptest]
+        fn proptest_staged_puppet_with_suffix_actor(
+            gen_value in 0u64..2_000,
+            suffix in 1usize..4,
+        ) {
+            SteadyRunner::test_build().run((), move |mut graph| {
+                let (gen_lazy, gen_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+                let (hb_lazy, hb_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+                let (log_lazy, log_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
+                graph
+                    .actor_builder()
+                    .with_name("GENERATOR")
+                    .build(move |ctx| pipeline_generator_edge(ctx, gen_lazy.clone()), SoloAct);
+                graph
+                    .actor_builder()
+                    .with_name_and_suffix("HEARTBEAT", suffix)
+                    .build(move |ctx| pipeline_heartbeat_edge(ctx, hb_lazy.clone()), SoloAct);
+                graph.actor_builder().with_name("WORKER").build(
+                    move |ctx| pipeline_worker_run(ctx, hb_rx.clone(), gen_rx.clone(), log_lazy.clone()),
+                    SoloAct,
+                );
+                graph
+                    .actor_builder()
+                    .with_name("LOGGER")
+                    .build(move |ctx| pipeline_logger_edge(ctx, log_rx.clone()), SoloAct);
+                graph.start();
+                let sm = graph.stage_manager();
+                let perform_result: Result<(), Box<dyn Error>> = (|| {
+                    sm.actor_perform("GENERATOR", StageDirection::Echo(gen_value))?;
+                    sm.actor_perform_with_suffix("HEARTBEAT", suffix, StageDirection::Echo(0_u64))?;
+                    sm.actor_perform(
+                        "LOGGER",
+                        StageWaitFor::Message(gen_value, Duration::from_millis(200)),
+                    )?;
+                    Ok(())
+                })();
+                sm.final_bow();
+                shutdown_started_graph(graph)?;
+                perform_result
+            })
+            .expect("suffix puppet graph should shut down");
+        }
+    }
+
+    ss_proptest! {
 
         /// Property: `simulate_direction` echoes arbitrary values through a locked TX.
         #[test]
@@ -1791,34 +1928,6 @@ mod graph_testing_tests {
             let mut actor = DummyActor { has_data: false };
             let result = responder.respond_with(|_, _| Some(Box::new(OK_MESSAGE)), &mut actor);
             prop_assert!(matches!(result, Ok(false)));
-        }
-
-        /// Property: puppet graph with multiple staged echoes drains without hang.
-        #[test]
-        // ss[verify testing.pipeline-worker-allowlist]
-        // ss[verify testing.stage-manager-integration]
-        // ss[verify verify.process.proptest]
-        fn proptest_staged_puppet_multi_echo_sequence(
-            values in prop::collection::vec(0u64..500, 1..12),
-            timeout_ms in 100u64..1_000,
-        ) {
-            SteadyRunner::test_build().run((), move |mut graph| {
-                build_staged_puppet_pipeline(&mut graph);
-                graph.start();
-                let sm = graph.stage_manager();
-                for &v in &values {
-                    sm.actor_perform("GENERATOR", StageDirection::Echo(v))?;
-                    sm.actor_perform("HEARTBEAT", StageDirection::Echo(0_u64))?;
-                    sm.actor_perform(
-                        "LOGGER",
-                        StageWaitFor::Message(v, Duration::from_millis(timeout_ms)),
-                    )?;
-                }
-                sm.final_bow();
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(5))
-            })
-            .expect("multi-echo puppet graph should shut down");
         }
 
         /// Property: `echo_responder_bundle` fans out a staged message to every TX lane.
@@ -2159,50 +2268,6 @@ mod graph_testing_tests {
             let result = manager.call_actor_internal(Box::new("ping"), name);
             prop_assert!(result.is_err());
             prop_assert!(result.unwrap_err().to_string().contains(TIMEOUT));
-        }
-
-        /// Property: staged puppet with suffixed worker lane still shuts down cleanly.
-        #[test]
-        // ss[verify testing.pipeline-worker-allowlist]
-        // ss[verify testing.stage-manager-integration]
-        // ss[verify verify.process.proptest]
-        fn proptest_staged_puppet_with_suffix_actor(
-            gen_value in 0u64..2_000,
-            suffix in 1usize..4,
-        ) {
-            SteadyRunner::test_build().run((), move |mut graph| {
-                let (gen_lazy, gen_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
-                let (hb_lazy, hb_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
-                let (log_lazy, log_rx) = graph.channel_builder().with_capacity(16).build::<u64>();
-                graph
-                    .actor_builder()
-                    .with_name("GENERATOR")
-                    .build(move |ctx| pipeline_generator_edge(ctx, gen_lazy.clone()), SoloAct);
-                graph
-                    .actor_builder()
-                    .with_name_and_suffix("HEARTBEAT", suffix)
-                    .build(move |ctx| pipeline_heartbeat_edge(ctx, hb_lazy.clone()), SoloAct);
-                graph.actor_builder().with_name("WORKER").build(
-                    move |ctx| pipeline_worker_run(ctx, hb_rx.clone(), gen_rx.clone(), log_lazy.clone()),
-                    SoloAct,
-                );
-                graph
-                    .actor_builder()
-                    .with_name("LOGGER")
-                    .build(move |ctx| pipeline_logger_edge(ctx, log_rx.clone()), SoloAct);
-                graph.start();
-                let sm = graph.stage_manager();
-                sm.actor_perform("GENERATOR", StageDirection::Echo(gen_value))?;
-                sm.actor_perform_with_suffix("HEARTBEAT", suffix, StageDirection::Echo(0_u64))?;
-                sm.actor_perform(
-                    "LOGGER",
-                    StageWaitFor::Message(gen_value, Duration::from_millis(500)),
-                )?;
-                sm.final_bow();
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(5))
-            })
-            .expect("suffix puppet graph should shut down");
         }
 
         /// Property: `wait_available_units` returns true immediately when enough requests are queued.

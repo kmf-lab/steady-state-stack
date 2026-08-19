@@ -2,12 +2,10 @@
 
 use super::*;
 use crate::channel_builder::ChannelBuilder;
-use crate::core_exec;
 use crate::graph_liveliness::ActorIdentity;
 use crate::monitor::{ActorStatus};
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 use crate::ss_proptest;
-use crate::GraphBuilder;
 use crate::MONITOR_NOT;
 use proptest::prelude::*;
 use std::sync::atomic::{AtomicIsize, AtomicU16, AtomicU64, Ordering};
@@ -15,12 +13,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 fn minimal_actor_send() -> SteadyTelemetryActorSend {
-    let mut graph = GraphBuilder::for_testing().build(());
-    let (tx_lazy, _rx) = graph
-        .channel_builder()
-        .with_capacity(4)
-        .build_channel::<ActorStatus>();
-    let tx = tx_lazy.clone();
+    let builder = ChannelBuilder::default().with_capacity(4);
+    let (tx, _rx) = builder.eager_build::<ActorStatus>();
     SteadyTelemetryActorSend {
         tx,
         ident: ActorIdentity::new(0, "helpers_test", None),
@@ -48,12 +42,8 @@ ss_proptest! {
         goal_slot_offset in 0usize..6,
     ) {
         let goal_slot = goal_slot_offset % len;
-        let mut graph = GraphBuilder::for_testing().build(());
-        let (tx_lazy, _rx) = graph
-            .channel_builder()
-            .with_capacity(4)
-            .build_channel::<[usize; 6]>();
-        let tx = tx_lazy.clone();
+        let builder = ChannelBuilder::default().with_capacity(4);
+        let (tx, _rx) = builder.eager_build::<[usize; 6]>();
         let mut inverse = [MONITOR_NOT; 6];
         let mut globals = Vec::new();
         for i in 0..len {
@@ -112,7 +102,6 @@ ss_proptest! {
     // ss[verify verify.process.proptest]
     fn proptest_profile_guard_rollup_on_last_drop(
         profile_ns in 1u64..10_000,
-        wait_ms in 1u64..20,
     ) {
         let st = minimal_actor_send();
         st.hot_profile.store(profile_ns, Ordering::Relaxed);
@@ -120,7 +109,7 @@ ss_proptest! {
         {
             let _guard = FinallyRollupProfileGuard {
                 st: &st,
-                start: Instant::now() - Duration::from_millis(wait_ms),
+                start: Instant::now() - Duration::from_nanos(profile_ns),
             };
         }
         prop_assert!(st.hot_profile_await_ns_unit.load(Ordering::Relaxed) > 0);
