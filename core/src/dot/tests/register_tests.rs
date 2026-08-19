@@ -103,6 +103,7 @@ fn test_apply_node_def() {
         show_total: false,
         girth: 1,
         show_memory: false,
+        ring_memory_footprint_override: None,
     });
 
     let channel_out = Arc::new(ChannelMetaData {
@@ -139,6 +140,7 @@ fn test_apply_node_def() {
         show_total: false,
         girth: 1,
         show_memory: false,
+        ring_memory_footprint_override: None,
     });
 
     let channels_in = vec![channel_in];

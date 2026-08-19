@@ -1474,7 +1474,9 @@ mod handle_request_logic_tests {
         unsafe {
             std::env::remove_var("TELEMETRY_SERVER_PORT");
         }
-        let hold = TcpListener::bind("127.0.0.1:9900").expect("hold default telemetry port");
+        // Hold 9900 when free; an external telemetry instance may already occupy it.
+        let hold = TcpListener::bind("127.0.0.1:9900");
+        const DEFAULT_PORT: u16 = 9900;
 
         let result = bind_to_port("127.0.0.1:9900");
         assert!(
@@ -1488,8 +1490,16 @@ mod handle_request_logic_tests {
             .expect("listener")
             .local_addr()
             .expect("bound addr");
-        assert_eq!(bound.port(), 9901);
-        assert_eq!(result.requested_port, 9900);
+        if hold.is_ok() {
+            assert_eq!(bound.port(), DEFAULT_PORT + 1);
+        } else {
+            assert!(
+                bound.port() > DEFAULT_PORT,
+                "when default port is externally occupied, scan must bind above {DEFAULT_PORT}, got {}",
+                bound.port()
+            );
+        }
+        assert_eq!(result.requested_port, DEFAULT_PORT);
     }
 
     #[test]

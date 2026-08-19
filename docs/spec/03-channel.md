@@ -86,6 +86,22 @@ ss[channel.memory-usage-telemetry]
 
 ---
 
+ss[channel.message-byte-estimate]
+
+`with_message_byte_estimate` MUST set per-slot bytes for telemetry footprint as `capacity × estimate`; the argument MUST NOT include capacity.
+
+**Tier:** 1
+
+---
+
+ss[channel.ring-memory-footprint]
+
+`with_ring_memory_footprint` MUST set telemetry footprint to the provided ring total without multiplying by capacity again.
+
+**Tier:** 1
+
+---
+
 ## Requirement index
 
 | ID | Summary | Tier |
@@ -100,3 +116,5 @@ ss[channel.memory-usage-telemetry]
 | `channel.stream-dual-buffer` | Stream TX/RX pair | 1 |
 | `channel.eager-build-test` | Eager for tests | 1 |
 | `channel.memory-usage-telemetry` | Builder memory hook | 1 |
+| `channel.message-byte-estimate` | Per-slot byte override | 1 |
+| `channel.ring-memory-footprint` | Ring-total footprint override | 1 |

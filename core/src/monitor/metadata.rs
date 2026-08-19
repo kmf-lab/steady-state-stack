@@ -251,6 +251,16 @@ pub struct ChannelMetaData {
     /// Indicates whether to display memory usage in telemetry.
     // ss[related philosophy.single-wake-up]
     pub(crate) show_memory: bool,
+    /// When set, telemetry footprint uses this total directly instead of `capacity × type_byte_count`.
+    // ss[related channel.ring-memory-footprint]
+    pub(crate) ring_memory_footprint_override: Option<usize>,
+}
+
+/// Returns the reserved ring-buffer footprint for telemetry and [`crate::steady_tx::Tx::memory_bytes`].
+// ss[impl channel.ring-memory-footprint]
+pub(crate) fn channel_memory_footprint(meta: &ChannelMetaData) -> usize {
+    meta.ring_memory_footprint_override
+        .unwrap_or(meta.capacity * meta.type_byte_count)
 }
 
 /// Type alias for transmitter channel metadata, shared via an atomic reference count.

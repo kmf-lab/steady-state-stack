@@ -204,6 +204,27 @@ mod channel_stats_tests {
             prop_assert_eq!(computer.show_memory, show_memory);
         }
 
+        /// Property: ring_memory_footprint_override skips capacity multiply.
+        #[test]
+        // ss[verify channel.ring-memory-footprint]
+        // ss[verify verify.process.proptest]
+        fn proptest_memory_footprint_ring_override(
+            capacity in 1usize..10_000,
+            override_bytes in 1usize..1_000_000_000,
+        ) {
+            let mut meta = (*mock_meta()).clone();
+            meta.capacity = capacity;
+            meta.ring_memory_footprint_override = Some(override_bytes);
+            let mut computer = ChannelStatsComputer::default();
+            computer.init(
+                &Arc::new(meta),
+                ActorName::new("src", None),
+                ActorName::new("dst", None),
+                1000,
+            );
+            prop_assert_eq!(computer.memory_footprint, override_bytes);
+        }
+
         /// Property: bundle rollup total_consumed equals sum of per-lane deltas.
         #[test]
         // ss[verify telemetry.channel-labels]

@@ -315,6 +315,7 @@ mod unify_edge_tests {
             show_total: false,
             girth: 1,
             show_memory: false,
+            ring_memory_footprint_override: None,
         })
     }
 

@@ -177,7 +177,7 @@ impl ChannelStatsComputer {
         self.bundle_index = meta.bundle_index;
         self.girth = meta.girth;
         self.total_consumed = 0;
-        self.memory_footprint = meta.capacity * meta.type_byte_count;
+        self.memory_footprint = crate::monitor::channel_memory_footprint(meta);
         self.show_memory = meta.show_memory;
 
         meta.labels.iter().for_each(|f| {
@@ -1166,6 +1166,39 @@ mod channel_stats_tests {
         assert_eq!(computer.girth, 4);
         assert_eq!(computer.memory_footprint, 800); // 100 * 8 bytes
         assert!(computer.show_memory);
+    }
+
+    #[test]
+    // ss[verify channel.message-byte-estimate]
+    fn memory_footprint_uses_per_message_estimate_times_capacity() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        meta.capacity = 100;
+        meta.type_byte_count = 8;
+        computer.init(
+            &Arc::new(meta),
+            ActorName::new("a", None),
+            ActorName::new("b", None),
+            1000,
+        );
+        assert_eq!(computer.memory_footprint, 800);
+    }
+
+    #[test]
+    // ss[verify channel.ring-memory-footprint]
+    fn memory_footprint_ring_override_skips_capacity_multiply() {
+        let mut computer = ChannelStatsComputer::default();
+        let mut meta = (*mock_meta()).clone();
+        meta.capacity = 16384;
+        meta.type_byte_count = 8;
+        meta.ring_memory_footprint_override = Some(4_200_000_000);
+        computer.init(
+            &Arc::new(meta),
+            ActorName::new("a", None),
+            ActorName::new("b", None),
+            1000,
+        );
+        assert_eq!(computer.memory_footprint, 4_200_000_000);
     }
 
     #[test]

@@ -164,11 +164,26 @@ let (tx, rx) = channel_builder
     .build_channel::<Packet>();
 ```
 
-The footprint is computed as `capacity × size_of::<T>()`:
+The footprint defaults to `capacity × size_of::<T>()`. Override per-slot or ring-total estimates when the nominal slot size exceeds `size_of::<T>()`:
+
+```rust
+let (tx, rx) = channel_builder
+    .with_capacity(JOIN_LANE_RING_DEPTH)
+    .with_message_byte_estimate(bytes_per_slot)   // capacity × per_slot
+    .with_memory_usage()
+    .build_channel::<JoinLaneMsg>();
+
+// Or, when you already have the full per-lane ring budget:
+let (tx, rx) = channel_builder
+    .with_capacity(JOIN_LANE_RING_DEPTH)
+    .with_ring_memory_footprint(ring_total_bytes) // no second capacity multiply
+    .with_memory_usage()
+    .build_channel::<JoinLaneMsg>();
+```
 
 - **Capacity** — max items in the ring buffer (`with_capacity`).
-- **Width** — bytes per slot (`size_of::<T>()` for the message type).
-- **Footprint** — `capacity × width` — the reserved bytes for the channel's buffer.
+- **Width** — bytes per slot (`size_of::<T>()` or `with_message_byte_estimate`).
+- **Footprint** — `capacity × width`, or `with_ring_memory_footprint` when set.
 
 Where it appears in the DOT graph:
 
@@ -183,7 +198,7 @@ Established channels expose the same values programmatically (after locking):
 ```rust
 let tx = tx.lock().await;
 let width = tx.width();          // bytes per slot (size_of::<T>())
-let bytes = tx.memory_bytes();   // capacity() × width()
+let bytes = tx.memory_bytes();   // reserved footprint (see overrides above)
 ```
 
 Bundles provide a summed rollup across all lanes via `SteadyTxBundleTrait::memory_bytes()` / `SteadyRxBundleTrait::memory_bytes()`.

@@ -1259,10 +1259,19 @@ fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
 /// Builds one edge with memory display enabled: capacity 100 × 8-byte items = 800B.
 // ss[related telemetry.dot-export]
 fn memory_edge(id: usize, partner: Option<&'static str>, bundle_index: Option<usize>) -> Edge {
+    memory_edge_with_footprint(id, 100 * 8, partner, bundle_index)
+}
+
+/// Builds one edge with an explicit memory footprint for partner/bundle rollup tests.
+// ss[related telemetry.dot-export]
+fn memory_edge_with_footprint(
+    id: usize,
+    footprint: usize,
+    partner: Option<&'static str>,
+    bundle_index: Option<usize>,
+) -> Edge {
     let mut stats = ChannelStatsComputer::default();
-    stats.capacity = 100;
-    stats.type_byte_count = 8;
-    stats.memory_footprint = 100 * 8;
+    stats.memory_footprint = footprint;
     stats.show_memory = true;
     Edge {
         id,
@@ -1370,5 +1379,44 @@ fn test_bundle_memory_header_and_tooltip() {
     assert!(
         dot.contains("Memory: 6KB"),
         "bundle tooltip must show summed memory, got:\n{dot}"
+    );
+}
+
+/// T12 JoinWire-scale partner rollup: 12 lanes × (DEPTH × per_slot) must be GB-scale, not TB².
+#[test]
+// ss[verify telemetry.dot-export]
+// ss[verify channel.memory-usage-telemetry]
+fn test_partner_join_wire_scale_memory_not_depth_squared() {
+    const N_OUT: usize = 12;
+    const DEPTH: usize = 16384;
+    const PER_SLOT: usize = 256024;
+    let per_lane = DEPTH * PER_SLOT;
+    let partner_total = N_OUT * per_lane;
+
+    let edges: Vec<Edge> = (0..N_OUT)
+        .map(|id| memory_edge_with_footprint(id, per_lane, Some("JoinWire"), Some(0)))
+        .collect();
+    let state = memory_test_state(edges, 16);
+    let mut frames = test_dot_frames();
+    build_dot(&state, &mut frames);
+    let dot = String::from_utf8(frames.active_graph.to_vec()).expect("utf8");
+
+    assert!(
+        dot.contains("JoinWire [0] (50BB)"),
+        "partner header must show ~50GB-scale total (50BB compressed), got:\n{dot}"
+    );
+    assert!(
+        !dot.contains("825TB"),
+        "DEPTH² bug would show TB-scale (825TB), got:\n{dot}"
+    );
+
+    let buggy_total = N_OUT * DEPTH * (DEPTH * PER_SLOT);
+    assert!(
+        buggy_total > 10_000_000_000_000,
+        "sanity: DEPTH² formula must be TB-scale"
+    );
+    assert!(
+        partner_total < 100_000_000_000,
+        "correct T12 nominal total must be under 100GB"
     );
 }

@@ -170,13 +170,14 @@ impl<T> Tx<T> {
     /// `Box<[u8]>`).
     ///
     /// For DOT display, use [`ChannelBuilder::with_memory_usage`](crate::channel_builder::ChannelBuilder::with_memory_usage).
-    /// For multi-lane rollups, see [`SteadyTxBundleTrait::memory_bytes`].
+    /// When [`ChannelMetaData::ring_memory_footprint_override`] is set, use [`Self::memory_bytes`]
+    /// rather than `capacity() × width()`.
     ///
     /// # Returns
     /// Reserved buffer footprint in bytes.
     // ss[impl channel.memory-usage-telemetry]
     pub fn memory_bytes(&self) -> usize {
-        self.capacity() * self.width()
+        crate::monitor::channel_memory_footprint(&self.channel_meta_data.meta_data)
     }
 
     /// Logs a warning when the channel reaches full capacity, with rate-limiting applied.
@@ -526,10 +527,7 @@ impl<T: Sync + Send, const GIRTH: usize> SteadyTxBundleTrait<T, GIRTH> for Stead
     // ss[impl channel.memory-usage-telemetry]
     fn memory_bytes(&self) -> usize {
         self.iter()
-            .map(|tx| {
-                let meta = TxMetaDataProvider::meta_data(tx);
-                meta.capacity * meta.type_byte_count
-            })
+            .map(|tx| crate::monitor::channel_memory_footprint(&*TxMetaDataProvider::meta_data(tx)))
             .sum()
     }
 }

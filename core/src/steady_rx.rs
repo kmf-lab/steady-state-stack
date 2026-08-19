@@ -416,13 +416,14 @@ impl<T> Rx<T> {
     /// `Box<[u8]>`).
     ///
     /// For DOT display, use [`ChannelBuilder::with_memory_usage`](crate::channel_builder::ChannelBuilder::with_memory_usage).
-    /// For multi-lane rollups, see [`SteadyRxBundleTrait::memory_bytes`].
+    /// When [`ChannelMetaData::ring_memory_footprint_override`] is set, use [`Self::memory_bytes`]
+    /// rather than `capacity() × width()`.
     ///
     /// # Returns
     /// Reserved buffer footprint in bytes.
     // ss[impl channel.memory-usage-telemetry]
     pub fn memory_bytes(&self) -> usize {
-        self.capacity() * self.width()
+        crate::monitor::channel_memory_footprint(&self.channel_meta_data.meta_data)
     }
 
     /// Returns the number of messages currently available in the channel.
@@ -860,10 +861,7 @@ impl<T: Send + Sync, const GIRTH: usize> SteadyRxBundleTrait<T, GIRTH> for Stead
     // ss[impl channel.memory-usage-telemetry]
     fn memory_bytes(&self) -> usize {
         self.iter()
-            .map(|rx| {
-                let meta = RxMetaDataProvider::meta_data(rx);
-                meta.capacity * meta.type_byte_count
-            })
+            .map(|rx| crate::monitor::channel_memory_footprint(&*RxMetaDataProvider::meta_data(rx)))
             .sum()
     }
 }
