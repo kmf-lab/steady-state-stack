@@ -48,6 +48,7 @@ fn test_node_compute_and_refresh() {
         thread_info_cache: None,
         total_count_restarts: 0,
         bool_stalled: false,
+        last_bool_stop: false,
         work_info: None,
     };
     node.compute_and_refresh(actor_status);
@@ -73,6 +74,7 @@ fn test_same_base_name_suffixes_share_rank_column() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -88,6 +90,7 @@ fn test_same_base_name_suffixes_share_rank_column() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -103,6 +106,7 @@ fn test_same_base_name_suffixes_share_rank_column() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -140,6 +144,7 @@ fn test_distinct_base_names_do_not_emit_name_rank_column() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -155,6 +160,7 @@ fn test_distinct_base_names_do_not_emit_name_rank_column() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -261,6 +267,7 @@ fn test_large_bundle_avg_fill_uses_mean_summary() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -276,6 +283,7 @@ fn test_large_bundle_avg_fill_uses_mean_summary() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -361,6 +369,7 @@ fn test_stage1_avg_fill_mean_when_lanes_exceed_inline_cap() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -376,6 +385,7 @@ fn test_stage1_avg_fill_mean_when_lanes_exceed_inline_cap() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -446,6 +456,7 @@ fn test_edge_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -461,6 +472,7 @@ fn test_edge_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -550,6 +562,7 @@ fn test_edge_tooltip_prefers_avg_fill_when_enabled() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -565,6 +578,7 @@ fn test_edge_tooltip_prefers_avg_fill_when_enabled() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -640,6 +654,7 @@ fn test_edge_tooltip_omits_avg_fill_when_no_window_sample() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -655,6 +670,7 @@ fn test_edge_tooltip_omits_avg_fill_when_no_window_sample() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -765,6 +781,7 @@ fn test_multi_lane_avg_fill_omits_when_all_zero_percent() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -780,6 +797,7 @@ fn test_multi_lane_avg_fill_omits_when_all_zero_percent() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -852,6 +870,7 @@ fn test_bundle_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -867,6 +886,7 @@ fn test_bundle_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -969,6 +989,7 @@ fn test_large_bundle_tooltip_no_total_volume() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -984,6 +1005,7 @@ fn test_large_bundle_tooltip_no_total_volume() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -1072,6 +1094,7 @@ fn test_partner_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
             Node {
@@ -1087,6 +1110,7 @@ fn test_partner_tooltip_uses_total_consumed() {
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             },
         ],
@@ -1182,11 +1206,12 @@ fn test_node_compute_refresh_with_load_calculation() {
         thread_info_cache: None,
         total_count_restarts: 0,
         bool_stalled: false,
+        last_bool_stop: false,
         work_info: None,
     };
     node.compute_and_refresh(actor_status);
-    // Local load: 100 * (500-100)/500 = 80; mCPU: (400*1024)/500 = 819 (integer busy fraction).
-    assert_eq!(node.work_info, Some((819, 80)));
+    // mCPU: (400*1024)/500 = 819; sole actor → 100% graph load share.
+    assert_eq!(node.work_info, Some((819, 100)));
 }
 
 
@@ -1220,10 +1245,82 @@ fn test_node_compute_refresh_full_busy_when_await_zero() {
         thread_info_cache: None,
         total_count_restarts: 0,
         bool_stalled: false,
+        last_bool_stop: false,
         work_info: None,
     };
     node.compute_and_refresh(actor_status);
     assert_eq!(node.work_info, Some((1024, 100)));
+}
+
+#[test]
+// ss[verify telemetry.dot-export]
+fn test_refresh_actor_loads_graph_share() {
+    fn status_with_busy(await_ns: u64, unit_ns: u64) -> ActorStatus {
+        ActorStatus {
+            ident: Default::default(),
+            await_total_ns: await_ns,
+            unit_total_ns: unit_ns,
+            total_count_restarts: 0,
+            iteration_start: 1,
+            iteration_sum: 0,
+            bool_stop: false,
+            is_quiet: false,
+            calls: [0; 6],
+            thread_info: None,
+            bool_blocking: false,
+        }
+    }
+
+    let mut state = DotState {
+        nodes: vec![
+            Node {
+                id: Some(ActorName::new("A", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: String::new(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                last_bool_stop: false,
+                work_info: None,
+            },
+            Node {
+                id: Some(ActorName::new("B", None)),
+                color: "grey",
+                pen_width: NODE_PEN_WIDTH,
+                stats_computer: ActorStatsComputer::default(),
+                display_label: String::new(),
+                dot_subtitle: None,
+                tooltip: String::new(),
+                metric_text: String::new(),
+                remote_details: None,
+                thread_info_cache: None,
+                total_count_restarts: 0,
+                bool_stalled: false,
+                last_bool_stop: false,
+                work_info: None,
+            },
+        ],
+        ..Default::default()
+    };
+
+    // Actor A: 768 mCPU (busy 750/1000), Actor B: 256 mCPU (busy 250/1000) → 75% / 25% share.
+    state.nodes[0].apply_local_mcpu(status_with_busy(250, 1000));
+    state.nodes[1].apply_local_mcpu(status_with_busy(750, 1000));
+    state.refresh_actor_loads(&[0, 1]);
+    assert_eq!(state.nodes[0].work_info, Some((768, 75)));
+    assert_eq!(state.nodes[1].work_info, Some((256, 25)));
+
+    // Sparse update of A only: total still uses B's last-known mCPU.
+    state.nodes[0].apply_local_mcpu(status_with_busy(0, 500));
+    state.refresh_actor_loads(&[0]);
+    assert_eq!(state.nodes[0].work_info, Some((1024, 80)));
+    assert_eq!(state.nodes[1].work_info, Some((256, 20)));
 }
 
 /// Builds a minimal two-node `DotState` wrapping the given edges for memory display tests.
@@ -1244,6 +1341,7 @@ fn memory_test_state(edges: Vec<Edge>, bundle_floor_size: usize) -> DotState {
         thread_info_cache: None,
         total_count_restarts: 0,
         bool_stalled: false,
+        last_bool_stop: false,
         work_info: None,
     };
     DotState {

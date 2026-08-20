@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## 0.3.1
+
+### Telemetry: graph-share Avg load
+
+- **Avg load %** again reports this actor's share of summed graph **mCPU** (`100 × this_mcpu / Σ all_mcpu`), not the local busy ratio (which remains **Avg mCPU**). Uses last-known mCPU per node so sparse telemetry batches still produce a correct graph total.
+
+## Unreleased (0.3.0)
+
 ### Telemetry viewer title
 
 - The builtin viewer title is **Live Telemetry** only after a successful recent `/graph.dot` pull. A failed pull keeps the last diagram and shows **Snapshot** (no “Live”). Initial placeholder remains **Loading…**.

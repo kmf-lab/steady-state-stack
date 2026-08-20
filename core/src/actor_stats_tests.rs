@@ -507,6 +507,7 @@ mod extra_tests {
                 false,
                 None,
                 None,
+                true,
             );
 
             prop_assert_eq!(color, DOT_RED);
@@ -539,6 +540,7 @@ mod extra_tests {
                 false,
                 None,
                 None,
+                true,
             );
             prop_assert_eq!(color, crate::channel_stats::DOT_GREY);
         }
@@ -570,6 +572,7 @@ mod extra_tests {
                 false,
                 None,
                 None,
+                true,
             );
             prop_assert_eq!(color, DOT_YELLOW);
             prop_assert!(!actor_stats.trigger_alert_level(&AlertColor::Red));
@@ -603,6 +606,7 @@ mod extra_tests {
                 false,
                 None,
                 None,
+                true,
             );
             prop_assert_eq!(color, DOT_ORANGE);
             prop_assert!(!actor_stats.trigger_alert_level(&AlertColor::Red));

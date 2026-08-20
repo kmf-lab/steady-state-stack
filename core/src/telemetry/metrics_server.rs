@@ -493,6 +493,7 @@ async fn process_msg(
             metrics_state.seq = seq;
         },
         DiagramData::NodeProcessData(_seq, actor_status) => {
+            let mut touched = Vec::with_capacity(actor_status.len());
             for status in actor_status.iter() {
                 assert!(
                     status.unit_total_ns >= status.await_total_ns,
@@ -503,8 +504,12 @@ async fn process_msg(
                 let ident = status.ident;
 
                 if let Some(node) = metrics_state.nodes.get_mut(ident.id) {
-                    node.compute_and_refresh(*status);
+                    node.apply_local_mcpu(*status);
+                    touched.push(ident.id);
                 }
+            }
+            if !touched.is_empty() {
+                metrics_state.refresh_actor_loads(&touched);
             }
         },
         DiagramData::NodeDotSubtitle(_seq, pairs) => {

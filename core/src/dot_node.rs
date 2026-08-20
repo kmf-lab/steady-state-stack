@@ -36,73 +36,94 @@ pub(crate) struct Node {
     // ss[related philosophy.structural-hierarchy]
     pub(crate) bool_stalled: bool,
     // ss[related philosophy.structural-hierarchy]
+    pub(crate) last_bool_stop: bool,
+    // ss[related philosophy.structural-hierarchy]
     pub(crate) work_info: Option<(u16, u16)>,
+}
+
+/// Graph-share load percent from this actor's mCPU and the summed graph mCPU.
+// ss[related telemetry.dot-export]
+pub(crate) fn graph_share_load(mcpu: u16, total_mcpu: u128) -> u16 {
+    if total_mcpu == 0 {
+        0
+    } else {
+        ((100u128 * mcpu as u128) / total_mcpu).min(100) as u16
+    }
 }
 
 // ss[related telemetry.dot-export]
 impl Node {
-    /// Computes and refreshes the metrics for the node based on the actor status.
+    /// Applies local mCPU from telemetry status; load share is filled by [`Self::apply_graph_load_and_emit`].
     ///
-    /// **Avg load %** uses the same *local* busy ratio as **mCPU**: fraction of this actor's
-    /// `unit_total_ns` not attributed to instrumented profile time (`await_total_ns` from
-    /// telemetry; see `FinallyRollupProfileGuard`), i.e. `(unit - await) / unit`, scaled to 0..100.
-    /// It does **not** divide by summed busy time across other actors.
-    ///
-    /// # Arguments
-    ///
-    /// * `actor_status` - The status of the actor.
+    /// **Avg mCPU** is local busy fraction: `(unit - await) / unit` scaled to 0..1024.
     // ss[related telemetry.dot-export]
-    pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
+    pub(crate) fn apply_local_mcpu(&mut self, actor_status: ActorStatus) -> bool {
         let num = actor_status.await_total_ns;
         let den = actor_status.unit_total_ns;
 
-        let mcpu_load = if den == 0 {
-            None
+        let updated = if den == 0 {
+            false
         } else {
             assert!(den.ge(&num), "num: {} den: {}", num, den);
             let busy = den - num;
-            // mCPU/load from busy fraction. `num == 0` means no instrumented time in the window
-            // → fully busy (1024 mCPU), not zero. Integer division: (busy×1024)/den may differ by 1
-            // from `1024 - (num×1024)/den` in edge cases.
             let mcpu: u16 = ((1024u128 * busy as u128) / den as u128).min(1024) as u16;
-            let load: u16 = ((100u64 * busy as u64) / den as u64).min(100) as u16;
-            Some((mcpu, load))
+            let prior_load = self.work_info.map(|(_, load)| load).unwrap_or(0);
+            self.work_info = Some((mcpu, prior_load));
+            true
         };
 
-        //if we have no new work data then continue what we found last time
-        if mcpu_load.is_some() {
-            self.work_info = mcpu_load;
-        }
-        let mcpu_load = self.work_info;
-
-        //only set when we get a new one otherwise we just hold the old one.
         if actor_status.thread_info.is_some() {
             self.thread_info_cache = actor_status.thread_info;
         }
+        self.total_count_restarts = self
+            .total_count_restarts
+            .max(actor_status.total_count_restarts);
+        self.bool_stalled = actor_status.is_quiet;
+        self.last_bool_stop = actor_status.bool_stop;
+        updated
+    }
+
+    /// Sets graph-share **Avg load %** and refreshes DOT / Prometheus labels.
+    ///
+    /// **Avg load %** is `100 × this_mcpu / Σ last-known graph mCPU` (hotspot share), not local CPU utilization.
+    // ss[related telemetry.dot-export]
+    pub(crate) fn apply_graph_load_and_emit(&mut self, total_mcpu: u128, accumulate: bool) {
+        if let Some((mcpu, _)) = self.work_info {
+            let load = graph_share_load(mcpu, total_mcpu);
+            self.work_info = Some((mcpu, load));
+        }
+        let mcpu_load = self.work_info;
         let thread_id = if self.stats_computer.show_thread_id {
             self.thread_info_cache
         } else {
             None
         };
-        self.total_count_restarts = self
-            .total_count_restarts
-            .max(actor_status.total_count_restarts);
-        self.bool_stalled = actor_status.is_quiet;
 
-        // Old strings for this actor are passed back in so they get cleared and re-used rather than reallocate
         let (color, pen_width) = self.stats_computer.compute(
             &mut self.display_label,
             &mut self.tooltip,
             &mut self.metric_text,
             mcpu_load,
             self.total_count_restarts,
-            actor_status.bool_stop,
-            actor_status.is_quiet,
+            self.last_bool_stop,
+            self.bool_stalled,
             thread_id,
             self.dot_subtitle.as_deref(),
+            accumulate,
         );
 
         self.color = color;
         self.pen_width = pen_width;
+    }
+
+    /// Single-node refresh (tests): local mCPU then load share against this node only (100% when alone).
+    // ss[related telemetry.dot-export]
+    pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
+        self.apply_local_mcpu(actor_status);
+        let total = self
+            .work_info
+            .map(|(mcpu, _)| mcpu as u128)
+            .unwrap_or(0);
+        self.apply_graph_load_and_emit(total, true);
     }
 }

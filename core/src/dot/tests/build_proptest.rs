@@ -42,6 +42,7 @@ fn make_node(name: &'static str, suffix: Option<usize>, label: &str) -> Node {
         thread_info_cache: None,
         total_count_restarts: 0,
         bool_stalled: false,
+        last_bool_stop: false,
         work_info: None,
     }
 }

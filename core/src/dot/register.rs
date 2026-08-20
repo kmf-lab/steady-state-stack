@@ -58,6 +58,7 @@ pub fn apply_node_def(
                 thread_info_cache: None,
                 total_count_restarts: 0,
                 bool_stalled: false,
+                last_bool_stop: false,
                 work_info: None,
             }
         });

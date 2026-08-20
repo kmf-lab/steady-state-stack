@@ -435,11 +435,14 @@ impl ActorBuilder {
         result
     }
 
-    /// Enables average workload monitoring for the actor.
+    /// Enables average graph-load (hotspot) monitoring for the actor.
+    ///
+    /// **Avg load %** is this actor's share of summed graph mCPU (`100 × this_mcpu / Σ all_mcpu`),
+    /// not local CPU utilization (see [`Self::with_mcpu_avg`]).
     ///
     /// # Returns
     ///
-    /// A new `ActorBuilder` instance with average workload monitoring enabled.
+    /// A new `ActorBuilder` instance with average graph-load monitoring enabled.
     // ss[related actor.regeneration-survives]
     pub fn with_load_avg(&self) -> Self {
         let mut result = self.clone();

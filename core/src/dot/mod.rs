@@ -84,6 +84,35 @@ pub struct DotState {
     pub(crate) bundle_floor_size: usize,
 }
 
+/// Sum of last-known mCPU across all defined actor nodes.
+// ss[related telemetry.dot-export]
+pub(crate) fn graph_mcpu_total(nodes: &[Node]) -> u128 {
+    nodes
+        .iter()
+        .filter(|n| n.id.is_some())
+        .filter_map(|n| n.work_info.map(|(mcpu, _)| mcpu as u128))
+        .sum()
+}
+
+// ss[related telemetry.dot-export]
+impl DotState {
+    /// Recomputes graph-share load for every defined node from last-known mCPU totals.
+    ///
+    /// Only indexes listed in `touched` accumulate new rolling samples; others refresh labels only.
+    // ss[related telemetry.dot-export]
+    pub(crate) fn refresh_actor_loads(&mut self, touched: &[usize]) {
+        let total = graph_mcpu_total(&self.nodes);
+        let touched_set: std::collections::HashSet<usize> = touched.iter().copied().collect();
+        for (idx, node) in self.nodes.iter_mut().enumerate() {
+            if node.id.is_none() || node.work_info.is_none() {
+                continue;
+            }
+            let accumulate = touched_set.contains(&idx);
+            node.apply_graph_load_and_emit(total, accumulate);
+        }
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 // ss[related telemetry.dot-export]
 pub struct RemoteDetails {
