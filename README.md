@@ -1,6 +1,6 @@
 # Steady State
 
-[![Leaderboard](https://my.kmf-lab.com/leaderboard/static/badge/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/kmf-lab/steady-state-stack)
+[![Leaderboard](https://my.kmf-lab.com/leaderboard/static/badge/leaderboard/kmf-lab/steady-state-stack.svg)](https://my.kmf-lab.com/leaderboard/kmf-lab/steady-state-stack)
 [![Dashboard](https://my.kmf-lab.com/leaderboard/static/badge/dashboard/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/dashboard)
 [![Honor board](https://my.kmf-lab.com/leaderboard/static/badge/honor/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/honor/kmf-lab)
 
