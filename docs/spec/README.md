@@ -20,7 +20,7 @@
 12. [Platform](11-dependencies-and-platform.md) — features, ringbuf pin  
 13. [Verification stack](12-verification-stack.md) — CI process targets  
 
-**Supplementary (non-normative):** [manifesto](../../steady_state_manifesto.md), [actor lifecycle](../actor_lifecycle.md), [channels](../channels.md), [testing](../testing.md), lessons.
+**Supplementary (non-normative):** [manifesto](../../steady_state_manifesto.md), [actor lifecycle](../actor_lifecycle.md), [channels](../channels.md), [testing](../testing.md), lessons. Architecture decisions (why, not MUST): [`docs/arch/`](../arch/).
 
 ---
 

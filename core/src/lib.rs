@@ -24,7 +24,7 @@
 //!
 //! Explore the [documentation](https://docs.rs/steady_state) and examples in the repository for more details.
 //!
-//! TODO: look for cargo all testing coverage.
+//! Testing and coverage conventions: see `docs/testing.md` and `docs/spec/12-verification-stack.md`.
 
 #![warn(missing_docs)]
 

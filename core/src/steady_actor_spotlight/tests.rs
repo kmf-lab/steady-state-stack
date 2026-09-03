@@ -22,7 +22,7 @@ use futures::FutureExt;
 // ss[related actor.shadow-spotlight]
 use std::time::Instant;
 // ss[related philosophy.single-wake-up]
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 // ss[related philosophy.structural-hierarchy]
 use crate::channel_builder::ChannelBuilder;
 // ss[related philosophy.single-wake-up]
@@ -222,3 +222,49 @@ fn test_relay_stats_tx_rx_batch() {
     });
 }
 
+
+// --- merged from steady_actor_spotlight_tests ---
+
+// ss[related philosophy.structural-hierarchy]
+// ss[related philosophy.structural-hierarchy]
+// ss[related actor.shadow-spotlight]
+// ss[related philosophy.structural-hierarchy]
+
+#[test]
+// ss[verify actor.shadow-spotlight]
+fn test_spotlight_wait_periodic_overrun() {
+    let graph = GraphBuilder::for_testing().build(());
+    let shadow = graph.new_testing_test_monitor("test");
+    let mut spotlight = shadow.into_spotlight([], []);
+    spotlight.use_internal_behavior = true;
+    
+    // Force last to be ahead of now to trigger overrun warning
+    let real_now = spotlight.actor_start_time.elapsed().as_nanos() as u64;
+    spotlight.last_periodic_wait.store(real_now + 1_000_000_000, Ordering::SeqCst);
+    
+    core_exec::block_on(spotlight.wait_periodic(Duration::from_millis(10)));
+}
+
+#[test]
+// ss[verify actor.shadow-spotlight]
+fn test_spotlight_wait_timeout() {
+    let graph = GraphBuilder::for_testing().build(());
+    let shadow = graph.new_testing_test_monitor("test");
+    let spotlight = shadow.into_spotlight([], []);
+    
+    let start = Instant::now();
+    let result = core_exec::block_on(spotlight.wait_timeout(Duration::from_millis(50)));
+    assert!(result);
+    assert!(start.elapsed() >= Duration::from_millis(50));
+}
+
+#[test]
+// ss[verify actor.shadow-spotlight]
+fn test_spotlight_relay_stats_periodic() {
+    let graph = GraphBuilder::for_testing().build(());
+    let shadow = graph.new_testing_test_monitor("test");
+    let mut spotlight = shadow.into_spotlight([], []);
+    
+    let result = core_exec::block_on(spotlight.relay_stats_periodic(Duration::from_millis(10)));
+    assert!(result);
+}

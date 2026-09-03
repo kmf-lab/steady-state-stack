@@ -10,7 +10,15 @@ use std::time::Instant;
 // ss[related philosophy.structural-hierarchy]
 mod format_tests;
 // ss[impl telemetry.dot-export]
-mod build_tests;
+mod build_node_tests;
+// ss[impl telemetry.dot-export]
+mod build_edge_fill_tests;
+// ss[impl telemetry.dot-export]
+mod build_tooltip_tests;
+// ss[impl telemetry.dot-export]
+mod build_load_tests;
+// ss[impl telemetry.dot-export]
+mod build_memory_tests;
 // ss[impl telemetry.dot-export]
 mod history_tests;
 // ss[related philosophy.structural-hierarchy]

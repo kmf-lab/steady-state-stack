@@ -492,6 +492,8 @@ mod code_generation_tests {
                     let dot_file = format!("{}.dot", test_name);
                     fs::write(&dot_file, graph_dot).expect("Failed to write dot file");
                     process_dot_file(&dot_file, test_name);
+                    // Generated template pins crates.io; use workspace `core` so tests work before publish.
+                    rewrite_generated_cargo_toml_for_local_core(test_name);
 
                 println!("____________________________________________________________-----------------------------------------------------------");
                     do_cargo_cache_install(test_name);
@@ -506,6 +508,40 @@ mod code_generation_tests {
 
             }
         }
+}
+
+/// Point generated projects at the in-tree `core` crate (from `test_run/<name>/`, that is `../../../core`).
+/// Keeps codegen integration tests green when the template version is not yet on crates.io.
+// ss[related tooling.cargo-driver-strings]
+fn rewrite_generated_cargo_toml_for_local_core(test_name: &str) {
+    let cargo_toml = PathBuf::from(test_name).join("Cargo.toml");
+    let content = fs::read_to_string(&cargo_toml)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", cargo_toml.display(), e));
+    let mut rewritten = String::with_capacity(content.len() + 64);
+    let mut replaced = false;
+    for line in content.lines() {
+        let trimmed = line.trim_start();
+        if !replaced
+            && trimmed.starts_with("steady_state")
+            && trimmed.contains('=')
+            && !trimmed.starts_with('#')
+            && !trimmed.contains("path")
+        {
+            rewritten.push_str(r#"steady_state     = { path = "../../../core" }"#);
+            rewritten.push('\n');
+            replaced = true;
+        } else {
+            rewritten.push_str(line);
+            rewritten.push('\n');
+        }
+    }
+    assert!(
+        replaced,
+        "Expected a crates.io steady_state dep in {} to rewrite for local core",
+        cargo_toml.display()
+    );
+    fs::write(&cargo_toml, rewritten)
+        .unwrap_or_else(|e| panic!("Failed to write {}: {}", cargo_toml.display(), e));
 }
 
 // ss[related tooling.cargo-driver-strings]
