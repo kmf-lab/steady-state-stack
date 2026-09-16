@@ -426,7 +426,7 @@ ss_proptest! {
     fn proptest_shadow_relay_stats_smartly_false(
         _seed in 0..1u8,
     ) {
-        let mut graph = GraphBuilder::for_testing().build(());
+        let graph = GraphBuilder::for_testing().build(());
         let mut shadow = graph.new_testing_test_monitor("shadow_relay");
         prop_assert!(!shadow.relay_stats_smartly());
     }

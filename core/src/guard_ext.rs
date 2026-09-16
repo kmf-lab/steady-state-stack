@@ -31,8 +31,8 @@ use crate::{SteadyRx, SteadyTx};
 /// Guard-first acquisition for [`SteadyRx`] / [`SteadyTx`] handles.
 ///
 /// `acquire_guard().await` is the preferred spelling of `.lock().await` on Steady
-/// channel handles. It yields the same guard; only the vocabulary changes. See the
-/// [module documentation](self) for why Steady says "guard" and not "lock".
+/// channel handles. It yields the same guard; only the vocabulary changes. The
+/// module docs explain why Steady says "guard" and not "lock".
 // ss[related philosophy.structural-hierarchy]
 pub trait SteadyChannelExt {
     /// The guard type bound to this actor instance for the borrow of the handle.

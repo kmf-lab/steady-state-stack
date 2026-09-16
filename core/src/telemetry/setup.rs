@@ -1,3 +1,12 @@
+#![cfg_attr(
+    not(any(
+        feature = "telemetry_server_builtin",
+        feature = "telemetry_server_cdn",
+        feature = "prometheus_metrics"
+    )),
+    allow(dead_code, unused_imports, unused_variables)
+)]
+
 // ss[impl telemetry.builtin-server]
 use std::collections::VecDeque;
 // ss[related philosophy.structural-hierarchy]
@@ -579,9 +588,6 @@ mod tests {
     // ss[related philosophy.structural-hierarchy]
     use super::*;
 
-    // ss[impl telemetry.builtin-server]
-    use crate::GraphBuilder;
-
     #[test]
     // ss[verify telemetry.builtin-server]
     fn test_compute_scale_up_delay() {
@@ -791,6 +797,9 @@ mod tests {
     #[cfg(feature = "prometheus_metrics")]
     // ss[related philosophy.structural-hierarchy]
     fn construct_telemetry_channels_zero_len_registers_actor_only() {
+        // ss[impl telemetry.builtin-server]
+        use crate::GraphBuilder;
+
         let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("zero_channel_actor");
         let (send_rx, send_tx, state) =

@@ -6,6 +6,22 @@
 
 ## Unreleased (current branch)
 
+### Lambda warm graph
+
+- New: `GraphBuilder::for_lambda()`, `Graph::lambda_bridge`, `new_persistent_state_with`, optional feature `lambda` + `ureq` Runtime API.
+- Tests: use `for_testing().with_strict_persist()` (do not call `for_lambda` under `cfg(test)`).
+- Persist before every park when `on_persist` is set; `/tmp` is not durable across sandboxes.
+- Do **not** enable Steady `tokio` for Lambda. Cargo-lambda remains packaging only.
+- See [14-lambda](spec/14-lambda.md) and ADR [005](arch/005-lambda-warm-graph.md).
+
+### Dynamic troupe packing
+
+- New: `Graph::dynamic_troupe()`, `GraphBuilder::with_pack_slots`, packing finalize inside `start`.
+- Drop of a **normal** troupe still spawns; drop of a **dynamic** bag does not (Graph owns the bag; `start` packs).
+- `ScheduleAs::dynamic_schedule` is **unchanged** — do not confuse with dynamic troupe packing.
+- Tests: pin slots with `with_pack_slots`; `for_testing` defaults to 1 packed slot.
+- See [13-troupe-packing](spec/13-troupe-packing.md) and [lesson-on-dynamic-troupes](../lesson-on-dynamic-troupes.md).
+
 ### Threading / executor (breaking)
 
 - Remove Cargo features `exec_async_std`, `proactor_nuclei`, and `proactor_tokio`. The default crate uses OS-thread `block_on`.

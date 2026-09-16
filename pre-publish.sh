@@ -1,4 +1,6 @@
 #!/bin/bash
+# Fail the script when any command in a pipeline fails (e.g. nextest | tee).
+set -o pipefail
 
 # Removed niceness adjustment for faster execution.
 # If system responsiveness is a concern, you can re-enable it:
@@ -64,7 +66,7 @@ fi
 # Use --test-threads to manually override if desired (e.g., --test-threads=4)
 # Gate A: unit + examples; live Aeron binaries excluded (see .config/nextest.toml + SS_AERON_GATE_C guard).
 # Do NOT add SS_AERON_GATE_C=1 here — that runs the 15+ minute driver suite.
-RUST_BACKTRACE=full RUST_LOG=debug cargo nextest run --workspace --profile ci-unit --examples --tests | tee cargo_test.txt
+RUST_BACKTRACE=1 RUST_LOG=warn cargo nextest run --workspace --profile ci-unit --examples --tests | tee cargo_test.txt
 exit_code=$?
 
 if [ $exit_code -ne 0 ]; then
@@ -74,6 +76,17 @@ fi
 echo "====================================================================================================================="
 echo "============ success all tests ran well ============================================================================="
 echo "====================================================================================================================="
+
+echo "---------------------------------------------------------------------------------"
+echo "------------ bounded cargo-fuzz (parse/protocol) — scripts/run-fuzz.sh -----------"
+echo "---------------------------------------------------------------------------------"
+echo "Skip with SS_SKIP_FUZZ=1 if nightly Rust or clang is unavailable."
+bash scripts/run-fuzz.sh
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "cargo-fuzz campaign failed with exit code $exit_code"
+    exit $exit_code
+fi
 
 #echo "---------------------------------------------------------------------------------"
 #echo "------------ scoped cargo-mutants (steady_state) -- see core/mutants.toml ---------"
@@ -115,7 +128,7 @@ fi
 cd ..
 
 # Optional: List directory structure excluding target
-tree -I 'target'
+# tree -I 'target'
 
 # Run cargo outdated and audit
 # Consider running these periodically rather than before every release to save time
@@ -123,8 +136,19 @@ cargo install cargo-outdated
 echo "cargo outdated"
 cargo outdated | tee cargo_outdated.txt
 
+if ! command -v cargo-audit &> /dev/null; then
+    echo "cargo-audit not found, installing..."
+    cargo +stable install cargo-audit --locked
+fi
 echo "cargo audit"
-cargo audit | tee cargo_audit.txt
+# cargo-audit >= 0.22 is required to parse CVSS 4.0 advisories in advisory-db.
+cargo +stable audit | tee cargo_audit.txt
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "cargo audit failed with exit code $exit_code"
+    echo "If the advisory DB fails to parse (e.g. CVSS 4.0), upgrade: cargo install cargo-audit"
+    exit $exit_code
+fi
 
 # Install current cargo-steady-state
 # Ensure this is necessary for your release process
@@ -143,8 +167,9 @@ echo "--------------------------------------------------------------------------
 # - Aeron / aqueduct / media-driver paths stay thin unless CI runs with a real Aeron Media Driver;
 #   do not gate releases on those modules reaching high % without that setup (see CHANGELOG
 #   "Coverage (pre-release scope)").
-# Gate B guard: block accidental `cargo llvm-cov test --tests` (runs live Aeron Gate C binaries).
-bash scripts/guard-llvm-cov-scope.sh --tests
+# Gate B guard: fail if this script is ever invoked with `--tests` / live Aeron suite flags.
+# Do not pass those flags here — that would make the guard fail the release run.
+bash scripts/guard-llvm-cov-scope.sh
 bash scripts/run-llvm-cov-release.sh
 
 

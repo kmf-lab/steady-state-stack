@@ -174,7 +174,7 @@ mod wait_helpers_proptest {
     // ss[related philosophy.structural-hierarchy]
     use crate::{GraphBuilder, SteadyActor};
     // ss[related actor.run-dispatcher]
-    use crate::steady_actor_shadow::SteadyActorShadow;
+    
     // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 

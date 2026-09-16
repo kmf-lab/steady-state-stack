@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Fuzz (cargo-fuzz, parse/protocol)
+
+- `core/fuzz` libFuzzer targets: `aeron_channel_uri`, `fast_protocol_packed`, `cgroup_quota`, `pack_even_split`.
+- Non-default `fuzzing` feature re-exports cgroup/pack/FAST internals for those targets only.
+- Local/pre-publish campaign: `bash scripts/run-fuzz.sh` (`SS_FUZZ_SECONDS`, skip with `SS_SKIP_FUZZ=1`).
+- Spec: `verify.process.fuzz` waiver lifted. Notes: `docs/fuzz.md`.
+
+### Lambda warm graph (`for_lambda`, no Tokio)
+
+- `GraphBuilder::for_lambda()` — telemetry off, no fail-fast exit, no StageManager, pack detect, 256 KiB stacks, **strict persist**.
+- Host bridge: `Graph::lambda_bridge` → `LambdaHost` / `LambdaIngress` / `LambdaEgress` (blocking inject / wait-output on the host thread).
+- `StateGuard` dirty bit + `new_persistent_state_with`; dirty-at-park under `with_strict_persist` / `for_lambda`.
+- Optional Cargo feature **`lambda`**: blocking Runtime API client via `ureq` only (does **not** enable Steady `tokio`). Example: `cargo run -p steady_state --example lambda_warm --features lambda`.
+- Spec: `docs/spec/14-lambda.md`. ADR: `docs/arch/005-lambda-warm-graph.md`.
+
+### Coverage (`ss_proptest!`)
+
+- Targeted properties for telemetry `parse_host_port` / `process_msg` / `generate_reports`, pack-edge rebuild + Kruskal leftovers, persist dirty-bit / persist-hook errors, Lambda Runtime API env/error paths, and pack-port identity.
+- Follow-on: `DoubleSlice` / `QuadSlice` / `StreamQuadSliceCopy`, `SimIndexable` / `MetaIndexable`, shutdown `report_votes` veto dump, Tx/stream `one`/`log_perodic`/capacity predicates, and `GraphBuilder::default`/`for_production` test panics.
+- **Gate B (merged, 2026-09-12):** `scripts/run-llvm-cov-release.sh` → **83.7%** lines (19720 / 23569), **70.7%** functions (13861 / 19606). Prior same-day remasure was 82.5% / 70.0%.
+
+### Dynamic troupe packing (startup schedule)
+
+- `Graph::dynamic_troupe()` — build-time bag; `MemberOf` adds packable actors; **no** OS thread on Drop.
+- `Graph::start` / `start_with_timeout` finalize packing **before** `wait_for_registrations` (even-split or Kruskal on build-time incidence).
+- `GraphBuilder::with_pack_slots(n)` / `SS_PACK_SLOTS`; `for_testing` defaults to 1 packed slot.
+- Slot budget prefers cgroup CPU quota over host core count; SoloAct / normal troupes reserve threads.
+- `ActorBuilder::with_pack_ports` / `with_pack_ports_from`; lazy `pack_channel_id()` without establish.
+- Example: `cargo run -p steady_state --example dynamic_troupe`. Spec: `docs/spec/13-troupe-packing.md`. Lesson: `lesson-on-dynamic-troupes.md`.
+- `ScheduleAs::dynamic_schedule` is unchanged (Solo vs optional normal troupe) — different feature.
+
 ## 0.3.1
 
 ### Telemetry: graph-share Avg load
@@ -38,7 +69,7 @@ All notable changes to this project are documented in this file.
 - **Goal:** Raise merged `llvm-cov` coverage incrementally (Tier 1/2 tests below); do **not** treat full **Aeron** / **aqueduct** stacks or huge **spotlight/shadow** surfaces as release blockers without dedicated CI (e.g. media driver jobs).
 - **Interpretation:** When comparing totals, use the **same** two feature-set runs as `pre-publish.sh` and **merge** LCOVs; a single default `cargo llvm-cov -p steady_state` total will not match release-style numbers. Install the **`lcov`** package locally to run `lcov` / `genhtml` merge steps (`merged.lcov`, `coverage_html/`).
 - **Out of scope for strict thresholds (unless policy changes):** `distributed/aeron_*`, deep **aqueduct** integration, **`test_panic_capture`** (panic harness), and **`simulate_edge`** — low or noisy coverage there is expected without extra infrastructure or exclusions.
-- **Gate B (merged, 2026-08-18):** `scripts/run-llvm-cov-release.sh` → **82.1%** lines (17028 / 20751), **66.0%** functions (8237 / 12482). Informational; Aeron/spotlight/panic-harness remain waived.
+- **Gate B (merged, 2026-09-12):** `scripts/run-llvm-cov-release.sh` → **83.7%** lines (19720 / 23569), **70.7%** functions (13861 / 19606). Informational; Aeron/spotlight/panic-harness remain waived. Earlier same-day remasure was 82.5% / 70.0%; 2026-08-18 was 82.1% / 66.0% on a smaller surface.
 
 ### `SteadyActor` index waits
 

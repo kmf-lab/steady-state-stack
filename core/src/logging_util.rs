@@ -196,8 +196,9 @@ pub mod steady_logger {
         // Enable test mode when capture starts
         IS_TEST_MODE.store(true, Ordering::SeqCst);
 
-        // Initialize logger in test mode if not already done
-        let _ = initialize();
+        // Capture tests emit info! markers; bump the filter so assert_in_logs! still sees them
+        // when the process default is RUST_LOG=warn (pre-publish / llvm-cov).
+        let _ = initialize_with_level(LogLevel::Info);
 
         let test_state = TestCaptureState {
             is_capturing: Arc::new(AtomicBool::new(true)),
@@ -219,11 +220,46 @@ pub mod steady_logger {
     pub fn initialize() -> Result<(), Box<dyn Error>> {
         let mut logger_handle = LOGGER_HANDLE.lock().expect("log init");
         if logger_handle.is_none() {
-            let level = LogLevel::Info; // Default level
+            let level = log_level_from_env();
             let handle = steady_logging_init(level, None)?;
             *logger_handle = Some(handle);
         }
         Ok(())
+    }
+
+    /// Default log level: `RUST_LOG` when it names a known level, otherwise Info.
+    fn log_level_from_env() -> LogLevel {
+        std::env::var("RUST_LOG")
+            .ok()
+            .as_deref()
+            .map(parse_rust_log_spec)
+            .unwrap_or(LogLevel::Info)
+    }
+
+    // ss[related philosophy.structural-hierarchy]
+    pub(crate) fn parse_rust_log_spec(spec: &str) -> LogLevel {
+        let first = spec.split(',').next().unwrap_or(spec).trim();
+        if first.is_empty() {
+            return LogLevel::Info;
+        }
+        let token = match first.split_once('=') {
+            Some((module, level))
+                if module.is_empty() || module.eq_ignore_ascii_case("steady_state") =>
+            {
+                level.trim()
+            }
+            Some(_) => first,
+            None => first,
+        };
+        match token.to_ascii_lowercase().as_str() {
+            "off" => LogLevel::Off,
+            "error" => LogLevel::Error,
+            "warn" | "warning" => LogLevel::Warn,
+            "info" => LogLevel::Info,
+            "debug" => LogLevel::Debug,
+            "trace" => LogLevel::Trace,
+            _ => LogLevel::Info,
+        }
     }
 
     /// Initializes the logger with a specific log level, or changes the level if already initialized.
@@ -374,7 +410,24 @@ mod tests {
         initialize, initialize_with_level, initialize_with_level_and_file, start_log_capture,
     };
     // ss[related philosophy.structural-hierarchy]
-    use crate::{assert_in_logs, LogFileConfig, LogLevel};
+    use crate::{LogFileConfig, LogLevel};
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
+    fn log_level_from_env_maps_bare_and_crate_specs() {
+        assert_eq!(
+            super::steady_logger::parse_rust_log_spec("warn"),
+            LogLevel::Warn
+        );
+        assert_eq!(
+            super::steady_logger::parse_rust_log_spec("steady_state=debug"),
+            LogLevel::Debug
+        );
+        assert_eq!(
+            super::steady_logger::parse_rust_log_spec("nope"),
+            LogLevel::Info
+        );
+    }
 
     #[test]
     // ss[verify philosophy.structural-hierarchy]

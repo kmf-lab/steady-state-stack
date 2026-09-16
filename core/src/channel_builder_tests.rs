@@ -42,7 +42,7 @@ mod tests_inputs {
         #[test]
         // ss[verify channel.backpressure-never-drop]
         // ss[verify verify.process.proptest]
-        fn proptest_filled_pN_equivalence(n in 1u64..=10u64) {
+        fn proptest_filled_pn_equivalence(n in 1u64..=10u64) {
             let expected = Filled::Percentage(n * 10, 100);
             let actual = match n {
                 1 => Filled::p10(),

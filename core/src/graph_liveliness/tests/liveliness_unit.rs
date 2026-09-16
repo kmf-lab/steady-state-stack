@@ -1,12 +1,10 @@
 // ss[related graph.for-testing]
 use super::super::{
-    effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
+    effective_block_until_stopped_timeout, ActorIdentity, GraphLiveliness,
     GraphLivelinessState, ShutdownVote, VoterStatus,
 };
 // ss[related graph.liveliness-voters]
 use crate::core_exec;
-// ss[related philosophy.structural-hierarchy]
-use crate::{ScheduleAs, SteadyActor};
 // ss[related philosophy.structural-hierarchy]
 use futures::lock::Mutex as FutMutex;
 // ss[related graph.liveliness-voters]

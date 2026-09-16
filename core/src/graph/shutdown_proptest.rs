@@ -257,3 +257,78 @@ ss_proptest! {
         prop_assert_eq!(rs.read().state.clone(), GraphLivelinessState::Stopped);
     }
 }
+
+#[cfg(test)]
+mod report_votes_tests {
+    use super::*;
+    use crate::expression_steady_eye::Eye;
+    use crate::telemetry::{metrics_collector, metrics_server};
+    use std::backtrace::Backtrace;
+    use super::super::report_votes;
+
+    // ss[verify graph.shutdown.veto]
+    #[test]
+    fn report_votes_dumps_veto_reason_and_skips_internal_actors() {
+        let rs = new_liveliness(0);
+        {
+            let mut w = rs.write();
+            w.votes = Arc::new(
+                vec![
+                    FutMutex::new(ShutdownVote {
+                        id: 0,
+                        in_favor: false,
+                        signature: Some(ActorIdentity::new(0, "worker", None)),
+                        voter_status: VoterStatus::Registered(ActorIdentity::new(0, "worker", None)),
+                        veto_backtrace: Some(Backtrace::capture()),
+                        veto_reason: Some(Eye {
+                            expression: "rx.is_closed_and_empty()",
+                            file: "actor.rs",
+                            line: 10,
+                        }),
+                    }),
+                    FutMutex::new(ShutdownVote {
+                        id: 1,
+                        in_favor: true,
+                        signature: Some(ActorIdentity::new(1, metrics_server::NAME, None)),
+                        voter_status: VoterStatus::Registered(ActorIdentity::new(
+                            1,
+                            metrics_server::NAME,
+                            None,
+                        )),
+                        ..Default::default()
+                    }),
+                    FutMutex::new(ShutdownVote {
+                        id: 2,
+                        in_favor: false,
+                        signature: Some(ActorIdentity::new(2, metrics_collector::NAME, None)),
+                        voter_status: VoterStatus::Dead(ActorIdentity::new(
+                            2,
+                            metrics_collector::NAME,
+                            None,
+                        )),
+                        veto_backtrace: Some(Backtrace::capture()),
+                        veto_reason: None,
+                    }),
+                    FutMutex::new(ShutdownVote {
+                        id: 3,
+                        in_favor: true,
+                        signature: None,
+                        voter_status: VoterStatus::None,
+                        ..Default::default()
+                    }),
+                    FutMutex::new(ShutdownVote {
+                        id: 4,
+                        in_favor: false,
+                        signature: Some(ActorIdentity::new(4, "locked", None)),
+                        voter_status: VoterStatus::Registered(ActorIdentity::new(4, "locked", None)),
+                        ..Default::default()
+                    }),
+                ]
+                .into_boxed_slice(),
+            );
+            let votes = w.votes.clone();
+            let _held_guard = core_exec::block_on(votes[4].lock());
+            report_votes(&mut w);
+        }
+    }
+}

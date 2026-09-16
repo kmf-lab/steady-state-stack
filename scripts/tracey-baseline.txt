@@ -7,4 +7,5 @@ steady-state/rust-core: 36 unmapped code units out of 2752 total (~98.7% mapped)
 # Excellent target: TRACEY_MAPPED_PERCENT=90 bash scripts/tracey-unmapped-gate.sh
 
 # rust-core uncovered (expected): tooling.cargo-* (5, rust-cli scoped),
-# verify.process.fuzz, verify.process.mutants, platform.aeron-out-of-scope-coverage (waivers)
+# verify.process.mutants, platform.aeron-out-of-scope-coverage (waivers).
+# verify.process.fuzz is implemented (core/fuzz + scripts/run-fuzz.sh).

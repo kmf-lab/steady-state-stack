@@ -171,7 +171,7 @@ fuzz_target!(|input: FullGraphFuzzInput| {
 
 ### Best Practices & Gotchas
 
-1. **Start small** — convert one existing proptest (individual actor) into a fuzz target first.
+1. **Start with parse/protocol, not full graphs** — in-tree targets are `aeron_channel_uri`, `fast_protocol_packed`, `cgroup_quota`, and `pack_even_split` (`bash scripts/run-fuzz.sh`). Actor/`full_graph` fuzz hangs and burns iterations; keep that for a later campaign.
 2. **Share code aggressively** — put common test helpers in `tests/common.rs` or a `fuzz_utils` module.
 3. **Use `#[derive(Arbitrary)]` + proptest strategies** — the `arbitrary` crate works beautifully with the same types you already use.
 4. **Run fuzzers locally first** — `cargo fuzz run full_graph -- -max_total_time=300` (5 minutes).

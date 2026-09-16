@@ -5,7 +5,6 @@ use crate::channel_builder::ChannelBuilder;
 // ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::{DotSubtitleMailbox, SteadyTelemetrySend, DOT_SUBTITLE_MAX_CHARS};
 // ss[related philosophy.structural-hierarchy]
-use crate::ss_proptest_telemetry;
 // ss[related telemetry.prometheus-metrics]
 use crate::{MONITOR_NOT, MONITOR_UNKNOWN};
 // ss[related philosophy.structural-hierarchy]

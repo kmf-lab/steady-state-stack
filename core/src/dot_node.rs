@@ -118,6 +118,7 @@ impl Node {
 
     /// Single-node refresh (tests): local mCPU then load share against this node only (100% when alone).
     // ss[related telemetry.dot-export]
+    #[cfg(test)]
     pub(crate) fn compute_and_refresh(&mut self, actor_status: ActorStatus) {
         self.apply_local_mcpu(actor_status);
         let total = self

@@ -2,7 +2,6 @@
 //! Accesses DummyActor and shutdown helpers via `super`.
 
 use super::*;
-use proptest::prelude::*;
 
 proptest! {
     #![proptest_config(ProptestConfig {

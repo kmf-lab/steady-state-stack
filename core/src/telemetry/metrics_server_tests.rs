@@ -1,7 +1,5 @@
 //! Tests extracted from `metrics_server.rs` so the production file stays under the 1,200-line budget.
-//! Nested test mods keep their own imports; `use super::*` at the top re-exports the parent.
-
-use super::*;
+//! Nested test mods keep their own imports.
 
 #[cfg(test)]
 // ss[impl telemetry.builtin-server]
@@ -60,6 +58,7 @@ mod meteric_server_tests {
 
 #[cfg(not(windows))]
 #[cfg(test)]
+#[cfg(all(feature = "prometheus_metrics", feature = "telemetry_server_builtin"))]
 // ss[impl telemetry.builtin-server]
 mod http_telemetry_tests {
     // ss[related philosophy.structural-hierarchy]
@@ -183,6 +182,7 @@ mod http_telemetry_tests {
 
     /// Checks if an address can be bound to and returns the local address if successful.
     // ss[impl telemetry.builtin-server]
+    #[cfg(all(feature = "prometheus_metrics", feature = "telemetry_server_builtin"))]
     pub(crate) fn check_addr(addr: &str) -> Option<String> {
         if let Ok(h) = TcpListener::bind(addr) {
             let local_addr = h.local_addr().expect("Unable to get local address");
@@ -193,6 +193,7 @@ mod http_telemetry_tests {
     }
 
     // ss[impl telemetry.builtin-server]
+    #[cfg(all(feature = "prometheus_metrics", feature = "telemetry_server_builtin"))]
     fn stand_up_test_server(addr: &str) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
         // Step 1: Set up a minimal graph
         let mut graph = GraphBuilder::for_testing()
@@ -214,6 +215,7 @@ mod http_telemetry_tests {
     }
 
     // ss[impl telemetry.builtin-server]
+    #[cfg(all(feature = "prometheus_metrics", feature = "telemetry_server_builtin"))]
     fn launch_server(mut graph: Graph, server_ip: Option<String>, tx_in: LazySteadyTx<DiagramData>
                            , rx_in: LazySteadyRx<DiagramData>) -> (Graph, Option<String>, LazySteadyTx<DiagramData>) {
 
@@ -272,6 +274,7 @@ mod http_telemetry_tests {
     }
 
     // ss[impl telemetry.builtin-server]
+    #[cfg(all(feature = "prometheus_metrics", feature = "telemetry_server_builtin"))]
     fn validate_path(addr: &&String, expected_text: Option<&str>, path: &str) {
         match isahc::get(format!("http://{}/{}", &addr, &path)) {
             Ok(response) => {

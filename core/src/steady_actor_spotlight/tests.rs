@@ -6,8 +6,6 @@ use crate::*;
 // ss[related philosophy.structural-hierarchy]
 use crate::monitor::ActorMetaData;
 // ss[related philosophy.single-wake-up]
-use std::ops::DerefMut;
-// ss[related philosophy.single-wake-up]
 use std::time::Duration;
 // ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
@@ -23,10 +21,6 @@ use futures::FutureExt;
 use std::time::Instant;
 // ss[related philosophy.single-wake-up]
 use std::sync::atomic::{AtomicUsize, Ordering};
-// ss[related philosophy.structural-hierarchy]
-use crate::channel_builder::ChannelBuilder;
-// ss[related philosophy.single-wake-up]
-use crate::steady_actor::SendOutcome;
 // ss[related philosophy.single-wake-up]
 use crate::steady_actor_shadow::SteadyActorShadow;
 // ss[related philosophy.structural-hierarchy]
@@ -69,33 +63,9 @@ fn test_steady_context() -> SteadyActorShadow {
         index_wait_last_avail: AtomicUsize::new(usize::MAX),
         index_wait_last_vacant: AtomicUsize::new(usize::MAX),
         index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
+        expected_pack_ports: None,
+        strict_persist: false,
     }
-}
-
-// ss[related philosophy.single-wake-up]
-fn create_rx<T: std::fmt::Debug>(data: Vec<T>) -> (Arc<Mutex<Tx<T>>>, Arc<Mutex<Rx<T>>>) {
-    let (tx, rx) = create_test_channel(10);
-    let send = tx.clone();
-    if let Some(ref mut send_guard) = send.try_lock() {
-        for item in data {
-            let _ = send_guard.shared_try_send(item);
-        }
-    }
-    (tx.clone(), rx.clone())
-}
-
-// ss[related philosophy.single-wake-up]
-fn create_test_channel<T: Debug>(capacity: usize) -> (LazySteadyTx<T>, LazySteadyRx<T>) {
-    let oneshot_shutdown_vec = Arc::new(Mutex::new(Vec::new()));
-    let builder = ChannelBuilder::new(
-        Arc::new(Default::default()),
-        oneshot_shutdown_vec.clone(),
-        40,
-    )
-    .with_capacity(capacity);
-    let result = builder.build_channel::<T>();
-    Box::leak(Box::new(oneshot_shutdown_vec));
-    result
 }
 
 #[test]

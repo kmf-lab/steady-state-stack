@@ -39,6 +39,8 @@ Each lesson is a full runnable project. Work them in order:
 
 In-tree distributed example (same idea as the lesson): [core/examples/steady-state-distributed](https://github.com/kmf-lab/steady-state-stack/tree/main/core/examples/steady-state-distributed).
 
+**Startup packing:** [core/examples/dynamic_troupe](examples/dynamic_troupe) maps a fixed graph onto this process’s CPU slots at `Graph::start` (not a pool). See [lesson-on-dynamic-troupes.md](../lesson-on-dynamic-troupes.md).
+
 ## Observability
 
 With telemetry enabled, open:

@@ -28,8 +28,6 @@ mod render;
 // ss[related telemetry.dot-export]
 pub(crate) use build::build_dot;
 // ss[impl telemetry.dot-export]
-pub(crate) use colors::actor_fillcolor_hex_into;
-// ss[impl telemetry.dot-export]
 pub(crate) use frames::DotGraphFrames;
 // ss[related telemetry.dot-export]
 pub(crate) use history::FrameHistory;
@@ -40,32 +38,32 @@ pub(crate) use register::apply_node_def;
 
 #[cfg(test)]
 // ss[related telemetry.dot-export]
-pub(crate) use colors::{color_to_rgb, rgb_to_hex_into};
+pub(crate) use colors::{actor_fillcolor_hex_into, color_to_rgb, rgb_to_hex_into};
 #[cfg(test)]
 // ss[impl telemetry.dot-export]
 pub(crate) use escape::{escape_dot_quotes, escape_node_tooltip_text};
 #[cfg(test)]
 // ss[related telemetry.dot-export]
-pub(crate) use format::{
-    append_channel_fill_tooltip, format_avg_fill_rollup_line_into,
-    mean_avg_fill_from_edge_slice, mean_avg_fill_percent,
-};
+pub(crate) use format::mean_avg_fill_percent;
 #[cfg(test)]
 // ss[related telemetry.dot-export]
 pub(crate) use register::define_unified_edges;
-
+#[cfg(test)]
 // ss[impl telemetry.dot-export]
 use crate::actor_stats::ActorStatsComputer;
+#[cfg(test)]
 // ss[related telemetry.dot-export]
 use crate::channel_stats::ChannelStatsComputer;
+#[cfg(test)]
+// ss[impl telemetry.dot-export]
+use std::fs::OpenOptions;
+
 // ss[impl telemetry.dot-export]
 use crate::dot_edge::Edge;
 // ss[impl telemetry.dot-export]
 use crate::dot_node::Node;
 // ss[related telemetry.dot-export]
 use crate::*;
-// ss[impl telemetry.dot-export]
-use std::fs::OpenOptions;
 
 /// Represents the state of metrics for the graph, including nodes and edges.
 #[derive(Default)]

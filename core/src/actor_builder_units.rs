@@ -342,10 +342,10 @@ mod tests {
         #[test]
         // ss[verify actor.regeneration-survives]
         // ss[verify verify.process.proptest]
-        fn proptest_work_pN_equivalence(n in 1u64..=10u64) {
+        fn proptest_work_pn_equivalence(n in 1u64..=10u64) {
             let percent = (n * 10) as f32;
             let from_new = Work::new(percent).expect("valid percent");
-            let from_pN = match n {
+            let from_pn = match n {
                 1 => Work::p10(),
                 2 => Work::p20(),
                 3 => Work::p30(),
@@ -358,7 +358,7 @@ mod tests {
                 10 => Work::p100(),
                 _ => unreachable!(),
             };
-            prop_assert_eq!(from_new, from_pN);
+            prop_assert_eq!(from_new, from_pn);
             prop_assert_eq!(from_new.rational(), (from_new.work as u64, 10_000));
         }
     }

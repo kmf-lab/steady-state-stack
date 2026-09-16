@@ -11,7 +11,6 @@ use crate::distributed::aqueduct_stream::{
     Defrag, StreamControlItem, StreamEgress, StreamIngress,
 };
 // ss[related distributed.aqueduct-stream]
-use crate::ss_proptest;
 
 ss_proptest! {
     /// Property: stream control item lengths match payload sizes from builders.

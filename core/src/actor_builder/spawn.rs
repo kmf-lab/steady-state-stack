@@ -1,5 +1,6 @@
 // ss[related actor.regeneration-survives]
-use super::affinity::{pin_thread_to_core, CoreBalancer};
+#[cfg(feature = "core_affinity")]
+use super::affinity::pin_thread_to_core;
 // ss[related philosophy.structural-hierarchy]
 use super::builder::ActorBuilder;
 // ss[related philosophy.structural-hierarchy]
@@ -8,13 +9,11 @@ use super::context::{
     NonSendWrapper, SteadyContextArchetype,
 };
 // ss[related actor.regeneration-survives]
-use super::troupe::{Troupe, TroupeGuard};
+use super::troupe::TroupeGuard;
 // ss[related philosophy.structural-hierarchy]
 use crate::steady_actor_shadow::SteadyActorShadow;
 // ss[related philosophy.structural-hierarchy]
 use crate::*;
-// ss[related actor.regeneration-survives]
-use futures_util::lock::Mutex;
 // ss[related philosophy.structural-hierarchy]
 use std::error::Error;
 // ss[related philosophy.structural-hierarchy]
@@ -23,8 +22,6 @@ use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 // ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::Ordering;
-// ss[related philosophy.structural-hierarchy]
-use std::sync::Arc;
 
 /// Launches an actor by blocking on its future until completion.
 ///
@@ -47,26 +44,26 @@ pub fn launch_actor<F: Future<Output = T>, T>(future: F) -> T {
     core_exec::block_on(future)
 }
 
-/// Represents the scheduling options for an actor, either as a solo act or a member of a troupe.
+/// Represents the scheduling options for an actor: solo OS thread or member of a troupe guard.
+///
+/// `MemberOf` takes a [`TroupeGuard`] so both **normal** (spawn-on-Drop) and **dynamic**
+/// (pack-at-start) troupes use the same call site. See `docs/spec/13-troupe-packing.md`.
 // ss[related actor.regeneration-survives]
+// ss[impl troupe.dynamic-member-of]
 pub enum ScheduleAs<'a> {
     /// THE actor runs independently on its own thread.
     SoloAct,
-    /// THE actor is part of a troupe, sharing a thread with other actors.
-    MemberOf(&'a mut Troupe),
+    /// THE actor is part of a troupe (normal or dynamic), sharing a thread with other actors
+    /// after spawn / packing finalize.
+    MemberOf(&'a mut TroupeGuard),
 }
 
 // ss[related actor.regeneration-survives]
 impl ScheduleAs<'_> {
     /// Determines the scheduling type based on the presence of a troupe guard.
     ///
-    /// # Arguments
-    ///
-    /// * `some_troupe` - An optional troupe guard to check.
-    ///
-    /// # Returns
-    ///
-    /// THE appropriate `ScheduleAs` variant.
+    /// This is **not** dynamic packing — it only picks Solo vs an optional normal/dynamic
+    /// troupe already constructed by the caller.
     // ss[related actor.regeneration-survives]
     pub fn dynamic_schedule(some_troupe: &mut Option<TroupeGuard>) -> ScheduleAs<'_> {
         if let Some(t) = some_troupe {
@@ -102,6 +99,7 @@ impl ActorBuilder {
         let stack_size = self.stack_size;
 
         let context_archetype = self.clone().single_actor_exec_archetype(build_actor_exec);
+        let solo_thread_count = self.solo_thread_count.clone();
 
         core_exec::block_on(async move {
             let _guard = thread_lock.lock().await;
@@ -193,8 +191,11 @@ impl ActorBuilder {
             if let Err(e) = handle {
                 error!(
                     "Failed to spawn OS thread for actor: {:?}, error: {:?}",
-                    &self.actor_name.name, e
+                    actor_name.name, e
                 );
+            } else {
+                // ss[impl troupe.dynamic-slot-budget]
+                solo_thread_count.fetch_add(1, Ordering::SeqCst);
             }
         });
     }
@@ -211,7 +212,8 @@ impl ActorBuilder {
     /// * `build_actor_exec` - THE execution logic for the actor.
     /// * `target` - THE `Troupe` to add the actor to.
     // ss[related actor.regeneration-survives]
-    fn build_join<F, I>(self, build_actor_exec: I, target: &mut Troupe)
+    // ss[impl troupe.dynamic-member-of]
+    fn build_join<F, I>(self, build_actor_exec: I, target: &mut TroupeGuard)
     where
         I: Fn(SteadyActorShadow) -> F + Send + Sync + 'static,
         F: Future<Output = Result<(), Box<dyn Error>>> + 'static,
@@ -224,8 +226,14 @@ impl ActorBuilder {
         let rate = self.frame_rate_ms;
         let is_for_test = self.is_for_test;
         let stack_size = self.stack_size;
+        let pending_ports = self.pending_pack_ports.clone();
+        let pack_ports_map = self.pack_ports_map.clone();
         let temp: SteadyContextArchetype<DynCall> =
             self.single_actor_exec_archetype(build_actor_exec);
+        if let Some(ports) = pending_ports {
+            let id = temp.ident.id;
+            pack_ports_map.lock().insert(id, ports);
+        }
         target.add_actor(temp, rate, is_for_test, stack_size);
     }
 
@@ -263,6 +271,8 @@ impl ActorBuilder {
 mod spawn_proptest {
     // ss[related philosophy.structural-hierarchy]
     use super::*;
+    // ss[related philosophy.structural-hierarchy]
+    use super::super::affinity::CoreBalancer;
     // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
@@ -315,7 +325,7 @@ mod spawn_proptest {
         }
     }
 
-    /// Heavy SoloAct spawn integration: low case count (each case spawns an OS thread).
+    // Heavy SoloAct spawn integration: low case count (each case spawns an OS thread).
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 6,
@@ -562,7 +572,7 @@ mod tokio_reactor_tests {
                             }
                             Ok(())
                         },
-                        ScheduleAs::MemberOf(&mut *troupe),
+                        ScheduleAs::MemberOf(&mut troupe),
                     );
                     drop(troupe);
                     assert!(graph.start_with_timeout(Duration::from_secs(10)));

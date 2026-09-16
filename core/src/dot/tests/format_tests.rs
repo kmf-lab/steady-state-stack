@@ -1,8 +1,6 @@
 // ss[related telemetry.dot-export]
 use super::super::*;
 // ss[impl telemetry.dot-export]
-use crate::telemetry::metrics_server::async_write_all;
-// ss[impl telemetry.dot-export]
 use bytes::BytesMut;
 
 #[test]

@@ -22,7 +22,7 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 // ss[related philosophy.structural-hierarchy]
 use crate::{
-    ActorIdentity, GraphLiveliness, Rx, RxCore, RxDone, SendOutcome,
+    ActorIdentity, GraphLiveliness, GraphLivelinessState, Rx, RxCore, RxDone, SendOutcome,
     SendSaturation, Tx, TxCore, TxDone,
 };
 // ss[impl actor.run-dispatcher]
@@ -49,10 +49,21 @@ impl SteadyActorCore {
     pub fn is_running<F: FnMut() -> bool>(
         runtime_state: &parking_lot::RwLock<GraphLiveliness>,
         ident: ActorIdentity,
-        accept_fn: F,
+        mut accept_fn: F,
     ) -> bool {
-        let liveliness = runtime_state.read();
-        liveliness.is_running(ident, accept_fn).unwrap_or(true)
+        let stop_requested = {
+            let liveliness = runtime_state.read();
+            match &liveliness.state {
+                GraphLivelinessState::StopRequested => true,
+                _ => return liveliness.is_running(ident, || false).unwrap_or(true),
+            }
+        };
+        debug_assert!(stop_requested);
+        let in_favor = accept_fn();
+        runtime_state
+            .read()
+            .apply_shutdown_vote(ident, in_favor)
+            .unwrap_or(true)
     }
 
     /// Request shutdown via the graph liveliness state.
@@ -320,7 +331,7 @@ mod steady_actor_core_tests {
     // ss[related philosophy.structural-hierarchy]
     use crate::steady_tx::Tx;
     // ss[related philosophy.structural-hierarchy]
-    use crate::{ActorIdentity, GraphBuilder, SendSaturation, SendOutcome, RxDone, TxDone};
+    use crate::{ActorIdentity, SendSaturation, SendOutcome, RxDone, TxDone};
     // ss[impl actor.run-dispatcher]
     use std::time::Duration;
     // ss[related philosophy.structural-hierarchy]
@@ -328,7 +339,7 @@ mod steady_actor_core_tests {
     // ss[related philosophy.structural-hierarchy]
     use futures_util::future::Shared;
     // ss[impl actor.run-dispatcher]
-    use parking_lot::RwLock;
+    
 
     /// Helper to create a simple channel with capacity 10.
     // ss[impl actor.run-dispatcher]

@@ -69,7 +69,6 @@ use crate::channel_builder::ChannelBuilder;
 // ss[related philosophy.structural-hierarchy]
 use crate::proptest_support::{capacity, channel_fifo_take, lane_mask, message_vec};
 // ss[related philosophy.zero-copy-discipline]
-use crate::*;
 // ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
 

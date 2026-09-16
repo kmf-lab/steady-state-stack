@@ -7,7 +7,7 @@ use super::state::GraphLivelinessState;
 // ss[related graph.liveliness-voters]
 use super::vote::{ShutdownVote, VoterStatus};
 // ss[related philosophy.structural-hierarchy]
-use log::{debug, error, trace, warn};
+use log::{error, trace, warn};
 
 /// Manages the liveliness state of the graph and coordinates the shutdown voting process.
 ///
@@ -152,7 +152,8 @@ impl GraphLiveliness {
 
                     error!("timeout on startup, not all actors registered: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
                     error!("if you need more startup time than {:?} use start_with_timeout",timeout);
-                    error!("if any of these actors are in a troupe, ensure the troupe is dropped BEFORE calling graph.start()");
+                    error!("if any of these actors are in a *normal* troupe, drop the troupe guard BEFORE graph.start() so it can spawn");
+                    error!("dynamic troupes are finalized by start() itself (no Drop-spawn); pin slots with GraphBuilder::with_pack_slots in tests");
                     
                     //find all actors in the None status
                     let missing: Vec<_> = self.registered_voters.iter()
@@ -353,14 +354,24 @@ impl GraphLiveliness {
             }
             GraphLivelinessState::Running => Some(true),
             GraphLivelinessState::StopRequested => {
+                let in_favor = accept_fn(); //has side effect, must act on results!
+                self.apply_shutdown_vote(ident, in_favor)
+            }
+            GraphLivelinessState::Stopped | GraphLivelinessState::StoppedUncleanly => Some(false),
+        }
+    }
+
+    /// Records a shutdown ballot. Callers that invoke `accept_fn` must drop the liveliness
+    /// `RwLock` first so nested `runtime_state.read()` in the closure cannot deadlock a
+    /// waiting `block_until_stopped` writer.
+    pub(crate) fn apply_shutdown_vote(&self, ident: ActorIdentity, in_favor: bool) -> Option<bool> {
+        match self.state {
+            GraphLivelinessState::StopRequested => {
                 let my_ballot = &self.votes[ident.id];
                 if let Some(mut vote) = my_ballot.try_lock() {
-
-
                     debug_assert_eq!(vote.id, ident.id);
-                    let in_favor = accept_fn(); //has side effect, must act on results!
                     if in_favor {
-                            trace!("now agreed to shutdown: {:?}",&ident);
+                        trace!("now agreed to shutdown: {:?}", &ident);
                     }
                     vote.signature = Some(ident);
                     if in_favor && !vote.in_favor {
@@ -368,23 +379,28 @@ impl GraphLiveliness {
                         vote.veto_backtrace = None;
                         vote.in_favor = in_favor;
                     } else {
-                        //if cfg!(debug_assertions) { //TODO: noise!, not the best feature
-                        //    vote.veto_backtrace = Some(Backtrace::capture());
-                        //}
                         vote.veto_reason = i_take_expression();
                         if vote.in_favor {
-                            trace!("already voted in favor! : {:?} {:?} vs {:?}", ident, in_favor, vote.in_favor);
+                            trace!(
+                                "already voted in favor! : {:?} {:?} vs {:?}",
+                                ident,
+                                in_favor,
+                                vote.in_favor
+                            );
                         }
                     }
                     drop(vote);
                     Some(!in_favor)
                 } else {
-                 //   error!("2 hello {:?}",&ident);
-
                     trace!("just try again later, unable to get the lock");
                     Some(true)
                 }
             }
+            GraphLivelinessState::Building => {
+                thread::yield_now();
+                None
+            }
+            GraphLivelinessState::Running => Some(true),
             GraphLivelinessState::Stopped | GraphLivelinessState::StoppedUncleanly => Some(false),
         }
     }

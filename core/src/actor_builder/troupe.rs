@@ -1,4 +1,5 @@
 // ss[related actor.regeneration-survives]
+#[cfg(feature = "core_affinity")]
 use super::affinity::pin_thread_to_core;
 // ss[related philosophy.structural-hierarchy]
 use super::context::{
@@ -26,7 +27,7 @@ use std::error::Error;
 // ss[related actor.regeneration-survives]
 use std::future::Future;
 // ss[related philosophy.structural-hierarchy]
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::AssertUnwindSafe;
 // ss[related philosophy.structural-hierarchy]
 use std::pin::Pin;
 // ss[related actor.regeneration-survives]
@@ -37,11 +38,30 @@ use std::sync::Arc;
 // ss[related actor.regeneration-survives]
 type ActorRuntime = NonSendWrapper<DynCall>;
 
+/// Whether a troupe is a normal OS-thread troupe or a dynamic packing bag.
+///
+/// Normal: `TroupeGuard` Drop spawns one OS thread (historical behavior).
+/// Dynamic: bag owned by the Graph; `Graph::start` packs into ≤ N normal sub-troupes.
+/// See `docs/spec/13-troupe-packing.md` and ADR 004.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// ss[impl troupe.dynamic-is-a-bag]
+// ss[impl troupe.dynamic-member-of]
+pub enum TroupeKind {
+    /// One OS thread when the guard is dropped.
+    Normal,
+    /// Build-time bag; not an OS thread. Finalized at `Graph::start`.
+    Dynamic,
+}
+
 /// Manages a collection of actors, facilitating their coordinated execution on a shared thread.
 ///
 /// `Troupe` allows grouping multiple actors to run concurrently on the same thread, improving efficiency by reducing
 /// thread management overhead.
+///
+/// A **dynamic** troupe (`TroupeKind::Dynamic`) is only a bag until packing finalize — it never
+/// owns an OS thread itself (`troupe.dynamic-is-a-bag`).
 // ss[related actor.regeneration-survives]
+// ss[impl troupe.dynamic-is-a-bag]
 pub struct Troupe {
     /// A queue of future builders for the actors in the troupe.
     // ss[related philosophy.structural-hierarchy]
@@ -51,6 +71,9 @@ pub struct Troupe {
     /// Optional human-readable name for the troupe.
     // ss[related philosophy.structural-hierarchy]
     pub(crate) name: Option<String>,
+    /// Normal (spawn on Drop) vs Dynamic (pack at start).
+    // ss[impl troupe.dynamic-is-a-bag]
+    pub(crate) kind: TroupeKind,
 }
 
 /// Represents a builder for a future, encapsulating the actor's execution logic and execution parameters.
@@ -138,16 +161,34 @@ impl FutureBuilderType {
             self.is_for_test,
         )
     }
+
+    /// Actor identity for packing (available before spawn).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) fn ident(&self) -> ActorIdentity {
+        self.fun.ident
+    }
 }
 
-/// A guard that automatically spawns the troupe when it goes out of scope.
+/// A guard that owns a troupe until drop (normal) or until `Graph::start` packs it (dynamic).
 ///
-/// This guard ensures that the troupe is spawned only when the guard is dropped, allowing for deferred execution.
+/// **Normal:** Drop spawns one OS thread.
+/// **Dynamic:** Drop stashes the bag onto the Graph’s pending list (does **not** spawn).
+/// Holding a dynamic guard across `start()` works because the bag was registered on the Graph
+/// at `dynamic_troupe()` creation; Drop then finds an empty slot (already taken by finalize).
 // ss[related actor.regeneration-survives]
+// ss[impl troupe.dynamic-is-a-bag]
+// ss[impl troupe.dynamic-hold-until-start]
+// ss[impl troupe.dynamic-finalize-at-start]
 pub struct TroupeGuard {
-    /// THE optional troupe to be spawned when the guard is dropped.
+    /// THE optional troupe (local ownership for Normal).
     // ss[related philosophy.structural-hierarchy]
     pub(crate) troupe: Option<Troupe>,
+    /// Shared bag entry for Dynamic troupes (Graph pending list holds the same Arc).
+    // ss[impl troupe.dynamic-is-a-bag]
+    pub(crate) dynamic_shared: Option<Arc<parking_lot::Mutex<Option<Troupe>>>>,
+    /// Incremented by 1 when a normal troupe actually spawns (slot budget).
+    // ss[impl troupe.dynamic-slot-budget]
+    pub(crate) on_normal_spawned: Option<Arc<AtomicUsize>>,
 }
 
 // ss[related actor.regeneration-survives]
@@ -158,9 +199,12 @@ impl std::ops::Deref for TroupeGuard {
     /// Provides immutable access to the underlying troupe.
     // ss[related actor.regeneration-survives]
     fn deref(&self) -> &Self::Target {
-        self.troupe
-            .as_ref()
-            .expect("TroupeGuard troupe was already consumed")
+        if let Some(t) = self.troupe.as_ref() {
+            return t;
+        }
+        // Dynamic: peek through shared mutex without holding the guard across return —
+        // this path is only safe for short reads; prefer DerefMut via lock for mutations.
+        panic!("TroupeGuard troupe was already consumed; dynamic guards must use lock_dynamic for access after move");
     }
 }
 
@@ -169,19 +213,41 @@ impl std::ops::DerefMut for TroupeGuard {
     /// Provides mutable access to the underlying troupe.
     // ss[related philosophy.structural-hierarchy]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.troupe
-            .as_mut()
-            .expect("TroupeGuard troupe was already consumed")
+        if let Some(t) = self.troupe.as_mut() {
+            return t;
+        }
+        panic!("TroupeGuard troupe was already consumed");
     }
 }
 
-// ss[related actor.regeneration-survives]
+// ss[impl troupe.dynamic-is-a-bag]
+// ss[impl troupe.dynamic-finalize-at-start]
 impl Drop for TroupeGuard {
-    /// Spawns the troupe when the guard is dropped, initiating the execution of the actors.
+    /// Normal: spawn. Dynamic: stash onto Graph pending (no OS thread).
     // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
         if let Some(troupe) = self.troupe.take() {
-            troupe.spawn();
+            match troupe.kind {
+                TroupeKind::Normal => {
+                    // Historical behavior: Drop of a normal troupe guard is spawn.
+                    let n = troupe.spawn();
+                    if n > 0 {
+                        if let Some(c) = &self.on_normal_spawned {
+                            c.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                }
+                TroupeKind::Dynamic => {
+                    // Stash for Graph::start finalize. If finalize already took the shared
+                    // slot, ignore (start owns the bag).
+                    if let Some(shared) = &self.dynamic_shared {
+                        let mut slot = shared.lock();
+                        if slot.is_none() {
+                            *slot = Some(troupe);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -189,20 +255,48 @@ impl Drop for TroupeGuard {
 // ss[related actor.regeneration-survives]
 impl TroupeGuard {
     /// Sets a custom name for the troupe, which will be used for the OS thread name.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - THE custom name for the troupe.
-    ///
-    /// # Returns
-    ///
-    /// THE `TroupeGuard` instance with the updated name.
     // ss[related actor.regeneration-survives]
     pub fn with_name(mut self, name: &str) -> Self {
         if let Some(ref mut t) = self.troupe {
             t.with_name(name);
+        } else if let Some(shared) = &self.dynamic_shared {
+            if let Some(ref mut t) = *shared.lock() {
+                t.with_name(name);
+            }
         }
         self
+    }
+
+    /// Kind of this guard’s troupe.
+    // ss[impl troupe.dynamic-member-of]
+    pub fn kind(&self) -> TroupeKind {
+        if let Some(t) = &self.troupe {
+            t.kind
+        } else {
+            TroupeKind::Dynamic
+        }
+    }
+
+    /// Add an actor via the guard (works for Normal local and Dynamic shared bags).
+    // ss[impl troupe.dynamic-member-of]
+    pub(crate) fn add_actor(
+        &mut self,
+        context_archetype: SteadyContextArchetype<DynCall>,
+        frame_rate_ms: u64,
+        is_for_test: bool,
+        stack_size: Option<usize>,
+    ) {
+        if let Some(t) = self.troupe.as_mut() {
+            t.add_actor(context_archetype, frame_rate_ms, is_for_test, stack_size);
+        } else if let Some(shared) = &self.dynamic_shared {
+            let mut slot = shared.lock();
+            let t = slot
+                .as_mut()
+                .expect("dynamic bag already finalized before add_actor");
+            t.add_actor(context_archetype, frame_rate_ms, is_for_test, stack_size);
+        } else {
+            panic!("TroupeGuard has no troupe");
+        }
     }
 }
 
@@ -223,6 +317,18 @@ impl Troupe {
             future_builder: VecDeque::new(),
             team_id: graph.team_count.fetch_add(1, Ordering::SeqCst),
             name: None,
+            kind: TroupeKind::Normal,
+        }
+    }
+
+    /// Build-time bag for packing (`Graph::dynamic_troupe`). Not an OS thread.
+    // ss[impl troupe.dynamic-is-a-bag]
+    pub(crate) fn new_dynamic(graph: &Graph) -> Self {
+        Troupe {
+            future_builder: VecDeque::new(),
+            team_id: graph.team_count.fetch_add(1, Ordering::SeqCst),
+            name: None,
+            kind: TroupeKind::Dynamic,
         }
     }
 
@@ -309,7 +415,8 @@ impl Troupe {
     ///
     /// THE number of actors spawned.
     // ss[related actor.regeneration-survives]
-    fn spawn(self) -> usize {
+    // ss[impl troupe.dynamic-channel-establish]
+    pub(crate) fn spawn(self) -> usize {
         let count = Arc::new(AtomicUsize::new(0));
         if self.future_builder.is_empty() {
             return 0;
@@ -492,6 +599,8 @@ mod troupe_proptest {
             never_simulate: false,
             force_internal_behavior_in_test: false,
             shutdown_barrier: None,
+            pack_ports_map: graph.pack_ports.clone(),
+            strict_persist: graph.strict_persist,
         }
     }
 
@@ -506,7 +615,7 @@ mod troupe_proptest {
             let mut right = Troupe::new(&graph);
             let arch = mock_archetype(&graph);
             left.add_actor(arch.clone(), 40, true, None);
-            let mut total = 1usize;
+            let total = 1usize;
 
             for use_front in ops {
                 if use_front {
@@ -581,7 +690,7 @@ mod troupe_proptest {
         }
     }
 
-    /// Heavy troupe spawn integration: low case count (each case spawns OS threads).
+    // Heavy troupe spawn integration: low case count (each case spawns OS threads).
     proptest! {
         #![proptest_config(ProptestConfig {
             cases: 6,
@@ -618,7 +727,7 @@ mod troupe_proptest {
                                     }
                                     Ok(())
                                 },
-                                ScheduleAs::MemberOf(&mut *troupe),
+                                ScheduleAs::MemberOf(&mut troupe),
                             );
                     }
                     drop(troupe);

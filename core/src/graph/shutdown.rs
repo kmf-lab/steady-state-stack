@@ -55,7 +55,7 @@ pub(crate) fn watch_shutdown(
 
 /// Logs the results of the shutdown voting process for debugging.
 // ss[related graph.for-testing]
-fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
+pub(crate) fn report_votes(state: &mut RwLockWriteGuard<GraphLiveliness>) {
     debug!("voter log: (approved votes at the top, total:{})", state.votes.len());
     let mut voters = state.votes.iter().map(|f| f.try_lock()).collect::<Vec<_>>();
     voters.sort_by_key(|voter| !voter.as_ref().is_some_and(|f| f.in_favor));

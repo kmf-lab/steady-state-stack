@@ -11,7 +11,6 @@ use crate::monitor::{ActorStatus};
 // ss[related philosophy.structural-hierarchy]
 use crate::monitor_telemetry::{SteadyTelemetryActorSend, SteadyTelemetrySend};
 // ss[related philosophy.structural-hierarchy]
-use crate::ss_proptest_telemetry;
 // ss[related philosophy.structural-hierarchy]
 use crate::MONITOR_NOT;
 // ss[related philosophy.structural-hierarchy]
@@ -100,7 +99,7 @@ ss_proptest_telemetry! {
     fn proptest_drift_count_iterator_zero_when_counts_match(n in 0usize..32) {
         let drift = Arc::new(AtomicIsize::new(0));
         {
-            let mut iter = DriftCountIterator::new(
+            let iter = DriftCountIterator::new(
                 n,
                 (0..n as u32).collect::<Vec<_>>().into_iter(),
                 drift.clone(),

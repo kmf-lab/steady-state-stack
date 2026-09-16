@@ -16,6 +16,63 @@ use serde::{Serialize};
 use serde::de::DeserializeOwned;
 // ss[related philosophy.structural-hierarchy]
 use serde_json;
+// ss[impl state.dirty-at-park]
+use std::cell::RefCell;
+// ss[impl state.dirty-at-park]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+thread_local! {
+    /// When true, dirty watched guards at park are a defect (`for_lambda` / strict_persist).
+    // ss[impl state.dirty-at-park]
+    static STRICT_PERSIST: RefCell<bool> = const { RefCell::new(false) };
+    /// Dirty flags for persistent guards held on this OS thread.
+    // ss[impl state.dirty-at-park]
+    static WATCHED_DIRTY: RefCell<Vec<Arc<AtomicBool>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Enable or disable dirty-at-park checks on this OS thread (set by actors / tests).
+// ss[impl state.dirty-at-park]
+// ss[impl graph.for-lambda]
+pub fn set_thread_strict_persist(enabled: bool) {
+    STRICT_PERSIST.with(|c| *c.borrow_mut() = enabled);
+}
+
+/// Returns whether this OS thread currently enforces dirty-at-park.
+// ss[impl state.dirty-at-park]
+pub fn thread_strict_persist() -> bool {
+    STRICT_PERSIST.with(|c| *c.borrow())
+}
+
+fn register_watched_dirty(flag: Arc<AtomicBool>) {
+    WATCHED_DIRTY.with(|v| v.borrow_mut().push(flag));
+}
+
+fn unregister_watched_dirty(flag: &Arc<AtomicBool>) {
+    WATCHED_DIRTY.with(|v| {
+        v.borrow_mut().retain(|f| !Arc::ptr_eq(f, flag));
+    });
+}
+
+/// Fail if any watched persistent guard is dirty while strict persist is active.
+///
+/// Called from actor wake points (`is_running` / `yield_now` under strict graphs).
+// ss[impl state.dirty-at-park]
+// ss[impl state.persist-before-park]
+pub fn check_dirty_at_park() {
+    if !thread_strict_persist() {
+        return;
+    }
+    let dirty = WATCHED_DIRTY.with(|v| {
+        v.borrow()
+            .iter()
+            .any(|f| f.load(Ordering::Relaxed))
+    });
+    if dirty {
+        panic!(
+            "dirty persistent state at park: call StateGuard::persist() before awaiting (strict persist / for_lambda)"
+        );
+    }
+}
 
 
 
@@ -83,10 +140,19 @@ impl<S> SteadyState<S> {
         let mut guard = self.inner.lock().await;
         guard.get_or_insert_with(init);
         let mapped = MutexGuard::map(guard, |opt| opt.as_mut().expect("existing state"));
+        // ss[impl state.dirty-at-park]
+        // ss[impl state.persist-before-park]
+        let dirty = Arc::new(AtomicBool::new(false));
+        let watched = self.on_persist.is_some();
+        if watched {
+            register_watched_dirty(dirty.clone());
+        }
         StateGuard {
             guard: mapped,
             on_drop: self.on_drop.clone(),
             on_persist: self.on_persist.clone(),
+            dirty,
+            watched,
         }
     }
 
@@ -120,6 +186,8 @@ impl<S> SteadyState<S> {
                     guard: mapped,
                     on_drop: self.on_drop.clone(),
                     on_persist: self.on_persist.clone(),
+                    dirty: Arc::new(AtomicBool::new(false)),
+                    watched: false, // try_lock_sync is post-run inspection; not park-watched
                 })
             } else {
                 None
@@ -150,6 +218,27 @@ pub fn new_state<S>() -> SteadyState<S> {
         on_drop: None,
         on_persist: None,
 
+    }
+}
+
+/// Creates a `SteadyState` with user-supplied load and persist hooks.
+///
+/// `load` runs once at construction (optional prior value). `persist` is invoked by
+/// [`StateGuard::persist`] and may target DynamoDB / S3 / EFS via blocking I/O in the app.
+/// Process-local files (e.g. `/tmp`) MUST NOT be assumed to outlive a Lambda sandbox.
+// ss[impl state.persist-hooks]
+// ss[impl state.persist-before-park]
+pub fn new_persistent_state_with<S, L, P>(load: L, persist: P) -> SteadyState<S>
+where
+    L: FnOnce() -> Option<S>,
+    P: Fn(&S) -> Result<(), std::io::Error> + Send + Sync + 'static,
+    S: Send + 'static,
+{
+    let state = load();
+    SteadyState {
+        inner: Arc::new(Mutex::new(state)),
+        on_drop: None,
+        on_persist: Some(Arc::new(persist)),
     }
 }
 
@@ -220,6 +309,12 @@ pub struct StateGuard<'a, S> {
     guard: MappedMutexGuard<'a, Option<S>, S>,
     on_drop: Option<Arc<dyn Fn(&S) + Send + Sync>>,
     on_persist: Option<Arc<dyn Fn(&S) -> Result<(), std::io::Error> + Send + Sync>>,
+    /// Set on [`DerefMut`]; cleared by successful [`Self::persist`].
+    // ss[impl state.dirty-at-park]
+    dirty: Arc<AtomicBool>,
+    /// True when `on_persist` is set — participates in dirty-at-park under strict mode.
+    // ss[impl state.dirty-at-park]
+    watched: bool,
 }
 
 // ss[related state.lock-init-once]
@@ -233,10 +328,13 @@ impl<'a, S> Deref for StateGuard<'a, S> {
     }
 }
 
-// ss[related state.lock-init-once]
+// ss[impl state.dirty-at-park]
 impl<'a, S> DerefMut for StateGuard<'a, S> {
     // ss[related philosophy.structural-hierarchy]
     fn deref_mut(&mut self) -> &mut Self::Target {
+        if self.watched {
+            self.dirty.store(true, Ordering::Relaxed);
+        }
         &mut self.guard
     }
 }
@@ -245,6 +343,9 @@ impl<'a, S> DerefMut for StateGuard<'a, S> {
 impl<'a, S> Drop for StateGuard<'a, S> {
     // ss[related philosophy.structural-hierarchy]
     fn drop(&mut self) {
+        if self.watched {
+            unregister_watched_dirty(&self.dirty);
+        }
         if let Some(on_drop) = &self.on_drop {
             on_drop(&*self.guard);
         }
@@ -254,20 +355,26 @@ impl<'a, S> Drop for StateGuard<'a, S> {
 // ss[related state.lock-init-once]
 impl<'a, S> StateGuard<'a, S> {
 
-    /// Persists the current state to disk if a persistence function was provided.
+    /// Persists the current state via the configured hook and clears the dirty bit.
+    ///
+    /// Under `for_lambda` / strict persist, call this on every path back to the wait.
     ///
     /// # Returns
     /// - `Result<(), std::io::Error>`: The result of the persistence operation.
-    // ss[related state.lock-init-once]
-    pub async fn persist(&self) -> Result<(), std::io::Error>
-    where
-        S: Serialize,
-    {
+    // ss[impl state.persist-before-park]
+    // ss[impl state.dirty-at-park]
+    pub async fn persist(&self) -> Result<(), std::io::Error> {
         if let Some(on_persist) = &self.on_persist {
-            on_persist(&*self.guard)
-        } else {
-            Ok(())
+            on_persist(&*self.guard)?;
         }
+        self.dirty.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Whether this guard is dirty (mutated since last successful persist).
+    // ss[impl state.dirty-at-park]
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Relaxed)
     }
 }
 
@@ -286,7 +393,7 @@ mod state_management_tests {
     use tempfile::tempdir;
 
     // Define a simple state type for testing persistence
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     // ss[related state.lock-init-once]
     struct MyState {
         value: i32,
@@ -814,4 +921,84 @@ mod state_management_tests {
             prop_assert_eq!(got, disk_value);
         }
     }
+
+    // ss[verify state.persist-hooks]
+    // ss[verify state.persist-before-park]
+    #[test]
+    fn test_persistent_state_with_in_memory_hook() {
+        crate::core_exec::block_on(async {
+            let store = Arc::new(parking_lot::Mutex::new(None::<MyState>));
+            let store_load = store.clone();
+            let store_persist = store.clone();
+            let state = new_persistent_state_with(
+                move || store_load.lock().clone(),
+                move |s| {
+                    *store_persist.lock() = Some(MyState { value: s.value });
+                    Ok(())
+                },
+            );
+            {
+                let mut guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value = 42;
+                assert!(guard.is_dirty());
+                guard.persist().await.expect("persist");
+                assert!(!guard.is_dirty());
+            }
+            drop(state);
+            assert_eq!(store.lock().as_ref().map(|s| s.value), Some(42));
+
+            let store2 = store.clone();
+            let state2 = new_persistent_state_with(
+                move || store2.lock().clone(),
+                |_| Ok(()),
+            );
+            let guard = state2.lock(|| MyState { value: 0 }).await;
+            assert_eq!(guard.value, 42);
+        });
+    }
+
+    // ss[verify state.dirty-at-park]
+    // ss[verify state.persist-before-park]
+    #[test]
+    fn test_dirty_at_park_panics_under_strict() {
+        set_thread_strict_persist(true);
+        let result = std::panic::catch_unwind(|| {
+            crate::core_exec::block_on(async {
+                let store = Arc::new(parking_lot::Mutex::new(None::<MyState>));
+                let store_p = store.clone();
+                let state = new_persistent_state_with(
+                    || None,
+                    move |s: &MyState| {
+                        *store_p.lock() = Some(MyState { value: s.value });
+                        Ok(())
+                    },
+                );
+                let mut guard = state.lock(|| MyState { value: 0 }).await;
+                guard.value = 99;
+                // Intentionally skip persist — next park check must fail.
+                check_dirty_at_park();
+            });
+        });
+        set_thread_strict_persist(false);
+        assert!(result.is_err(), "expected dirty-at-park panic");
+    }
+
+    // ss[verify state.dirty-at-park]
+    #[test]
+    fn test_new_state_never_dirty_for_strict() {
+        set_thread_strict_persist(true);
+        crate::core_exec::block_on(async {
+            let state = new_state::<i32>();
+            let mut guard = state.lock(|| 0).await;
+            *guard = 7;
+            // No on_persist → not watched → check must not panic.
+            check_dirty_at_park();
+        });
+        set_thread_strict_persist(false);
+    }
 }
+
+#[cfg(test)]
+#[path = "state_dirty_proptest.rs"]
+// ss[related state.dirty-at-park]
+mod state_dirty_proptest;

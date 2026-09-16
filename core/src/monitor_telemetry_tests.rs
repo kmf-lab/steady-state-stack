@@ -1,7 +1,6 @@
 //! Tests extracted from `monitor_telemetry.rs` so the production file stays under the 1,200-line budget.
 //! Nested test mods keep their own imports; `use super::*` at the top re-exports the parent.
 
-use super::*;
 
 #[cfg(test)]
 // ss[impl telemetry.prometheus-metrics]
@@ -28,6 +27,13 @@ mod monitor_telemetry_old_tests {
         let metadata = telemetry_rx.actor_metadata();
         assert_eq!(Arc::strong_count(&actor_metadata), 3);
         assert_eq!(Arc::strong_count(&metadata), 3);
+        assert!(telemetry_rx.is_empty());
+        assert!(telemetry_rx.is_empty_and_closed());
+        assert!(telemetry_rx.tx_channel_id_vec().is_empty());
+        assert!(telemetry_rx.rx_channel_id_vec().is_empty());
+        assert!(telemetry_rx.consume_actor().is_none());
+        assert!(telemetry_rx.actor_rx(0).is_none());
+        assert_eq!(telemetry_rx.consume_dot_subtitle(), None);
     }
 }
 

@@ -102,10 +102,20 @@ pub(crate) fn dynamic_payload_estimate_looks_capacity_scaled(capacity: usize, by
 // ss[related channel.lazy.defer-allocation]
 pub struct ChannelBuilder {
     /// Shared counter for the number of channels created.
-    channel_count: Arc<AtomicUsize>,
+    pub(crate) channel_count: Arc<AtomicUsize>,
+
+    /// Channel id reserved at lazy build time (packing incidence without establish).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) reserved_channel_id: Option<usize>,
+
+    /// Graph packing meta registry (channel_id → capacity, bytes, girth, bundle key).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) channel_pack_meta: Option<
+        Arc<parking_lot::Mutex<std::collections::HashMap<usize, (usize, usize, usize, Option<usize>)>>>,
+    >,
 
     /// The maximum number of messages the channel can hold.
-    capacity: usize,
+    pub(crate) capacity: usize,
 
     /// Labels associated with the channel for identification in telemetry outputs.
     labels: &'static [&'static str],
@@ -196,10 +206,10 @@ pub struct ChannelBuilder {
     partner: Option<&'static str>,
 
     /// Optional index within a bundle, used for pairing partnered channels.
-    bundle_index: Option<usize>,
+    pub(crate) bundle_index: Option<usize>,
 
     /// Number of channels in the bundle, used for rollup display.
-    girth: usize,
+    pub(crate) girth: usize,
 
     /// Indicates whether to display memory usage in telemetry.
     show_memory: bool,
@@ -245,6 +255,8 @@ impl ChannelBuilder {
 
         ChannelBuilder {
             channel_count,
+            reserved_channel_id: None,
+            channel_pack_meta: None,
             capacity: DEFAULT_CAPACITY,
             labels: &[],
             display_labels: false,
@@ -816,9 +828,14 @@ impl ChannelBuilder {
      * Panics if `capacity` is zero, as a valid channel requires a positive capacity.
      */
     // ss[related channel.lazy.defer-allocation]
+    // ss[impl graph.pack.incidence-before-start]
     pub(crate) fn to_meta_data(&self, type_name: &'static str, type_byte_count: usize) -> ChannelMetaData {
         assert!(self.capacity > 0);
-        let channel_id = self.channel_count.fetch_add(1, Ordering::SeqCst);
+        // Prefer id reserved at lazy `build` so packing incidence matches established meta.
+        let channel_id = match self.reserved_channel_id {
+            Some(id) => id,
+            None => self.channel_count.fetch_add(1, Ordering::SeqCst),
+        };
         let show_type = if self.show_type {
             Some(type_name.split("::").last().unwrap_or(""))
         } else {

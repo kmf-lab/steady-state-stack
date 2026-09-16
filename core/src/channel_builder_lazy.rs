@@ -47,6 +47,27 @@ impl <T> LazySteadyTx<T> {
         }
     }
 
+    /// Duplicate this lazy handle without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    // ss[impl troupe.dynamic-channel-establish]
+    pub fn share(&self) -> Self {
+        LazySteadyTx {
+            lazy_channel: Arc::clone(&self.lazy_channel),
+        }
+    }
+
+    /// Channel id reserved at `ChannelBuilder::build` without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn pack_channel_id(&self) -> usize {
+        self.lazy_channel.pack_channel_id()
+    }
+
+    /// Configured capacity without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn pack_capacity(&self) -> usize {
+        self.lazy_channel.pack_capacity()
+    }
+
     /**
      * Clones the transmitter, initializing the channel on first call.
      *
@@ -149,6 +170,27 @@ impl <T> LazySteadyRx<T> {
         }
     }
 
+    /// Duplicate this lazy handle without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    // ss[impl troupe.dynamic-channel-establish]
+    pub fn share(&self) -> Self {
+        LazySteadyRx {
+            lazy_channel: Arc::clone(&self.lazy_channel),
+        }
+    }
+
+    /// Channel id reserved at `ChannelBuilder::build` without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn pack_channel_id(&self) -> usize {
+        self.lazy_channel.pack_channel_id()
+    }
+
+    /// Configured capacity without establishing the ring.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn pack_capacity(&self) -> usize {
+        self.lazy_channel.pack_capacity()
+    }
+
     /**
      * Clones the receiver, initializing the channel on first call.
      *
@@ -199,11 +241,24 @@ impl <T> LazySteadyRx<T> {
 pub(crate) struct LazyChannel<T> {
     builder: Mutex<Option<ChannelBuilder>>,
     channel: Mutex<Option<(SteadyTx<T>, SteadyRx<T>)>>,
+    /// Reserved at build time without establishing the ring (packing incidence).
+    // ss[impl graph.pack.incidence-before-start]
+    pack_id: usize,
+    // ss[impl graph.pack.incidence-before-start]
+    pack_capacity: usize,
+    // ss[impl graph.pack.incidence-before-start]
+    #[allow(dead_code)]
+    pack_girth: usize,
+    // ss[impl graph.pack.incidence-before-start]
+    #[allow(dead_code)]
+    pack_bundle_index: Option<usize>,
 }
 
 impl <T> LazyChannel<T> {
     /**
      * Creates a new `LazyChannel` instance.
+     *
+     * Reserves a stable channel id and records packing meta **without** establishing the ring.
      *
      * # Arguments
      *
@@ -214,11 +269,48 @@ impl <T> LazyChannel<T> {
      * A new `LazyChannel<T>` instance.
      */
     // ss[related channel.lazy.establish-on-clone]
+    // ss[impl graph.pack.incidence-before-start]
     pub(crate) fn new(builder: &ChannelBuilder) -> Self {
-        LazyChannel {
-            builder: Mutex::new(Some(builder.clone())),
-            channel: Mutex::new(None),
+        use std::sync::atomic::Ordering;
+        let pack_id = builder
+            .channel_count
+            .fetch_add(1, Ordering::SeqCst);
+        let pack_capacity = builder.capacity;
+        let pack_girth = builder.girth.max(1);
+        let pack_bundle_index = builder.bundle_index;
+        let mut stored = builder.clone();
+        stored.reserved_channel_id = Some(pack_id);
+        if let Some(meta) = &builder.channel_pack_meta {
+            // byte footprint unknown until T is known; capacity drives Kruskal order.
+            let bytes = pack_capacity.saturating_mul(8);
+            let bundle_key = if pack_girth > 1 {
+                Some(pack_id.saturating_sub(pack_bundle_index.unwrap_or(0)))
+            } else {
+                None
+            };
+            meta.lock()
+                .insert(pack_id, (pack_capacity, bytes, pack_girth, bundle_key));
         }
+        LazyChannel {
+            builder: Mutex::new(Some(stored)),
+            channel: Mutex::new(None),
+            pack_id,
+            pack_capacity,
+            pack_girth,
+            pack_bundle_index,
+        }
+    }
+
+    /// Channel id reserved at lazy build (does not establish).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) fn pack_channel_id(&self) -> usize {
+        self.pack_id
+    }
+
+    /// Configured capacity (does not establish).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) fn pack_capacity(&self) -> usize {
+        self.pack_capacity
     }
 
     /**
@@ -456,7 +548,7 @@ mod steady_lazy_tests {
     // ss[related philosophy.structural-hierarchy]
     fn test_assert_steady_rx_eq_count_macro() {
         // ss[related philosophy.structural-hierarchy]
-        use crate::{assert_steady_rx_eq_count, GraphBuilder};
+        use crate::GraphBuilder;
         let mut graph = GraphBuilder::for_testing().build(());
         let (tx, rx) = graph.channel_builder().with_capacity(4).build_channel::<u8>();
         tx.testing_send_all(vec![1, 2], false);

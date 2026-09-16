@@ -64,7 +64,31 @@ fn coverage_merge_documented_in_release_script() {
     );
 }
 
-// ss[related verify.process.fuzz]
+// ss[verify verify.process.fuzz]
+#[test]
+fn fuzz_crate_and_script_exist() {
+    let root = repo_root();
+    assert!(
+        root.join("scripts/run-fuzz.sh").is_file(),
+        "scripts/run-fuzz.sh must exist"
+    );
+    assert!(
+        root.join("core/fuzz/Cargo.toml").is_file(),
+        "core/fuzz/Cargo.toml must exist"
+    );
+    for target in [
+        "aeron_channel_uri",
+        "fast_protocol_packed",
+        "cgroup_quota",
+        "pack_even_split",
+    ] {
+        let path = root
+            .join("core/fuzz/fuzz_targets")
+            .join(format!("{target}.rs"));
+        assert!(path.is_file(), "missing fuzz target {}", path.display());
+    }
+}
+
 // ss[related verify.process.mutants]
 // ss[related platform.aeron-out-of-scope-coverage]
-// Tier-1/2 waivers per docs/spec/00-conventions.md — no in-tree cargo-fuzz / mutants gate yet.
+// Mutants remain a Tier-1 process waiver until a current kill-rate exists.

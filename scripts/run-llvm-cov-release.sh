@@ -8,6 +8,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 export CARGO_LLVM_COV=1
+# Gate A uses nextest (one process per test). `cargo llvm-cov` uses `cargo test`,
+# which shares a process; parallel lib tests can deadlock on METADATA_REGISTRY
+# and channel guards under instrumentation. Serialize coverage tests so Gate B completes.
+export RUST_TEST_THREADS="${RUST_TEST_THREADS:-1}"
+export RUST_LOG="${RUST_LOG:-warn}"
 
 if ! command -v cargo-llvm-cov >/dev/null 2>&1; then
   echo "cargo-llvm-cov not installed. Install: cargo install cargo-llvm-cov" >&2
@@ -16,24 +21,29 @@ fi
 
 FEATURES_A="telemetry_server_builtin,core_affinity,core_display,prometheus_metrics"
 FEATURES_B="tokio,telemetry_server_cdn"
+FEATURES_LAMBDA="lambda"
 
 echo "llvm-cov pass A (${FEATURES_A}): lib + aeron_integration_uri_contract..."
 echo "  Do not use 'cargo llvm-cov test --tests' — that runs live aeron_integration_suite (Gate C)."
 cargo llvm-cov --lcov --output-path cov_a.lcov --no-default-features -F "${FEATURES_A}" \
-  -p steady_state --lib --test aeron_integration_uri_contract
+  -p steady_state --lib --test aeron_integration_uri_contract -- --quiet
 
 echo "llvm-cov pass B (${FEATURES_B}): lib..."
 cargo llvm-cov --lcov --output-path cov_b.lcov --no-default-features -F "${FEATURES_B}" \
-  -p steady_state --lib
+  -p steady_state --lib -- --quiet
 
-MERGE_INPUTS=(cov_a.lcov cov_b.lcov)
+echo "llvm-cov pass D (${FEATURES_LAMBDA}): lib (lambda runtime API)..."
+cargo llvm-cov --lcov --output-path cov_d.lcov --no-default-features -F "${FEATURES_LAMBDA}" \
+  -p steady_state --lib -- --quiet
+
+MERGE_INPUTS=(cov_a.lcov cov_b.lcov cov_d.lcov)
 
 if [[ "${SS_AERON_GATE_C:-0}" == "1" ]]; then
   echo "llvm-cov pass C (Gate C): lib + aeron_integration_suite (live media driver required)..."
   export SS_AERON_GATE_C=1
   export SS_AERON_LLVM_COV_ALLOW_TESTS=1
   cargo llvm-cov --lcov --output-path cov_c.lcov --no-default-features -F "${FEATURES_A}" \
-    -p steady_state --lib --test aeron_integration_suite
+    -p steady_state --lib --test aeron_integration_suite -- --quiet
   MERGE_INPUTS+=(cov_c.lcov)
 else
   echo "Gate C llvm-cov pass skipped (set SS_AERON_GATE_C=1 to merge live Aeron suite coverage)."
@@ -45,9 +55,9 @@ if command -v lcov >/dev/null 2>&1; then
   for f in "${MERGE_INPUTS[@]}"; do
     lcov_args+=(--add-tracefile "$f")
   done
-  lcov "${lcov_args[@]}" -o merged.lcov
+  lcov --quiet "${lcov_args[@]}" -o merged.lcov
   if command -v genhtml >/dev/null 2>&1; then
-    genhtml merged.lcov --output-directory coverage_html
+    genhtml --quiet merged.lcov --output-directory coverage_html
     echo "HTML report: coverage_html/index.html"
   fi
 else

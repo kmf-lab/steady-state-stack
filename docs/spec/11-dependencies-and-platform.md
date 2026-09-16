@@ -2,7 +2,7 @@
 
 **Who should read this:** Release engineers and platform porters.
 
-**See also:** `core/Cargo.toml`, [Migration guide](../migration_guide.md).
+**See also:** `core/Cargo.toml`, [Migration guide](../migration_guide.md), [Lambda warm graph / no Tokio](14-lambda.md).
 
 ---
 

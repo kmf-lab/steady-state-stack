@@ -1,0 +1,49 @@
+[package]
+name = "steady_state-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+bytes = "1"
+
+[dependencies.steady_state]
+path = ".."
+features = ["fuzzing"]
+
+# Isolated from the workspace so cargo-fuzz owns this package graph.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "aeron_channel_uri"
+path = "fuzz_targets/aeron_channel_uri.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fast_protocol_packed"
+path = "fuzz_targets/fast_protocol_packed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cgroup_quota"
+path = "fuzz_targets/cgroup_quota.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_even_split"
+path = "fuzz_targets/pack_even_split.rs"
+test = false
+doc = false
+bench = false

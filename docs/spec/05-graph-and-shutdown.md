@@ -2,7 +2,7 @@
 
 **Who should read this:** Graph builders, integration tests, and shutdown debugging.
 
-**See also:** `core/src/graph/` (`builder.rs`, `liveliness.rs`, `shutdown.rs`; shim `graph_liveliness.rs`), [Actor lifecycle](../actor_lifecycle.md).
+**See also:** `core/src/graph/` (`builder.rs`, `liveliness.rs`, `shutdown.rs`; shim `graph_liveliness.rs`), [Actor lifecycle](../actor_lifecycle.md), [Lambda warm graph](14-lambda.md).
 
 ---
 
@@ -73,6 +73,8 @@ Shutdown votes MUST be keyed by stable `ActorIdentity` for traceability and veto
 ss[graph.troupes]
 
 Troupe execution MUST yield cooperatively (`yield_now` in `await_for_all!`) so nested graphs do not spin.
+
+**See also:** Dynamic troupes and startup packing — [13-troupe-packing](13-troupe-packing.md).
 
 **Tier:** 1
 

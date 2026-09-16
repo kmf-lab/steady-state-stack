@@ -94,6 +94,16 @@ The graph (main) MUST own system topology; actors MUST operate on clones so the 
 
 ---
 
+ss[philosophy.startup-schedule]
+
+The framework MUST map packable actors onto OS threads at `Graph::start` from the hardware visible to this process (available parallelism / cgroup CPU quota). It MUST NOT work-steal actor futures across threads after that mapping. Changing CPU count MUST take effect only on a new process start (new pod / appliance boot / Lambda sandbox), not by moving running actors. See [13-troupe-packing](13-troupe-packing.md).
+
+**Rationale:** Deterministic Steady behavior; same binary scales with the machine it woke up on. Mechanical sympathy without a work-stealing pool.
+
+**Tier:** 0
+
+---
+
 ## Requirement index
 
 | ID | Summary | Tier |
@@ -107,3 +117,4 @@ The graph (main) MUST own system topology; actors MUST operate on clones so the 
 | `philosophy.single-wake-up` | Consolidated await macros | 0 |
 | `philosophy.zero-copy-discipline` | Ordered peek/take | 0 |
 | `philosophy.explicit-ownership` | Graph owns, actors clone | 0 |
+| `philosophy.startup-schedule` | Map packable actors at start; no steal | 0 |

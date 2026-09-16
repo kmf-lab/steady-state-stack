@@ -92,13 +92,6 @@ pub(crate) fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// No-op when `core_affinity` is disabled (CI / default test features).
-#[cfg(not(feature = "core_affinity"))]
-// ss[related actor.regeneration-survives]
-pub(crate) fn pin_thread_to_core(_core_id: usize) -> Result<(), String> {
-    Ok(())
-}
-
 
 #[cfg(test)]
 // ss[related actor.regeneration-survives]

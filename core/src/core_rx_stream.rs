@@ -386,6 +386,35 @@ mod core_rx_stream_tests {
 
     #[test]
     // ss[verify channel.stream-dual-buffer]
+    fn test_stream_rx_monitor_log_and_empty() -> Result<(), Box<dyn std::error::Error>> {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(8)
+                .build_stream::<StreamEgress>(16);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            assert_eq!(rx_guard.shared_validate_capacity_items(3), 3);
+            assert_eq!(rx_guard.shared_validate_capacity_items(10_000), rx_guard.shared_capacity().0);
+            assert_eq!(rx_guard.shared_avail_items_count(), 0);
+            assert!(!rx_guard.is_closed_and_empty());
+            rx_guard.monitor_not();
+            rx_guard.control_channel.last_error_send = std::time::Instant::now()
+                - Duration::from_secs(30);
+            assert!(rx_guard.log_periodic());
+            drop(tx);
+            let meta = rx_guard.control_channel.channel_meta_data.meta_data.clone();
+            let mut actor = graph.new_testing_test_monitor("stream_rx_tel")
+                .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
+            if let Some(ref mut tel) = actor.telemetry.send_rx {
+                rx_guard.telemetry_inc(RxDone::Stream(1, 2), tel);
+            }
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })
+    }
+
+    #[test]
+    // ss[verify channel.stream-dual-buffer]
     fn test_stream_rx_peek_async_timeout() -> Result<(), Box<dyn std::error::Error>> {
         core_exec::block_on(async {
             let mut graph = GraphBuilder::for_testing().build(());

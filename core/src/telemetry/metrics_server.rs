@@ -4,6 +4,15 @@
 //! nodes (see `docs/arch/002-telemetry-graph-share-load.md`). Keep this file under the 1,200-line budget;
 //! HTTP/bind tests live in `metrics_server_tests.rs`.
 
+#![cfg_attr(
+    not(any(
+        feature = "telemetry_server_builtin",
+        feature = "telemetry_server_cdn",
+        feature = "prometheus_metrics"
+    )),
+    allow(dead_code, unused_imports, unused_variables)
+)]
+
 // ss[impl telemetry.builtin-server]
 use async_io::Async;
 // ss[related philosophy.structural-hierarchy]
@@ -54,7 +63,7 @@ const GRAPH_DOT_DISK_WRITE_INTERVAL_SECS: u64 = 10;
 
 #[derive(Clone)]
 // ss[impl telemetry.builtin-server]
-struct MetricState {
+pub(crate) struct MetricState {
     doc: Bytes,
     metric: Bytes,
     config: Bytes,
@@ -152,13 +161,13 @@ async fn internal_behavior<C : SteadyActor>(mut ctrl: C, frame_rate_ms: u64, rx:
             {
                 let display_addr = if bound_addr.ip().is_unspecified() { &*"127.0.0.1".to_string()
                                                                     } else { &*bound_addr.ip().to_string() };
-                println!("Telemetry on http://{}:{}", display_addr, bound_addr.port());
+                info!("Telemetry on http://{}:{}", display_addr, bound_addr.port());
             }
             #[cfg(feature = "prometheus_metrics")]
             {
                 let display_addr = if bound_addr.ip().is_unspecified() { &*"127.0.0.1".to_string()
                                                                       } else { &*bound_addr.ip().to_string() };
-                println!("Prometheus can scrape on http://{}:{}/metrics", display_addr, bound_addr.port());
+                info!("Prometheus can scrape on http://{}:{}/metrics", display_addr, bound_addr.port());
             }
         } else {
             warn!("skipping telemetry due to binding issues")
@@ -311,7 +320,7 @@ pub(crate) struct BindToPortResult {
 }
 
 // ss[impl telemetry.builtin-server]
-fn parse_host_port(addr: &str) -> Option<(String, u16)> {
+pub(crate) fn parse_host_port(addr: &str) -> Option<(String, u16)> {
     let (host, port_str) = addr.rsplit_once(':')?;
     let port = port_str.parse::<u16>().ok()?;
     Some((host.to_string(), port))
@@ -352,11 +361,9 @@ pub fn bind_to_port(addr: &str) -> BindToPortResult {
     let scan = steady_config::telemetry_port_scan_enabled(start_port);
     let mut port = start_port;
     let mut walked: u16 = 0;
-    let mut exhausted_addr_in_use = false;
 
     loop {
         if scan && port >= steady_config::TELEMETRY_PORT_SCAN_CEILING {
-            exhausted_addr_in_use = true;
             break;
         }
 
@@ -375,7 +382,6 @@ pub fn bind_to_port(addr: &str) -> BindToPortResult {
                         requested_port: start_port,
                     };
                 }
-                exhausted_addr_in_use = true;
                 if walked >= steady_config::TELEMETRY_PORT_SCAN_MAX_WALK {
                     break;
                 }
@@ -392,14 +398,12 @@ pub fn bind_to_port(addr: &str) -> BindToPortResult {
         }
     }
 
-    if exhausted_addr_in_use {
-        warn!(
-            "Unable to bind telemetry on ports {}-{} ({} ports tried): address already in use",
-            start_port,
-            port,
-            walked.saturating_add(1)
-        );
-    }
+    warn!(
+        "Unable to bind telemetry on ports {}-{} ({} ports tried): address already in use",
+        start_port,
+        port,
+        walked.saturating_add(1)
+    );
 
     BindToPortResult {
         listener: Arc::new(None),
@@ -482,7 +486,7 @@ async fn handle_new_requests (
 /// Processes a single telemetry message to update the internal `DotState`.
 /// This function is designed to be called rapidly in a loop to consume bursts.
 // ss[impl telemetry.builtin-server]
-async fn process_msg(
+pub(crate) async fn process_msg(
     msg: DiagramData,
     metrics_state: &mut DotState,
     history: &mut FrameHistory,
@@ -544,7 +548,7 @@ async fn process_msg(
 }
 
 // ss[impl telemetry.builtin-server]
-async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<RwLock<MetricState>>, flush_frame: bool) {
+pub(crate) async fn generate_reports(metrics_state: &mut DotState, history: &mut FrameHistory, frames: &mut DotGraphFrames, flush_all: bool, state: Arc<RwLock<MetricState>>, flush_frame: bool) {
     if steady_config::TELEMETRY_HISTORY {
         history.update(flush_all).await;
         history.mark_position();
@@ -968,8 +972,7 @@ where
 
     #[allow(unreachable_code)]
     {
-        stream.write_all(format!("HTTP/1.1 404 Not Found\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await?;
-        Ok(())
+        stream.write_all(format!("HTTP/1.1 404 Not Found\r\n{}Content-Length: 0\r\n\r\n", cors_header).as_bytes()).await
     }
 }
 
@@ -993,3 +996,8 @@ pub(crate) async fn async_write_all(data: BytesMut, flush: bool, mut file: std::
 // ss[impl telemetry.builtin-server]
 #[path = "metrics_server_tests.rs"]
 mod metrics_server_tests;
+
+#[cfg(test)]
+// ss[impl telemetry.builtin-server]
+#[path = "metrics_server_proptest.rs"]
+mod metrics_server_proptest;

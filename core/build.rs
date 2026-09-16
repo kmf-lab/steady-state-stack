@@ -306,6 +306,4 @@ fn copy_spinner_into_out_dir(source_file: &Path, dest_file: &Path) {
     let mut source = File::open(source_file).expect("Failed to open spinner.gif source");
     let mut target = File::create(dest_file).expect("Failed to create spinner.gif under OUT_DIR");
     io::copy(&mut source, &mut target).expect("Failed to copy spinner.gif into OUT_DIR");
-
-    println!("cargo:warning=Copied {:?} to {:?}", source_file, dest_file);
 }

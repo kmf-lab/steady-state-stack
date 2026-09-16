@@ -52,6 +52,13 @@ core_display = ["libc", "winapi"]
 # failure and then a quick exit.
 disable_actor_restart_on_failure = []
 
+# Blocking AWS Lambda Runtime API client (ureq only — does NOT enable Steady `tokio`).
+lambda = ["dep:ureq"]
+
+# Re-export parse/protocol internals for `core/fuzz` cargo-fuzz targets only.
+# Not a default feature; do not enable in production graphs.
+fuzzing = []
+
 # no need to enable unless you want to see the performance of the telemetry server
 telemetry_on_telemetry = []
 
@@ -122,6 +129,8 @@ serde_json = "1.0"
 bincode = "2.0"
 futures-lite = "2.6"
 tokio            = { version = "1", optional = true, default-features = false, features = ["rt", "time", "net"] }
+# Blocking HTTP for optional `lambda` Runtime API (no Tokio).
+ureq             = { version = "2.12", optional = true, default-features = false, features = ["tls"] }
 #futures-lite = "2.6.0"
 #backtrace = "0.3.74"
 #async-trait = "0.1.88"
@@ -196,6 +205,15 @@ path = "examples/high_performance/main.rs"
 [[example]]
 name = "high_durability"
 path = "examples/high_durability/main.rs"
+
+[[example]]
+name = "dynamic_troupe"
+path = "examples/dynamic_troupe/main.rs"
+
+[[example]]
+name = "lambda_warm"
+path = "examples/lambda_warm/main.rs"
+required-features = ["lambda"]
 
 [[example]]
 name = "simple_aeron_publisher"

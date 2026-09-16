@@ -19,6 +19,8 @@
 11. [Tooling](10-tooling-cargo-steady-state.md) — `cargo-steady-state`  
 12. [Platform](11-dependencies-and-platform.md) — features, ringbuf pin  
 13. [Verification stack](12-verification-stack.md) — CI process targets  
+14. [Troupe packing](13-troupe-packing.md) — dynamic troupes, startup schedule  
+15. [Lambda warm graph](14-lambda.md) — `for_lambda`, host bridge, persist-before-park  
 
 **Supplementary (non-normative):** [manifesto](../../steady_state_manifesto.md), [actor lifecycle](../actor_lifecycle.md), [channels](../channels.md), [testing](../testing.md), lessons. Architecture decisions (why, not MUST): [`docs/arch/`](../arch/).
 
@@ -35,6 +37,12 @@
 | **Girth** | Bundle lane count `GIRTH` |
 | **Shadow / spotlight** | Graph handle vs active execution context |
 | **Tracey** | Traceability tool reading `.config/tracey/config.styx` |
+| **Dynamic troupe** | Build-time bag; split at `start` into ≤ N OS troupes |
+| **Slot** | One OS thread the packer may create for packed actors |
+| **Incidence** | Build-time TX/RX endpoints + capacity for packing edges |
+| **Warm graph** | One graph per Lambda sandbox across invokes |
+| **Host bridge** | Blocking inject / wait-output into a running graph |
+| **Persist-before-park** | `persist()` before returning to the wait |
 
 ---
 
@@ -88,6 +96,8 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | [10-tooling-cargo-steady-state.md](10-tooling-cargo-steady-state.md) | CLI codegen |
 | [11-dependencies-and-platform.md](11-dependencies-and-platform.md) | Platform |
 | [12-verification-stack.md](12-verification-stack.md) | CI / quality |
+| [13-troupe-packing.md](13-troupe-packing.md) | Dynamic troupes / packing |
+| [14-lambda.md](14-lambda.md) | Lambda warm graph / `for_lambda` |
 
 ---
 
@@ -104,6 +114,7 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `philosophy.single-wake-up` | Consolidated awaits | 01 |
 | `philosophy.zero-copy-discipline` | Ordered peek/take | 01 |
 | `philosophy.explicit-ownership` | Graph owns topology | 01 |
+| `philosophy.startup-schedule` | Map packable actors at start | 01 |
 | `actor.run-dispatcher` | Shadow → spotlight | 02 |
 | `actor.internal-behavior-logic` | Domain hot path | 02 |
 | `actor.lock-first.channels` | Acquire guard at behavior entry | 02 |
@@ -154,6 +165,28 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `tooling.cargo-index-wait-deferred` | Index wait codegen deferred | 10 |
 | `platform.ringbuf-pin` | ringbuf 0.4 pin | 11 |
 | `platform.executor-features` | Bare-metal block_on; optional tokio reactor | 11 |
+| `troupe.dynamic-is-a-bag` | Dynamic troupe is not an OS thread | 13 |
+| `troupe.dynamic-member-of` | Same MemberOf; Solo/normal opt-out | 13 |
+| `troupe.dynamic-hold-until-start` | No packed run before finalize | 13 |
+| `troupe.dynamic-finalize-at-start` | start finalizes before registration | 13 |
+| `troupe.dynamic-slot-budget` | Slot math + pin for tests | 13 |
+| `troupe.dynamic-no-repack` | Same thread on restart | 13 |
+| `troupe.dynamic-channel-establish` | Establish on sub-troupe thread | 13 |
+| `graph.pack.incidence-before-start` | Build-time incidence | 13 |
+| `troupe.dynamic-kruskal-capacity` | Smallest-capacity union-find | 13 |
+| `troupe.dynamic-bundle-siblings` | Bundle sibling non-merge | 13 |
+| `troupe.dynamic-no-incidence-fallback` | Even split if no incidence | 13 |
+| `troupe.dynamic-for-testing` | Test graphs pin or slots=1 | 13 |
+| `graph.for-lambda` | Lambda GraphBuilder preset | 14 |
+| `graph.lambda.warm-graph` | One graph per sandbox | 14 |
+| `graph.lambda.host-not-executor` | Host ≠ actor executor | 14 |
+| `platform.lambda-no-tokio` | No Tokio for lambda path | 14 |
+| `graph.lambda.host-bridge` | Inject / wait-output bridge | 14 |
+| `graph.lambda.event-driven` | No periodic progress | 14 |
+| `graph.lambda.runtime-api` | Blocking Runtime API client | 14 |
+| `state.persist-before-park` | Persist before await | 14 |
+| `state.dirty-at-park` | Dirty bit + strict check | 14 |
+| `state.persist-hooks` | User persist callbacks | 14 |
 
 ---
 
@@ -166,6 +199,9 @@ Target **≥80%** mapped code units on `steady-state/rust-core` (see [`scripts/t
 | `channel.stream-dual-buffer` | 1 | 03 |
 | `bundle.deprecated-bundle-waits` | 1 | 04 |
 | `graph.actor-identity` | 1 | 05 |
+| `troupe.dynamic-linedance-order` | 1 | 13 |
+| `troupe.dynamic-explicit-core` | 1 | 13 |
+| `graph.lambda.shutdown-hook` | 1 | 14 |
 | `telemetry.prometheus-metrics` | 1 | 09 |
 | `telemetry.live-title` | 1 | 09 |
 | `verify.process.nextest` | 1 | 12 |

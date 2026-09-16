@@ -23,9 +23,7 @@ use aeron::aeron::Aeron;
 // ss[related philosophy.structural-hierarchy]
 use async_lock::Barrier;
 // ss[related actor.regeneration-survives]
-use futures::channel::oneshot::{Receiver, Sender};
-// ss[related philosophy.structural-hierarchy]
-use futures_util::future::Shared;
+use futures::channel::oneshot::Sender;
 // ss[related philosophy.structural-hierarchy]
 use futures_util::FutureExt;
 // ss[related actor.regeneration-survives]
@@ -41,7 +39,7 @@ use std::error::Error;
 // ss[related philosophy.structural-hierarchy]
 use std::future::Future;
 // ss[related actor.regeneration-survives]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 // ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, OnceLock};
 // ss[related philosophy.structural-hierarchy]
@@ -155,6 +153,20 @@ pub struct ActorBuilder {
     /// Actor base names that run real `internal_behavior` in test graphs (pipeline processors).
     // ss[related philosophy.structural-hierarchy]
     pub(crate) test_pipeline_internal_names: Arc<HashSet<&'static str>>,
+    /// SoloAct thread counter for dynamic packing slot budget.
+    // ss[impl troupe.dynamic-slot-budget]
+    pub(crate) solo_thread_count: Arc<AtomicUsize>,
+    /// Optional pack ports for the next `build` into a dynamic troupe.
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) pending_pack_ports: Option<crate::graph_liveliness::PackPorts>,
+    /// Per-actor pack port registry on the Graph.
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) pack_ports_map:
+        Arc<parking_lot::Mutex<std::collections::HashMap<usize, crate::graph_liveliness::PackPorts>>>,
+    /// Dirty-at-park enforcement for persistent state.
+    // ss[impl state.dirty-at-park]
+    // ss[impl graph.for-lambda]
+    pub(crate) strict_persist: bool,
 }
 
 // ss[related actor.regeneration-survives]
@@ -214,7 +226,41 @@ impl ActorBuilder {
             stack_size: graph.default_stack_size,
             actor_catalog: graph.actor_catalog.clone(),
             test_pipeline_internal_names: graph.test_pipeline_internal_names.clone(),
+            solo_thread_count: graph.solo_thread_count.clone(),
+            pending_pack_ports: None,
+            pack_ports_map: graph.pack_ports.clone(),
+            strict_persist: graph.strict_persist,
         }
+    }
+
+    /// Declare RX/TX channel ids for packing locality (must match `into_spotlight`).
+    ///
+    /// Required for Kruskal packing; optional for even-split. Does not establish rings.
+    /// Prefer [`Self::with_pack_ports_from`] when you hold lazy channel handles.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn with_pack_ports(
+        mut self,
+        rx_channel_ids: Vec<usize>,
+        tx_channel_ids: Vec<usize>,
+    ) -> Self {
+        self.pending_pack_ports = Some(crate::graph_liveliness::PackPorts {
+            rx_channel_ids,
+            tx_channel_ids,
+        });
+        self
+    }
+
+    /// Record pack ports from lazy channel handles without establishing rings.
+    // ss[impl graph.pack.incidence-before-start]
+    pub fn with_pack_ports_from<R, T>(
+        self,
+        rx: &[&crate::LazySteadyRx<R>],
+        tx: &[&crate::LazySteadyTx<T>],
+    ) -> Self {
+        self.with_pack_ports(
+            rx.iter().map(|r| r.pack_channel_id()).collect(),
+            tx.iter().map(|t| t.pack_channel_id()).collect(),
+        )
     }
 
     /// Sets the compute refresh window floor and bucket size for telemetry, adjusting the resolution of performance metrics.
@@ -222,7 +268,7 @@ impl ActorBuilder {
     /// This method fine-tunes telemetry data collection by specifying the minimum refresh rate and window size for
     /// metrics aggregation.
     ///
-    /// **Effective window vs. wall clock:** [`crate::telemetry_window::compute_refresh_window_frames`] rounds bucket
+    /// **Effective window vs. wall clock:** `compute_refresh_window_frames` rounds bucket
     /// counts up to powers of two. The displayed “Window” span is approximately
     /// `telemetry_frame_ms × 2^(refresh_bits + window_bits)`, so a `(1s, 10s)` floor with a ~100ms collector frame
     /// often yields **~12.8s** of samples, not exactly 10s. Use a shorter `window` argument if you need **Avg mCPU**
@@ -321,7 +367,7 @@ impl ActorBuilder {
 
     /// Computes the refresh rate and window bucket size in bits based on frame rate and durations.
     ///
-    /// Delegates to [`crate::telemetry_window::compute_refresh_window_frames`]: one sample per
+    /// Delegates to `compute_refresh_window_frames`: one sample per
     /// telemetry frame (same cadence as channel edge rollups).
     ///
     /// # Arguments
@@ -675,6 +721,8 @@ impl ActorBuilder {
             never_simulate: self.never_simulate,
             force_internal_behavior_in_test,
             shutdown_barrier: self.shutdown_barrier,
+            pack_ports_map: self.pack_ports_map.clone(),
+            strict_persist: self.strict_persist,
         }
     }
 

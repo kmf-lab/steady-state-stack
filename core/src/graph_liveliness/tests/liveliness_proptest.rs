@@ -1,11 +1,9 @@
 // ss[related graph.for-testing]
-use crate::ss_proptest;
 // ss[related philosophy.structural-hierarchy]
 use proptest::prelude::*;
 // ss[related philosophy.structural-hierarchy]
 use super::super::{
     effective_block_until_stopped_timeout, ActorIdentity, GraphLiveliness, GraphLivelinessState,
-    VoterStatus,
 };
 // ss[related graph.block-until-stopped]
 use crate::core_exec;

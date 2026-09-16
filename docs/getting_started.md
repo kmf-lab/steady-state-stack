@@ -145,6 +145,7 @@ cargo run --example your_first_actor
 - Read the **[Actor Lifecycle Guide](actor_lifecycle.md)** (spec: [02-actor](spec/02-actor.md), [05-graph](spec/05-graph-and-shutdown.md)).
 - Explore **[Channel Configuration](channels.md)** (spec: [03-channel](spec/03-channel.md), [04-bundle](spec/04-bundle-and-index.md)).
 - Learn how to **[Test](testing.md)** your actors (spec: [06-testing](spec/06-testing-and-simulation.md)).
+- Map actors onto this machine’s CPU budget with **[dynamic troupe packing](../lesson-on-dynamic-troupes.md)** (spec: [13-troupe-packing](spec/13-troupe-packing.md)) — startup schedule, not a work-stealing pool.
 
 ---
 

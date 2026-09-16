@@ -373,6 +373,60 @@ fn test_stream_egress_tx_core_capacity_checks() {
 
 #[test]
 // ss[verify channel.stream-dual-buffer]
+fn test_stream_done_one_one_log_and_advance() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (in_tx, _in_rx) = graph.channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamIngress>(16);
+        let (eg_tx, _eg_rx) = graph.channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(16);
+
+        let in_clone = in_tx.clone();
+        let mut ingress = in_clone.lock().await;
+        let now = Instant::now();
+        let payload = &[1u8, 2, 3][..];
+        let item = StreamIngress::new(3, 0, now, now);
+        assert_eq!(ingress.done_one(&(item, payload)), TxDone::Stream(1, 3));
+        let one = ingress.one();
+        assert_eq!(one.0, 1);
+        assert!(one.1 >= 1);
+        assert!(ingress.shared_capacity_for((1, 1)));
+        assert!(!ingress.shared_capacity_for((100, 1000)));
+        assert_eq!(ingress.shared_advance_index((100, 1000)), TxDone::Stream(0, 0));
+        assert_eq!(ingress.shared_advance_index((1, 2)), TxDone::Stream(1, 2));
+        ingress.control_channel.last_error_send = Instant::now();
+        assert!(!ingress.log_perodic());
+        ingress.monitor_not();
+
+        let eg_clone = eg_tx.clone();
+        let mut egress = eg_clone.lock().await;
+        assert_eq!(egress.done_one(&payload), TxDone::Stream(1, 3));
+        let one = egress.one();
+        assert_eq!(one.0, 1);
+        assert!(one.1 >= 1);
+        assert_eq!(egress.shared_advance_index((100, 1000)), TxDone::Stream(0, 0));
+        assert_eq!(egress.shared_advance_index((1, 2)), TxDone::Stream(1, 2));
+        egress.control_channel.last_error_send = Instant::now();
+        assert!(!egress.log_perodic());
+        egress.control_channel.last_error_send =
+            Instant::now() - Duration::from_secs(30);
+        assert!(egress.log_perodic());
+        egress.monitor_not();
+
+        let meta = egress.control_channel.channel_meta_data.meta_data.clone();
+        let mut actor = graph.new_testing_test_monitor("stream_tel")
+            .into_spotlight([], [&meta as &dyn TxMetaDataProvider]);
+        if let Some(ref mut tel) = actor.telemetry.send_tx {
+            egress.telemetry_inc(TxDone::Stream(1, 2), tel);
+            egress.telemetry_inc(TxDone::Normal(1), tel);
+        }
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
 fn test_stream_ingress_tx_core_mark_closed_dropped() {
     core_exec::block_on(async {
         let mut graph = GraphBuilder::for_testing().build(());

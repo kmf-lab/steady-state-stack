@@ -3,7 +3,7 @@
 //! execution monitoring for actors and channels within the Steady framework.
 
 // ss[related actor.shadow-spotlight]
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 // ss[related philosophy.structural-hierarchy]
 use log::*;
 // ss[related philosophy.structural-hierarchy]
@@ -27,7 +27,7 @@ use futures_util::future::{FusedFuture, Shared};
 // ss[related philosophy.structural-hierarchy]
 use futures_timer::Delay;
 // ss[related actor.shadow-spotlight]
-use futures_util::{select, FutureExt, StreamExt};
+use futures_util::{select, FutureExt};
 // ss[related philosophy.structural-hierarchy]
 use std::future::Future;
 // ss[related philosophy.structural-hierarchy]
@@ -36,8 +36,6 @@ use num_traits::Zero;
 use std::task::Poll;
 // ss[related philosophy.structural-hierarchy]
 use aeron::aeron::Aeron;
-// ss[related philosophy.structural-hierarchy]
-use futures_util::stream::FuturesUnordered;
 // ss[related actor.shadow-spotlight]
 use ringbuf::traits::Observer;
 // ss[related philosophy.structural-hierarchy]
@@ -52,7 +50,7 @@ use crate::{simulate_edge, yield_now, ActorIdentity, Graph, GraphLiveliness, Gra
 use crate::actor_builder::NodeTxRx;
 // ss[related actor.shadow-spotlight]
 use crate::steady_actor::{
-    index_wait_avoid_repeat_lane, next_index_wait_start, wait_paired_lane_ready, wait_rx_until_avail_items_ready,
+    wait_paired_lane_ready, wait_rx_until_avail_items_ready,
     wait_tx_until_vacant_satisfied, BlockingCallFuture, SendOutcome,
 };
 // ss[related actor.shadow-spotlight]
@@ -110,14 +108,15 @@ impl<const RXL: usize, const TXL: usize> Drop for SteadyActorSpotlight<RXL, TXL>
     }
 }
 
+// ss[related actor.wait-avail-vacant]
+mod wait;
+
 /// Represents a local monitor that handles telemetry for an actor or channel.
 ///
 /// # Type Parameters
 /// - `RX_LEN`: THE length of the receiver array.
 /// - `TX_LEN`: THE length of the transmitter array.
 // ss[related actor.shadow-spotlight]
-mod wait;
-
 pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     // ss[related philosophy.structural-hierarchy]
     pub(crate) ident: ActorIdentity,
@@ -169,6 +168,10 @@ pub struct SteadyActorSpotlight<const RX_LEN: usize, const TX_LEN: usize> {
     /// Last lane index returned by [`SteadyActor::wait_avail_vacant_index`] (round-robin).
     // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
+    /// Dirty-at-park enforcement for persistent state.
+    // ss[impl state.dirty-at-park]
+    // ss[impl graph.for-lambda]
+    pub(crate) strict_persist: bool,
 }
 
 // ss[related actor.shadow-spotlight]
@@ -732,6 +735,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
 
     // ss[related actor.shadow-spotlight]
     async fn yield_now(&self) {
+        // ss[impl state.dirty-at-park]
+        // ss[impl state.persist-before-park]
+        crate::state_management::set_thread_strict_persist(self.strict_persist);
+        crate::state_management::check_dirty_at_park();
         let _guard = self.start_profile(CALL_WAIT);
         yield_now().await;
     }
@@ -886,6 +893,10 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
     #[inline]
     // ss[related actor.shadow-spotlight]
     fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
+        // ss[impl state.dirty-at-park]
+        // ss[impl state.persist-before-park]
+        crate::state_management::set_thread_strict_persist(self.strict_persist);
+        crate::state_management::check_dirty_at_park();
 
         let current_state = self.runtime_state.read().state.clone();
         if self.oneshot_shutdown.is_terminated() && current_state == GraphLivelinessState::Running {
@@ -894,18 +905,22 @@ impl<const RX_LEN: usize, const TX_LEN: usize> SteadyActor for SteadyActorSpotli
             error!("State pointer: {:p}", Arc::as_ptr(&self.runtime_state));
         }
 
-        let result = self.runtime_state.read().is_running(self.ident, &mut accept_fn);
-        if let Some(running) = result {
-            if running && !self.is_running_iteration_count.is_zero() {
-                self.relay_stats_smartly();
-            } else {
-                self.relay_stats();
-            }
-            self.is_running_iteration_count += 1;
-            running
-        } else {
-            true
+        if current_state == GraphLivelinessState::Building {
+            return true;
         }
+
+        let running = crate::steady_actor_core::SteadyActorCore::is_running(
+            &self.runtime_state,
+            self.ident,
+            &mut accept_fn,
+        );
+        if running && !self.is_running_iteration_count.is_zero() {
+            self.relay_stats_smartly();
+        } else {
+            self.relay_stats();
+        }
+        self.is_running_iteration_count += 1;
+        running
     }
 
     #[inline]
@@ -1004,3 +1019,7 @@ mod tests;
 #[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
 mod spotlight_proptest;
+
+#[cfg(test)]
+// ss[related philosophy.structural-hierarchy]
+mod wait_proptest;

@@ -94,6 +94,13 @@ mod graph;
 // ss[related philosophy.structural-hierarchy]
 mod graph_liveliness;
 
+/// Optional blocking Lambda Runtime API client (`lambda` feature).
+// ss[impl graph.lambda.runtime-api]
+// ss[impl platform.lambda-no-tokio]
+// ss[verify platform.lambda-no-tokio]
+#[cfg(feature = "lambda")]
+pub mod lambda_runtime_api;
+
 /// Utilities for managing loops and futures in actor execution.
 ///
 /// This module offers functions for selecting and awaiting multiple futures in a controlled manner.
@@ -111,6 +118,11 @@ mod abstract_executor;
 
 /// Tracey impl anchors for CI process requirements (`verify.process.*`).
 mod verify_process;
+
+/// Parse/protocol re-exports for `cargo-fuzz` targets (`--features fuzzing`).
+// ss[impl verify.process.fuzz]
+#[cfg(feature = "fuzzing")]
+pub mod fuzz_export;
 
 // ss[related philosophy.structural-hierarchy]
 pub(crate) use abstract_executor::core_exec;
@@ -193,6 +205,8 @@ pub use state_management::SteadyState;
 pub use state_management::new_state;/// Installation utilities for various deployment methods.
 // ss[related philosophy.structural-hierarchy]
 pub use state_management::new_persistent_state;
+// ss[impl state.persist-hooks]
+pub use state_management::new_persistent_state_with;
 // ss[related philosophy.structural-hierarchy]
 pub use state_management::StateGuard;
 
@@ -435,8 +449,6 @@ pub use std::error::Error;
 use futures::select;
 // ss[related philosophy.structural-hierarchy]
 use std::fmt::Debug;
-// ss[related philosophy.structural-hierarchy]
-use std::io;
 // ss[related philosophy.structural-hierarchy]
 use std::sync::Arc;
 // ss[related philosophy.structural-hierarchy]

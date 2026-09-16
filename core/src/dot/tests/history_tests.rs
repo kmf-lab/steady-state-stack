@@ -1,11 +1,7 @@
 // ss[related telemetry.dot-export]
 use super::super::*;
-// ss[impl telemetry.dot-export]
-use super::test_dot_frames;
-// ss[impl telemetry.dot-export]
-use crate::dot_unify::ChannelEdgeRole;
 // ss[related telemetry.dot-export]
-use crate::monitor::{ActorIdentity, ActorMetaData, ActorStatus, ChannelMetaData};
+use crate::monitor::ChannelMetaData;
 // ss[impl telemetry.dot-export]
 use crate::telemetry::metrics_server::async_write_all;
 // ss[impl telemetry.dot-export]
@@ -16,8 +12,6 @@ use std::fs::remove_file;
 use std::path::PathBuf;
 // ss[impl telemetry.dot-export]
 use std::sync::Arc;
-// ss[related telemetry.dot-export]
-use std::time::Instant;
 
 #[test]
 // ss[verify telemetry.dot-export]

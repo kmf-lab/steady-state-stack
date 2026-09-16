@@ -56,5 +56,62 @@ ss_proptest! {
         prop_assert!(testing.is_for_testing);
         prop_assert!(!testing.telemetry_metric_features);
         prop_assert!(testing.backplane.is_some());
+        prop_assert!(!testing.strict_persist);
+        let strict = testing.with_strict_persist();
+        prop_assert!(strict.strict_persist);
+    }
+
+    /// Property: `with_pack_slots` pins slot budget for dynamic troupe packing.
+    #[test]
+    // ss[verify troupe.dynamic-slot-budget]
+    // ss[verify verify.process.proptest]
+    fn proptest_pack_slots_pinned(
+        slots in 1usize..16,
+    ) {
+        let builder = GraphBuilder::for_testing().with_pack_slots(slots);
+        prop_assert_eq!(builder.pack_slots, Some(slots));
+    }
+}
+
+#[cfg(test)]
+mod for_lambda_tests {
+    use super::*;
+
+    // ss[verify graph.for-lambda]
+    #[test]
+    #[should_panic(expected = "should not call for_lambda in tests")]
+    fn for_lambda_panics_under_cfg_test() {
+        let _ = GraphBuilder::for_lambda();
+    }
+
+    // ss[verify graph.for-testing]
+    #[test]
+    #[should_panic(expected = "should not call for_production in tests")]
+    fn default_panics_under_cfg_test() {
+        let _ = GraphBuilder::default();
+    }
+
+    // ss[verify graph.for-testing]
+    #[test]
+    #[should_panic(expected = "should not call for_production in tests")]
+    fn for_production_panics_under_cfg_test() {
+        let _ = GraphBuilder::for_production();
+    }
+
+    // ss[verify graph.for-lambda]
+    // ss[verify state.dirty-at-park]
+    #[test]
+    fn with_strict_persist_enables_flag() {
+        let b = GraphBuilder::for_testing().with_strict_persist();
+        assert!(b.strict_persist);
+        assert!(!b.telemetry_metric_features);
+        assert_eq!(b.pack_slots, Some(1));
+    }
+
+    // ss[verify graph.lambda.shutdown-hook]
+    #[test]
+    fn build_registers_ctrlc_shutdown_path() {
+        // GraphBuilder::build installs ctrlc → request_shutdown + watch_shutdown (sub-second drain).
+        let _g = GraphBuilder::for_testing().with_strict_persist().build(());
     }
 }

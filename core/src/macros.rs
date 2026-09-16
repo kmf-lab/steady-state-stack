@@ -500,8 +500,6 @@ mod macros_proptest {
     use super::*;
     // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
-    // ss[related bundle.split-macro]
-    use crate::ss_proptest;
     // ss[related philosophy.structural-hierarchy]
     use proptest::prelude::*;
 
@@ -539,5 +537,91 @@ mod macros_proptest {
             prop_assert_eq!(b.len(), 3);
             prop_assert_eq!(a.len() + b.len(), 4);
         }
+
+        /// Property: `SimIndexable` flattens singles and bundles into one runner list.
+        #[test]
+        // ss[verify bundle.split-macro]
+        // ss[verify verify.process.proptest]
+        fn proptest_sim_indexable_flattens_channels_and_bundles(cap in 1usize..8) {
+            use crate::simulate_edge::{IntoSimRunner, TestActor};
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx0, rx0) = builder.build_channel::<u8>();
+            let (tx1, rx1) = builder.build_channel::<u8>();
+            let rx = rx0.clone();
+            let tx = tx0.clone();
+            let rx_bundle: SteadyRxBundle<u8, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+            let tx_bundle: SteadyTxBundle<u8, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+
+            let mut singles: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+            rx.push_to(&mut singles);
+            tx.push_to(&mut singles);
+            prop_assert_eq!(singles.len(), 2);
+
+            let mut from_rx_bundle: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+            rx_bundle.push_to(&mut from_rx_bundle);
+            prop_assert_eq!(from_rx_bundle.len(), 2);
+
+            let mut from_tx_bundle: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+            tx_bundle.push_to(&mut from_tx_bundle);
+            prop_assert_eq!(from_tx_bundle.len(), 2);
+        }
+
+        /// Property: `MetaIndexable` reports length 1 for singles and N for bundles/ref arrays.
+        #[test]
+        // ss[verify bundle.split-macro]
+        // ss[verify verify.process.proptest]
+        fn proptest_meta_indexable_len_and_at(cap in 1usize..8) {
+            let builder = ChannelBuilder::default().with_capacity(cap);
+            let (tx0, rx0) = builder.build_channel::<u8>();
+            let (tx1, rx1) = builder.build_channel::<u8>();
+            let rx = rx0.clone();
+            let tx = tx0.clone();
+            prop_assert_eq!(MetaIndexable::<dyn RxMetaDataProvider>::meta_len(&rx), 1);
+            prop_assert_eq!(MetaIndexable::<dyn TxMetaDataProvider>::meta_len(&tx), 1);
+            let _ = MetaIndexable::<dyn RxMetaDataProvider>::meta_at(&rx, 0);
+            let _ = MetaIndexable::<dyn TxMetaDataProvider>::meta_at(&tx, 0);
+
+            let rx_bundle: SteadyRxBundle<u8, 2> = Arc::new([rx0.clone(), rx1.clone()]);
+            let tx_bundle: SteadyTxBundle<u8, 2> = Arc::new([tx0.clone(), tx1.clone()]);
+            prop_assert_eq!(MetaIndexable::<dyn RxMetaDataProvider>::meta_len(&rx_bundle), 2);
+            prop_assert_eq!(MetaIndexable::<dyn TxMetaDataProvider>::meta_len(&tx_bundle), 2);
+            let _ = MetaIndexable::<dyn RxMetaDataProvider>::meta_at(&rx_bundle, 1);
+            let _ = MetaIndexable::<dyn TxMetaDataProvider>::meta_at(&tx_bundle, 1);
+
+            let rx_refs: [&dyn RxMetaDataProvider; 2] = [&rx_bundle[0], &rx_bundle[1]];
+            let tx_refs: [&dyn TxMetaDataProvider; 2] = [&tx_bundle[0], &tx_bundle[1]];
+            prop_assert_eq!(rx_refs.meta_len(), 2);
+            prop_assert_eq!(tx_refs.meta_len(), 2);
+            let _ = rx_refs.meta_at(0);
+            let _ = tx_refs.meta_at(1);
+        }
+    }
+
+    #[test]
+    // ss[verify bundle.split-macro]
+    // ss[verify stream.control-payload]
+    fn sim_indexable_flattens_stream_singles_and_bundles() {
+        use crate::simulate_edge::{IntoSimRunner, TestActor};
+        use crate::{GraphBuilder, StreamIngress};
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (stx0, srx0) = graph.channel_builder().with_capacity(4).build_stream::<StreamIngress>(8);
+        let (stx1, srx1) = graph.channel_builder().with_capacity(4).build_stream::<StreamIngress>(8);
+        let srx = srx0.clone();
+        let stx = stx0.clone();
+        let rx_bundle = Arc::new([srx0.clone(), srx1.clone()]);
+        let tx_bundle = Arc::new([stx0.clone(), stx1.clone()]);
+
+        let mut singles: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+        srx.push_to(&mut singles);
+        stx.push_to(&mut singles);
+        assert_eq!(singles.len(), 2);
+
+        let mut from_rx: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+        rx_bundle.push_to(&mut from_rx);
+        assert_eq!(from_rx.len(), 2);
+
+        let mut from_tx: Vec<&dyn IntoSimRunner<TestActor>> = Vec::new();
+        tx_bundle.push_to(&mut from_tx);
+        assert_eq!(from_tx.len(), 2);
     }
 }

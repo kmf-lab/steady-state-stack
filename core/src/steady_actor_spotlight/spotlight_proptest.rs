@@ -273,9 +273,9 @@ ss_proptest! {
     fn proptest_spotlight_wait_periodic_overrun(
         overrun_ms in 1u64..50,
     ) {
-        let mut graph = GraphBuilder::for_testing().build(());
+        let graph = GraphBuilder::for_testing().build(());
         let shadow = graph.new_testing_test_monitor("spot_periodic");
-        let mut spotlight = shadow.into_spotlight([], []);
+        let spotlight = shadow.into_spotlight([], []);
         let real_now = spotlight.actor_start_time.elapsed().as_nanos() as u64;
         spotlight
             .last_periodic_wait
@@ -455,7 +455,7 @@ ss_proptest! {
         tx.testing_send_all(vec![99], false);
         let shadow = graph.new_testing_test_monitor("spot_showstopper");
         let rx_steady = rx.clone();
-        let mut spotlight = shadow.into_spotlight([&rx_steady], []);
+        let spotlight = shadow.into_spotlight([&rx_steady], []);
         let mut rx_guard = core_exec::block_on(rx_steady.lock());
         for _ in 0..threshold + 1 {
             let _ = spotlight.try_peek(&mut rx_guard);

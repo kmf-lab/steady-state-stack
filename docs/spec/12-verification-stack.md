@@ -2,7 +2,7 @@
 
 **Who should read this:** CI maintainers adopting nextest, llvm-cov, proptest, fuzz, and mutants.
 
-**Note:** Process requirements here define targets; full tool adoption is follow-on work per [00-conventions](00-conventions.md) waivers.
+**Note:** Process requirements here define targets. Mutants and llvm-cov CI gates remain follow-on work per [00-conventions](00-conventions.md) waivers. Fuzz targets exist and run via `scripts/run-fuzz.sh`.
 
 ---
 
@@ -32,9 +32,9 @@ Property tests cover Tier-0 channel, actor, stats, graph, and telemetry invarian
 
 ss[verify.process.fuzz]
 
-Fuzz targets SHOULD cover parsing and protocol edges for distributed builders; **temporary waiver** until `cargo-fuzz` targets exist.
+The repository MUST contain `cargo-fuzz` targets under `core/fuzz` covering parse and protocol edges: Aeron channel URI construction, FAST packed longs, cgroup CPU quota strings, and even-split troupe packing. Release and local campaigns MUST run via `scripts/run-fuzz.sh` (honor `SS_SKIP_FUZZ=1` when nightly or clang is unavailable). Campaign duration SHOULD be at least 20 seconds per target (`SS_FUZZ_SECONDS`).
 
-**Tier:** 1 — process waiver
+**Tier:** 1
 
 ---
 
@@ -69,7 +69,7 @@ Rust sources under `core/src/` SHOULD stay below **1,200 lines** per file (soft 
 | `verify.process.nextest` | nextest in CI | 1 |
 | `verify.process.llvm-cov` | llvm-cov merge | 1 |
 | `verify.process.proptest` | proptest (deferred) | 1 |
-| `verify.process.fuzz` | cargo-fuzz (deferred) | 1 |
+| `verify.process.fuzz` | cargo-fuzz parse/protocol targets | 1 |
 | `verify.process.mutants` | mutation testing | 1 |
 | `verify.process.tracey-gate` | Tracey on PR | 1 |
 | `verify.process.file-size` | per-file line cap | 1 |

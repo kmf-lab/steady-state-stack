@@ -93,12 +93,22 @@ pub async fn run<const GIRTH: usize>(
         // Poll for the Aeron media driver, essential for publishing.
         while actor.aeron_media_driver().is_none() {
             warn!("unable to find Aeron media driver, will try again in 15 sec");
-            let mut rx = rx.lock().await;
-            if actor.is_running(&mut || rx.is_closed_and_empty()) {
-                // Wait periodically to avoid busy-waiting, respecting Aeron's startup time.
+            // No driver: remaining egress cannot be offered to Aeron, so do not veto stop.
+            // ss[impl distributed.subscribe-publish]
+            let keep_waiting = {
+                let mut rx = rx.lock().await;
+                actor.is_running(&mut || {
+                    if !rx.is_closed_and_empty() {
+                        warn!(
+                            "shutdown during media-driver wait with pending egress; cannot publish without a driver"
+                        );
+                    }
+                    true
+                })
+            };
+            if keep_waiting {
                 let _ = actor.wait_periodic(Duration::from_secs(15)).await;
             } else {
-                // Exit gracefully if the actor is stopped before the driver is found.
                 return Ok(());
             }
         }

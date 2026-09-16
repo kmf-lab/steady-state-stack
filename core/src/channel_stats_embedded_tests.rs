@@ -1,7 +1,5 @@
 //! Tests extracted from `channel_stats.rs` so the production file stays under the 1,200-line budget.
-//! Nested test mods keep their own imports; `use super::*` at the top re-exports the parent.
-
-use super::*;
+//! Nested test mods keep their own imports.
 
 #[cfg(test)]
 // ss[related telemetry.channel-labels]
@@ -388,6 +386,85 @@ mod channel_stats_tests {
             "label must contain 'Avg filled: 30 %': {:?}",
             label
         );
+    }
+
+    #[test]
+    // ss[verify telemetry.channel-labels]
+    fn test_stddev_and_percentile_ordering_helpers() {
+        use crate::{Percentile, StdDev};
+        use hdrhistogram::Histogram;
+
+        let mut h = Histogram::<u64>::new(3).expect("histogram");
+        for v in [10u64, 20, 30, 40, 50] {
+            h.record(v).expect("record");
+        }
+        let filled_block = ChannelBlock {
+            histogram: Some(h),
+            runner: 150_000,
+            sum_of_squares: 0,
+        };
+        let mut h2 = Histogram::<u64>::new(3).expect("histogram2");
+        for v in [10u64, 20, 30, 40, 50] {
+            h2.record(v).expect("record");
+        }
+        let latency_block = ChannelBlock {
+            histogram: Some(h2),
+            runner: 150_000,
+            sum_of_squares: 0,
+        };
+        let computer = ChannelStatsComputer {
+            capacity: 100,
+            current_filled: Some(filled_block),
+            current_latency: Some(latency_block),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+
+        let _ = computer.stddev_filled_exact(&StdDev::one(), &10);
+        let _ = computer.stddev_filled_percentage(&StdDev::one(), &50, &100);
+        let _ = computer.stddev_latency(&StdDev::one(), &Duration::from_micros(100));
+        let _ = computer.percentile_filled_exact(&Percentile::p50(), &25);
+        let _ = computer.percentile_filled_percentage(&Percentile::p50(), &50, &100);
+        let _ = computer.percentile_latency(&Percentile::p50(), &Duration::from_micros(30));
+    }
+
+    #[test]
+    // ss[verify telemetry.channel-labels]
+    fn test_stddev_percentile_unknown_when_no_histogram() {
+        use crate::{Percentile, StdDev};
+
+        let block = ChannelBlock {
+            histogram: None,
+            runner: 50_000,
+            sum_of_squares: 0,
+        };
+        let computer = ChannelStatsComputer {
+            capacity: 100,
+            current_filled: Some(block),
+            current_latency: Some(ChannelBlock {
+                histogram: None,
+                runner: 50_000,
+                sum_of_squares: 0,
+            }),
+            refresh_rate_in_bits: 0,
+            window_bucket_in_bits: 0,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            computer.percentile_filled_exact(&Percentile::p50(), &10),
+            Ordering::Equal
+        );
+        assert_eq!(
+            computer.percentile_filled_percentage(&Percentile::p50(), &50, &100),
+            Ordering::Equal
+        );
+        assert_eq!(
+            computer.percentile_latency(&Percentile::p50(), &Duration::from_micros(1)),
+            Ordering::Equal
+        );
+        let _ = computer.stddev_filled_exact(&StdDev::one(), &10);
     }
 
     #[test]

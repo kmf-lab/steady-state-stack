@@ -1,7 +1,5 @@
 // ss[related actor.regeneration-survives]
-use crate::dot::RemoteDetails;
-// ss[related philosophy.structural-hierarchy]
-use crate::graph_liveliness::{ActorIdentity, GraphLiveliness, GraphLivelinessState};
+use crate::graph_liveliness::{ActorIdentity, GraphLiveliness};
 // ss[related philosophy.structural-hierarchy]
 use crate::graph_testing::SideChannel;
 // ss[related actor.regeneration-survives]
@@ -26,8 +24,6 @@ use futures_util::lock::Mutex;
 use parking_lot::RwLock;
 // ss[related philosophy.structural-hierarchy]
 use std::any::Any;
-// ss[related philosophy.structural-hierarchy]
-use std::collections::VecDeque;
 // ss[related actor.regeneration-survives]
 use std::error::Error;
 // ss[related philosophy.structural-hierarchy]
@@ -35,7 +31,7 @@ use std::future::Future;
 // ss[related philosophy.structural-hierarchy]
 use std::pin::Pin;
 // ss[related actor.regeneration-survives]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 // ss[related philosophy.structural-hierarchy]
 use std::sync::{Arc, OnceLock};
 // ss[related philosophy.structural-hierarchy]
@@ -107,6 +103,13 @@ pub(crate) struct SteadyContextArchetype<DynCall: ?Sized> {
     /// Optional barrier for synchronizing shutdown.
     // ss[related philosophy.structural-hierarchy]
     pub(crate) shutdown_barrier: Option<Arc<Barrier>>,
+    /// Graph pack-ports registry for spotlight mismatch warnings.
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) pack_ports_map:
+        Arc<parking_lot::Mutex<std::collections::HashMap<usize, crate::graph_liveliness::PackPorts>>>,
+    /// Dirty-at-park enforcement for persistent state.
+    // ss[impl state.dirty-at-park]
+    pub(crate) strict_persist: bool,
 }
 
 // ss[related actor.regeneration-survives]
@@ -130,6 +133,8 @@ impl<T: ?Sized> Clone for SteadyContextArchetype<T> {
             never_simulate: self.never_simulate,
             force_internal_behavior_in_test: self.force_internal_behavior_in_test,
             shutdown_barrier: self.shutdown_barrier.clone(),
+            pack_ports_map: self.pack_ports_map.clone(),
+            strict_persist: self.strict_persist,
         }
     }
 }
@@ -289,5 +294,11 @@ pub(crate) fn build_actor_context<I: ?Sized>(
         index_wait_last_avail: AtomicUsize::new(usize::MAX),
         index_wait_last_vacant: AtomicUsize::new(usize::MAX),
         index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
+        expected_pack_ports: builder_source
+            .pack_ports_map
+            .lock()
+            .get(&builder_source.ident.id)
+            .cloned(),
+        strict_persist: builder_source.strict_persist,
     }
 }

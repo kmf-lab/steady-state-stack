@@ -237,6 +237,19 @@ mod tests {
             stub.consume_dot_subtitle(),
             Some(Some("subtitle".into()))
         );
+        let meta = stub.actor_metadata();
+        assert!(std::sync::Arc::ptr_eq(&meta, &stub.actor_metadata()));
+        assert!(stub.is_empty());
+        assert!(stub.is_empty_and_closed());
+        assert!(stub.tx_channel_id_vec().is_empty());
+        assert!(stub.rx_channel_id_vec().is_empty());
+        assert!(stub.consume_actor().is_none());
+        assert!(stub.actor_rx(1).is_none());
+        let mut take_send = vec![(2, 3)];
+        let mut future_take = vec![1];
+        let mut future_send = vec![4];
+        assert!(!stub.consume_take_into(&mut take_send, &mut future_take, &mut future_send));
+        assert!(!stub.consume_send_into(&mut take_send, &mut future_send));
         let clear = SubtitleRxTel {
             actor_metadata: Arc::new(ActorMetaData::default()),
             pending: Some(None),

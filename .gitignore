@@ -53,6 +53,22 @@ tarpaulin-report.html
 /cov_*.lcov
 /merged.lcov
 
+# cargo-fuzz build + crash artifacts. Hand-written seed_* files stay tracked.
+core/fuzz/target/
+core/fuzz/artifacts/
+core/fuzz/corpus/**
+!core/fuzz/corpus/**/
+!core/fuzz/corpus/**/seed_*
+
+# Session / pre-publish dumps (never git add .)
+.cursor/
+pre-publish-*.txt
+core/pre-publish-*.txt
+llvm-cov-*.txt
+cargo_rustdoc.txt
+cargo_test.txt
+cargo_build_release.txt
+
 /core/routing_service/aeron/aeron/
 /htmlReport/
 /coverage_html/

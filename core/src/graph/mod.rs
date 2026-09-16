@@ -18,6 +18,8 @@ mod graph;
 mod shutdown;
 // ss[related philosophy.structural-hierarchy]
 mod testing_guard;
+// ss[impl graph.lambda.host-bridge]
+mod lambda_bridge;
 
 // ss[related graph.for-testing]
 pub use identity::*;
@@ -29,11 +31,15 @@ pub use vote::*;
 pub use liveliness::*;
 // ss[related philosophy.structural-hierarchy]
 pub use builder::*;
+#[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
 pub(crate) use builder::MIN_MS_RATE;
 // ss[related graph.for-testing]
 pub use graph::*;
+#[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
-pub use shutdown::*;
+pub(crate) use shutdown::{effective_block_until_stopped_timeout, watch_shutdown};
 // ss[related philosophy.structural-hierarchy]
 pub use testing_guard::*;
+// ss[impl graph.lambda.host-bridge]
+pub use lambda_bridge::{LambdaEgress, LambdaHost, LambdaIngress};

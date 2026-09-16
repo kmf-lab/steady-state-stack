@@ -1,7 +1,5 @@
 //! Tests extracted from `actor_stats.rs` so the production file stays under the 1,200-line budget.
-//! Nested test mods keep their own imports; `use super::*` at the top re-exports the parent.
-
-use super::*;
+//! Nested test mods keep their own imports.
 
 #[cfg(test)]
 // ss[related telemetry.prometheus-metrics]

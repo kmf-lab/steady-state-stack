@@ -1,7 +1,6 @@
 //! Tests extracted from `aqueduct_stream.rs` so the production file stays under the 1,200-line budget.
 //! Nested test mods keep their own imports; top-level `use super::*` is unused here but documents the pattern.
 
-use super::*;
 
 #[cfg(test)]
 // ss[related distributed.aqueduct-stream]
@@ -9,7 +8,7 @@ mod extra_stream_tests {
     // ss[related philosophy.structural-hierarchy]
     use super::super::*;
     // ss[related philosophy.structural-hierarchy]
-    use proptest::prelude::*;
+    
     // ss[related distributed.aqueduct-stream]
     use std::sync::Arc;
     // ss[related distributed.aqueduct-stream]

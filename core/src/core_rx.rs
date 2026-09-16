@@ -1073,3 +1073,8 @@ mod core_rx_async_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "core_rx_slice_proptest.rs"]
+// ss[related philosophy.zero-copy-discipline]
+mod core_rx_slice_proptest;

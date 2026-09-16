@@ -163,8 +163,8 @@ pub(crate) async fn wait_paired_lane_ready<R: RxCore, T: TxCore>(
     }
 }
 
-/// Builds a `Vec<usize>` of length `len` filled with `per_lane` for [`SteadyActor::wait_avail_index`](crate::steady_actor::SteadyActor::wait_avail_index)
-/// and [`SteadyActor::wait_vacant_index`](crate::steady_actor::SteadyActor::wait_vacant_index) when `MsgSize` is `usize`.
+/// Builds a `Vec<usize>` of length `len` filled with `per_lane` for [`SteadyActor::wait_avail_index`]
+/// and [`SteadyActor::wait_vacant_index`] when `MsgSize` is `usize`.
 /// If `len == 0`, returns an empty vector (matches an empty bundle).
 // ss[impl bundle.uniform-counts-helper]
 pub fn index_wait_counts_uniform_usize(per_lane: usize, len: usize) -> Vec<usize> {
@@ -205,6 +205,26 @@ impl SteadyActorShadow {
         self.into_spotlight_internal(rx_meta, tx_meta)
     }
 
+    /// Warn when declared pack ports disagree with spotlight channel ids.
+    // ss[impl graph.pack.incidence-before-start]
+    fn warn_pack_ports_mismatch(&self, rx_ids: &[usize], tx_ids: &[usize]) {
+        let Some(ports) = &self.expected_pack_ports else {
+            return;
+        };
+        if ports.rx_channel_ids != rx_ids {
+            warn!(
+                "actor {:?} pack RX ports {:?} disagree with into_spotlight RX ids {:?}",
+                self.ident, ports.rx_channel_ids, rx_ids
+            );
+        }
+        if ports.tx_channel_ids != tx_ids {
+            warn!(
+                "actor {:?} pack TX ports {:?} disagree with into_spotlight TX ids {:?}",
+                self.ident, ports.tx_channel_ids, tx_ids
+            );
+        }
+    }
+
     /// Internal conversion to a local monitor using explicit metadata arrays.
     ///
     /// # Parameters
@@ -219,6 +239,11 @@ impl SteadyActorShadow {
         rx_mons: [RxMetaData; RX_LEN],
         tx_mons: [TxMetaData; TX_LEN],
     ) -> SteadyActorSpotlight<RX_LEN, TX_LEN> {
+        {
+            let rx_ids: Vec<usize> = rx_mons.iter().map(|m| m.id).collect();
+            let tx_ids: Vec<usize> = tx_mons.iter().map(|m| m.id).collect();
+            self.warn_pack_ports_mismatch(&rx_ids, &tx_ids);
+        }
         let (send_rx, send_tx, state) = if (self.frame_rate_ms > 0)
             && (steady_config::TELEMETRY_HISTORY || steady_config::TELEMETRY_SERVER) {
             let mut rx_meta_data = Vec::new();
@@ -278,6 +303,7 @@ impl SteadyActorShadow {
             index_wait_last_avail: self.index_wait_last_avail,
             index_wait_last_vacant: self.index_wait_last_vacant,
             index_wait_last_avail_vacant: self.index_wait_last_avail_vacant,
+            strict_persist: self.strict_persist,
         }
     }
 }
@@ -528,7 +554,7 @@ pub trait SteadyActor {
     /// use the telemetry-dirty yield/short-timeout path; it blocks until data is ready or shutdown.
     ///
     /// **Capacity:** Unlike [`wait_avail`](SteadyActor::wait_avail), per-lane counts are **not**
-    /// passed through [`RxCore::shared_validate_capacity_items`](crate::core_rx::RxCore::shared_validate_capacity_items);
+    /// passed through [`RxCore::shared_validate_capacity_items`];
     /// clamp or validate `counts` at the call site if needed.
     ///
     /// **All-zero counts:** If every `counts[i] == 0`, no lane is waited on and this returns
@@ -582,7 +608,7 @@ pub trait SteadyActor {
     ///
     /// Each position in `counts` maps positionally to the bundle. The method waits until at
     /// least one channel satisfies `vacant_units` for `counts[i]` (via
-    /// [`TxCore::shared_vacant_units_for`](crate::core_tx::TxCore::shared_vacant_units_for)), then
+    /// [`TxCore::shared_vacant_units_for`]), then
     /// returns its index. For typical `MsgSize = usize`, a threshold of **zero** is trivially
     /// satisfiable and that lane still participates in round-robin like any other lane (this
     /// differs from [`SteadyTxBundleTrait::wait_vacant_index`](crate::steady_tx::SteadyTxBundleTrait::wait_vacant_index),

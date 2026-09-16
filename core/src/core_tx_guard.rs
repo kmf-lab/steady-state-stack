@@ -199,8 +199,6 @@ impl<T: TxCore> TxCore for MutexGuard<'_, T> {
 // ss[related actor.lock-first.channels]
 mod core_tx_guard_tests {
     // ss[related philosophy.structural-hierarchy]
-    use super::*;
-    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[related actor.lock-first.channels]
     use crate::core_rx::RxCore;

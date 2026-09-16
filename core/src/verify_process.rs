@@ -29,7 +29,10 @@ pub(crate) const FILE_SIZE_GATE_SCRIPT: &str = "scripts/check-file-size.sh";
 /// Merged LCOV output from Gate B (`run-llvm-cov-release.sh`).
 pub(crate) const MERGED_LCOV_OUTPUT: &str = "merged.lcov";
 
-// ss[related verify.process.fuzz]
+// ss[impl verify.process.fuzz]
+/// Bounded cargo-fuzz campaign script (parse/protocol targets under `core/fuzz`).
+pub(crate) const FUZZ_CAMPAIGN_SCRIPT: &str = "scripts/run-fuzz.sh";
+
 // ss[related verify.process.mutants]
 // ss[related platform.aeron-out-of-scope-coverage]
 // Waivers: docs/spec/00-conventions.md and docs/spec/12-verification-stack.md

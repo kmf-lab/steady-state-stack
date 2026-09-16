@@ -2,7 +2,7 @@
 
 **Who should read this:** Authors using `SteadyState<S>` and persistence.
 
-**See also:** [lesson-on-steadystate.md](../../lesson-on-steadystate.md), `state_management.rs`.
+**See also:** [lesson-on-steadystate.md](../../lesson-on-steadystate.md), `state_management.rs`, [Lambda warm graph / persist-before-park](14-lambda.md).
 
 ---
 

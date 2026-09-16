@@ -72,7 +72,7 @@ use crate::TxCore;
 // ss[related channel.backpressure-never-drop]
 use crate::{ActorIdentity, SendOutcome, SendSaturation};
 // ss[related philosophy.structural-hierarchy]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 // ss[related philosophy.structural-hierarchy]
 use crate::GraphBuilder;
 
@@ -521,6 +521,35 @@ fn test_tx_telemetry_inc_monitor_not() {
     let mut tel = SteadyTelemetrySend::new(dummy_tx, [0; 4], [0; 4], Instant::now());
     tx.telemetry_inc(TxDone::Normal(5), &mut tel);
     // The error is logged but no panic
+}
+
+/// Tests `one`, capacity/vacant predicates, periodic logging, and Stream telemetry.
+#[test]
+// ss[verify channel.backpressure-never-drop]
+fn one_capacity_vacant_log_periodic_and_stream_telemetry() {
+    let (mut tx, _graph, _sender) = new_tx();
+    assert_eq!(tx.one(), 1);
+    let cap = tx.shared_capacity();
+    assert!(tx.shared_capacity_for(1));
+    assert!(tx.shared_capacity_for(cap));
+    assert!(!tx.shared_capacity_for(cap + 1));
+    assert!(tx.shared_vacant_units_for(1));
+    assert!(tx.shared_vacant_units_for(tx.shared_vacant_units()));
+    assert!(!tx.shared_vacant_units_for(tx.shared_vacant_units() + 1));
+
+    // Channel construction backdates last_error_send so the first call logs.
+    assert!(tx.log_perodic());
+    assert!(!tx.log_perodic());
+    tx.last_error_send = Instant::now()
+        - Duration::from_secs((steady_config::MAX_TELEMETRY_ERROR_RATE_SECONDS + 1) as u64);
+    assert!(tx.log_perodic());
+
+    let (dummy_tx, _dummy_rx) = ChannelBuilder::default().with_capacity(1).eager_build::<[usize; 4]>();
+    let mut tel = SteadyTelemetrySend::new(dummy_tx, [0; 4], [0; 4], Instant::now());
+    tx.local_monitor_index = 0;
+    tx.telemetry_inc(TxDone::Stream(2, 8), &mut tel);
+    tx.local_monitor_index = MONITOR_UNKNOWN;
+    tx.telemetry_inc(TxDone::Normal(1), &mut tel);
 }
 
 // ss[related channel.backpressure-never-drop]

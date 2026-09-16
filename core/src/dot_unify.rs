@@ -21,7 +21,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ss[related telemetry.dot-export]
-use log::{trace, warn};
+use log::trace;
+#[cfg(not(test))]
+// ss[related telemetry.dot-export]
+use log::warn;
 #[cfg(test)]
 // ss[related philosophy.structural-hierarchy]
 use log::debug;

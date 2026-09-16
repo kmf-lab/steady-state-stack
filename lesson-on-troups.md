@@ -38,6 +38,10 @@ Dynamic Scheduling
 
 You can decide at runtime whether an actor should be Solo or part of a Troupe using ScheduleAs::dynamic_schedule.
 
+**Note:** `dynamic_schedule` is **not** dynamic troupe packing. For mapping a fixed graph onto this
+process’s CPU budget at `Graph::start`, see [`lesson-on-dynamic-troupes.md`](lesson-on-dynamic-troupes.md)
+and `Graph::dynamic_troupe()`.
+
 let mut my_troupe = Some(graph.actor_troupe());
 
 // If the troupe exists, the actor joins it. If None, it becomes a SoloAct.

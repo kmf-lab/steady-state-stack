@@ -6,6 +6,15 @@
 //! `NodeDef`: numeric actor id, name, rx/tx channel telemetry ids plus `Arc` pointers—see
 //! [telemetry-edge-conflict.md](../../../docs/telemetry-edge-conflict.md).
 
+#![cfg_attr(
+    not(any(
+        feature = "telemetry_server_builtin",
+        feature = "telemetry_server_cdn",
+        feature = "prometheus_metrics"
+    )),
+    allow(dead_code, unused_imports, unused_variables)
+)]
+
 // ss[impl telemetry.prometheus-metrics]
 use std::collections::{VecDeque};
 // ss[related philosophy.structural-hierarchy]
@@ -150,7 +159,8 @@ impl MetricsCollector {
         // which terminates the loop. This ensures we capture the final telemetry 
         // from all worker actors before we exit.
         while context.is_running(|| {
-            runtime_state.read().is_shutdown_telemetry_complete(2) //for collector and server
+            let rs = runtime_state.read();
+            rs.is_shutdown_telemetry_complete(2) //for collector and server
         }) {
             self.seq += 1;
             let now_loop = Instant::now();

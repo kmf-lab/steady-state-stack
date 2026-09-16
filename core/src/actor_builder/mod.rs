@@ -8,6 +8,10 @@ mod affinity;
 mod builder;
 // ss[related philosophy.structural-hierarchy]
 mod context;
+// ss[impl troupe.dynamic-kruskal-capacity]
+pub(crate) mod pack;
+// ss[impl troupe.dynamic-slot-budget]
+pub(crate) mod slot_budget;
 // ss[related actor.regeneration-survives]
 mod spawn;
 // ss[related philosophy.structural-hierarchy]
@@ -27,9 +31,14 @@ pub(crate) use context::NodeTxRx;
 pub use context::NonSendWrapper;
 // ss[related actor.regeneration-survives]
 pub use spawn::{launch_actor, ScheduleAs};
-// ss[related philosophy.structural-hierarchy]
-pub use troupe::{Troupe, TroupeGuard};
+// ss[impl troupe.dynamic-is-a-bag]
+pub use troupe::{Troupe, TroupeGuard, TroupeKind};
+// ss[impl troupe.dynamic-finalize-at-start]
+pub(crate) use troupe::FutureBuilderType;
+// ss[impl troupe.dynamic-slot-budget]
+pub use slot_budget::SlotBudget;
 
 // Re-export test/support items for integration tests in tests.rs
+#[cfg(test)]
 // ss[related actor.regeneration-survives]
-pub(crate) use context::{build_actor_context, build_actor_registration, DynCall, SteadyContextArchetype};
+pub(crate) use context::SteadyContextArchetype;

@@ -12,8 +12,6 @@ mod test_actor_stats {
     // ss[related telemetry.prometheus-metrics]
     use crate::actor_stats::*;
     // ss[related philosophy.structural-hierarchy]
-    use crate::channel_stats::DOT_GREEN;
-    // ss[related philosophy.structural-hierarchy]
     use crate::monitor::ActorMetaData;
     // ss[related telemetry.prometheus-metrics]
     use crate::{ActorIdentity, AlertColor, StdDev, Trigger};

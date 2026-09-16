@@ -93,6 +93,8 @@ fn test_troupe_ops() {
         never_simulate: false,
         force_internal_behavior_in_test: false,
         shutdown_barrier: None,
+        pack_ports_map: graph.pack_ports.clone(),
+        strict_persist: graph.strict_persist,
     };
 
     troupe.add_actor(arch.clone(), 40, true, None);
@@ -108,6 +110,7 @@ fn test_troupe_ops() {
 
 #[test]
 // ss[verify actor.regeneration-survives]
+// ss[verify troupe.dynamic-member-of]
 fn test_schedule_as() {
     let mut troupe_guard = None;
     assert!(matches!(
@@ -219,4 +222,41 @@ fn test_actor_refresh_window_matches_shared_frame_math() {
     let shared = compute_refresh_window_frames(100, refresh, window);
     assert_eq!(actor_bits, shared);
     assert_eq!(actor_bits, (4, 3));
+}
+
+use proptest::prelude::*;
+
+ss_proptest! {
+    /// Property: `with_pack_ports` records RX/TX ids without establishing channels.
+    #[test]
+    // ss[verify graph.pack.incidence-before-start]
+    // ss[verify verify.process.proptest]
+    fn proptest_with_pack_ports_records_ids(
+        rx in prop::collection::vec(0usize..64, 0..4),
+        tx in prop::collection::vec(0usize..64, 0..4),
+    ) {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let builder = ActorBuilder::new(&mut graph).with_pack_ports(rx.clone(), tx.clone());
+        let ports = builder.pending_pack_ports.expect("ports");
+        prop_assert_eq!(ports.rx_channel_ids, rx);
+        prop_assert_eq!(ports.tx_channel_ids, tx);
+    }
+
+    /// Property: `pack_channel_id` is stable across clones and matches reserved meta.
+    #[test]
+    // ss[verify graph.pack.incidence-before-start]
+    // ss[verify verify.process.proptest]
+    fn proptest_pack_channel_id_stable_without_establish(cap in 1usize..32) {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder().with_capacity(cap).build::<u64>();
+        let id_tx = tx.pack_channel_id();
+        let id_rx = rx.pack_channel_id();
+        prop_assert_eq!(id_tx, id_rx);
+        prop_assert_eq!(tx.pack_channel_id(), id_tx);
+        prop_assert_eq!(rx.pack_channel_id(), id_rx);
+        let meta = graph.channel_pack_meta.lock();
+        let (got_cap, _bytes, girth, _key) = meta.get(&id_tx).copied().expect("meta");
+        prop_assert_eq!(got_cap, cap);
+        prop_assert_eq!(girth, 1);
+    }
 }

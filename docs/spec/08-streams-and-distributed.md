@@ -60,7 +60,7 @@ Recorded with `tracey query validate`, `uncovered --prefix distributed`, and `un
 
 **CI gates:** `scripts/tracey-ci-validate.sh`, `scripts/tracey-unmapped-gate.sh` (≥80% mapped on rust-core), `scripts/tracey-untested-gate.sh` (0 untested for `distributed` and `stream.control-payload` prefixes).
 
-**Process waivers (not blocking):** `verify.process.proptest`, `verify.process.fuzz` — see [12-verification-stack](12-verification-stack.md).
+**Process notes:** `verify.process.proptest` is covered by `ss_proptest!`. `verify.process.fuzz` runs parse/protocol targets via [`scripts/run-fuzz.sh`](../../scripts/run-fuzz.sh) (see [12-verification-stack](12-verification-stack.md) and [fuzz](../fuzz.md)).
 
 ---
 

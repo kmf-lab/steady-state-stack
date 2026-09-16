@@ -1,20 +1,7 @@
 // ss[related graph.for-testing]
-use super::super::{
-    effective_block_until_stopped_timeout, ActorIdentity, Graph, GraphBuilder, GraphLiveliness,
-    GraphLivelinessState, ShutdownVote, VoterStatus,
-};
+use super::super::GraphBuilder;
 // ss[related graph.shutdown.veto]
-use crate::core_exec;
-// ss[related philosophy.structural-hierarchy]
 use crate::{ScheduleAs, SteadyActor};
-// ss[related philosophy.structural-hierarchy]
-use futures::lock::Mutex as FutMutex;
-// ss[related graph.shutdown.veto]
-use std::sync::atomic::{AtomicUsize, Ordering};
-// ss[related philosophy.structural-hierarchy]
-use std::sync::Arc;
-// ss[related philosophy.structural-hierarchy]
-use std::thread;
 // ss[related graph.shutdown.veto]
 use std::time::{Duration, Instant};
 

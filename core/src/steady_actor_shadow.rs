@@ -121,6 +121,13 @@ pub struct SteadyActorShadow {
     pub(crate) index_wait_last_vacant: AtomicUsize,
     // ss[related philosophy.structural-hierarchy]
     pub(crate) index_wait_last_avail_vacant: AtomicUsize,
+    /// Pack ports declared at build for this actor (spotlight mismatch check).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) expected_pack_ports: Option<crate::graph_liveliness::PackPorts>,
+    /// Dirty-at-park enforcement for persistent state.
+    // ss[impl state.dirty-at-park]
+    // ss[impl graph.for-lambda]
+    pub(crate) strict_persist: bool,
 }
 
 // ss[related actor.shadow-spotlight]
@@ -151,6 +158,8 @@ impl Clone for SteadyActorShadow {
             index_wait_last_avail: AtomicUsize::new(usize::MAX),
             index_wait_last_vacant: AtomicUsize::new(usize::MAX),
             index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
+            expected_pack_ports: self.expected_pack_ports.clone(),
+            strict_persist: self.strict_persist,
         }
     }
 }
@@ -859,9 +868,15 @@ impl SteadyActor for SteadyActorShadow {
     }
 
     // ss[related actor.shadow-spotlight]
-    fn is_running<F: FnMut() -> bool>(&mut self, mut accept_fn: F) -> bool {
-        let liveliness = self.runtime_state.read();
-        liveliness.is_running(self.ident, &mut accept_fn).unwrap_or(true)
+    fn is_running<F: FnMut() -> bool>(&mut self, accept_fn: F) -> bool {
+        // ss[impl state.dirty-at-park]
+        crate::state_management::set_thread_strict_persist(self.strict_persist);
+        crate::state_management::check_dirty_at_park();
+        crate::steady_actor_core::SteadyActorCore::is_running(
+            &self.runtime_state,
+            self.ident,
+            accept_fn,
+        )
     }
 
     // ss[related actor.shadow-spotlight]

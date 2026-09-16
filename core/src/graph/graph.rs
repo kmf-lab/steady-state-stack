@@ -5,6 +5,8 @@ use super::builder::GraphBuilder;
 // ss[related philosophy.structural-hierarchy]
 use super::identity::ActorIdentity;
 // ss[related graph.for-testing]
+use super::lambda_bridge::{self, LambdaEgress, LambdaHost, LambdaIngress};
+// ss[related graph.for-testing]
 use super::liveliness::GraphLiveliness;
 // ss[related philosophy.structural-hierarchy]
 use super::shutdown::{effective_block_until_stopped_timeout, watch_shutdown};
@@ -74,6 +76,45 @@ pub struct Graph {
     /// Univeral list of all actor identifiers
     // ss[related philosophy.structural-hierarchy]
     pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>,
+    /// Dynamic troupe bags awaiting packing at `start` (shared with TroupeGuard).
+    // ss[impl troupe.dynamic-is-a-bag]
+    // ss[impl troupe.dynamic-finalize-at-start]
+    pub(crate) pending_dynamic_troupes:
+        Arc<parking_lot::Mutex<Vec<Arc<parking_lot::Mutex<Option<crate::actor_builder::Troupe>>>>>>,
+    /// Optional pin for packed OS thread count (`with_pack_slots` / tests).
+    // ss[impl troupe.dynamic-slot-budget]
+    // ss[impl troupe.dynamic-for-testing]
+    pub(crate) pack_slots: Option<usize>,
+    /// SoloAct OS threads already spawned (for slot budget).
+    // ss[impl troupe.dynamic-slot-budget]
+    pub(crate) solo_thread_count: Arc<AtomicUsize>,
+    /// Normal troupe OS threads already spawned (for slot budget).
+    // ss[impl troupe.dynamic-slot-budget]
+    pub(crate) normal_troupe_thread_count: Arc<AtomicUsize>,
+    /// Build-time packing incidence (channel endpoints). Filled in Phase 2+.
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) pack_incidence: Arc<parking_lot::Mutex<Vec<crate::actor_builder::pack::PackEdge>>>,
+    /// Per-actor pack ports recorded at build (actor id → rx/tx channel ids).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) pack_ports: Arc<parking_lot::Mutex<std::collections::HashMap<usize, PackPorts>>>,
+    /// channel_id → (capacity, byte_footprint, girth, optional bundle family key).
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) channel_pack_meta:
+        Arc<parking_lot::Mutex<std::collections::HashMap<usize, (usize, usize, usize, Option<usize>)>>>,
+    /// When true, dirty persistent state at park is a defect.
+    // ss[impl graph.for-lambda]
+    // ss[impl state.dirty-at-park]
+    pub(crate) strict_persist: bool,
+}
+
+/// RX/TX channel ids declared for packing (must match `into_spotlight`).
+#[derive(Clone, Debug, Default)]
+// ss[impl graph.pack.incidence-before-start]
+pub struct PackPorts {
+    /// Channel ids this actor receives on (must match spotlight RX order).
+    pub rx_channel_ids: Vec<usize>,
+    /// Channel ids this actor sends on (must match spotlight TX order).
+    pub tx_channel_ids: Vec<usize>,
 }
 // ss[related graph.for-testing]
 impl Graph {
@@ -227,6 +268,8 @@ impl Graph {
             index_wait_last_avail: AtomicUsize::new(usize::MAX),
             index_wait_last_vacant: AtomicUsize::new(usize::MAX),
             index_wait_last_avail_vacant: AtomicUsize::new(usize::MAX),
+            expected_pack_ports: None,
+            strict_persist: self.strict_persist,
         }
     }
 
@@ -244,15 +287,43 @@ impl Graph {
 
     /// Creates a `TroupeGuard` for managing a group of actors that execute together.
     ///
-    /// This method sets up a troupe that will be spawned when the guard is dropped.
+    /// This method sets up a **normal** troupe that will be spawned when the guard is dropped.
     ///
     /// # Returns
     ///
     /// A `TroupeGuard` instance for managing the actor troupe.
     // ss[related graph.for-testing]
+    // ss[impl troupe.dynamic-member-of]
     pub fn actor_troupe(&self) -> TroupeGuard {
         TroupeGuard {
-            troupe: Some(Troupe::new(self)),
+            troupe: Some(crate::actor_builder::Troupe::new(self)),
+            dynamic_shared: None,
+            on_normal_spawned: Some(self.normal_troupe_thread_count.clone()),
+        }
+    }
+
+    /// Creates a **dynamic** troupe bag for startup packing.
+    ///
+    /// Actors added with `ScheduleAs::MemberOf` join this bag. No OS thread is created until
+    /// [`Graph::start`] / [`Graph::start_with_timeout`] finalizes packing
+    /// (`troupe.dynamic-is-a-bag`, `troupe.dynamic-finalize-at-start`).
+    ///
+    /// # Returns
+    ///
+    /// A `TroupeGuard` that does **not** spawn on Drop; it shares the bag with this Graph.
+    // ss[impl troupe.dynamic-is-a-bag]
+    // ss[impl troupe.dynamic-member-of]
+    // ss[impl troupe.dynamic-hold-until-start]
+    // ss[impl philosophy.startup-schedule]
+    pub fn dynamic_troupe(&self) -> TroupeGuard {
+        let bag = Arc::new(parking_lot::Mutex::new(Some(
+            crate::actor_builder::Troupe::new_dynamic(self),
+        )));
+        self.pending_dynamic_troupes.lock().push(bag.clone());
+        TroupeGuard {
+            troupe: None,
+            dynamic_shared: Some(bag),
+            on_normal_spawned: None,
         }
     }
 
@@ -289,8 +360,13 @@ impl Graph {
     ///
     /// `true` if all actors registered within the timeout, `false` otherwise.
     // ss[related graph.for-testing]
+    // ss[impl troupe.dynamic-finalize-at-start]
+    // ss[impl philosophy.startup-schedule]
     pub fn start_with_timeout(&mut self, duration: Duration) -> bool {
         trace!("start was called");
+        // Pack dynamic troupes onto OS threads BEFORE waiting for registrations.
+        // Packable actors must not run until their sub-troupe is spawned.
+        self.finalize_dynamic_troupes();
         let mut state = self.runtime_state.write();
         state.wait_for_registrations(duration);
         if !state.is_in_state(&[GraphLivelinessState::Running]) {
@@ -299,6 +375,166 @@ impl Graph {
         } else {
             true
         }
+    }
+
+    /// Drain pending dynamic bags, pack into ≤ slots normal troupes, and spawn them.
+    ///
+    /// Idempotent: a second call finds an empty pending list.
+    // ss[impl troupe.dynamic-finalize-at-start]
+    // ss[impl troupe.dynamic-is-a-bag]
+    // ss[impl troupe.dynamic-slot-budget]
+    // ss[impl troupe.dynamic-no-incidence-fallback]
+    // ss[impl troupe.dynamic-hold-until-start]
+    // ss[impl troupe.dynamic-channel-establish]
+    // ss[impl troupe.dynamic-no-repack]
+    pub(crate) fn finalize_dynamic_troupes(&mut self) {
+        use crate::actor_builder::pack::{pack_actors, PackEdge};
+        use crate::actor_builder::slot_budget::SlotBudget;
+        use crate::actor_builder::{Troupe, TroupeKind};
+        use log::debug;
+
+        let bags: Vec<_> = {
+            let mut pending = self.pending_dynamic_troupes.lock();
+            std::mem::take(&mut *pending)
+        };
+        if bags.is_empty() {
+            return;
+        }
+
+        // Take troupes out of shared slots (guards still alive see None afterward).
+        let mut all_troupes: Vec<Troupe> = Vec::new();
+        for bag in bags {
+            let mut slot = bag.lock();
+            if let Some(t) = slot.take() {
+                if t.kind == TroupeKind::Dynamic {
+                    all_troupes.push(t);
+                }
+            }
+        }
+        if all_troupes.is_empty() {
+            return;
+        }
+
+        // SoloAct threads (including telemetry actors when enabled) and normal troupes
+        // already occupy OS threads; do not double-count telemetry.
+        let reserved = self.solo_thread_count.load(Ordering::SeqCst)
+            + self.normal_troupe_thread_count.load(Ordering::SeqCst);
+        let budget = match self.pack_slots {
+            Some(n) => SlotBudget::Pinned(n),
+            None if self.is_for_testing => SlotBudget::Pinned(1),
+            None => SlotBudget::Detect,
+        };
+        let slots = budget.resolve(reserved);
+        debug!(
+            "dynamic troupe packing: reserved_threads={} (solo+normal), pack_slots_budget={}",
+            reserved, slots
+        );
+
+        let mut flat: Vec<(usize, crate::actor_builder::FutureBuilderType)> = Vec::new();
+        for mut t in all_troupes {
+            while let Some(fb) = t.future_builder.pop_front() {
+                let id = fb.ident().id;
+                flat.push((id, fb));
+            }
+        }
+        if flat.is_empty() {
+            return;
+        }
+
+        let actor_ids: Vec<usize> = flat.iter().map(|(id, _)| *id).collect();
+        // Rebuild incidence from pack_ports if present; else empty → even-split.
+        let edges: Vec<PackEdge> = self.rebuild_pack_edges();
+        if edges.is_empty() {
+            debug!(
+                "dynamic troupe packing: no incidence; even-split into {} slot(s) for {} actor(s)",
+                slots,
+                actor_ids.len()
+            );
+        } else {
+            debug!(
+                "dynamic troupe packing: Kruskal/even into {} slot(s) for {} actor(s), {} edge(s)",
+                slots,
+                actor_ids.len(),
+                edges.len()
+            );
+        }
+        let clusters = pack_actors(&actor_ids, &edges, slots);
+
+        let mut by_id: std::collections::HashMap<usize, _> =
+            flat.into_iter().map(|(id, fb)| (id, fb)).collect();
+
+        for (i, cluster) in clusters.into_iter().enumerate() {
+            let mut sub = Troupe::new(self);
+            sub.kind = TroupeKind::Normal;
+            sub.with_name(&format!("Packed-{}", i));
+            for id in cluster {
+                if let Some(fb) = by_id.remove(&id) {
+                    sub.future_builder.push_back(fb);
+                }
+            }
+            if !sub.future_builder.is_empty() {
+                let n = sub.spawn();
+                if n > 0 {
+                    self.normal_troupe_thread_count
+                        .fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }
+    }
+
+    /// Build PackEdge list from recorded pack ports + channel pack meta.
+    // ss[impl graph.pack.incidence-before-start]
+    pub(crate) fn rebuild_pack_edges(&self) -> Vec<crate::actor_builder::pack::PackEdge> {
+        use crate::actor_builder::pack::{BundleFamily, PackEdge};
+        let ports = self.pack_ports.lock();
+        if ports.is_empty() {
+            return self.pack_incidence.lock().clone();
+        }
+        // Map channel_id → (tx_actor, rx_actors...)
+        let mut tx_owner: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        let mut rx_owners: std::collections::HashMap<usize, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (actor_id, p) in ports.iter() {
+            for &cid in &p.tx_channel_ids {
+                tx_owner.insert(cid, *actor_id);
+            }
+            for &cid in &p.rx_channel_ids {
+                rx_owners.entry(cid).or_default().push(*actor_id);
+            }
+        }
+        let meta = self.channel_pack_meta.lock();
+        let mut edges = Vec::new();
+        for (cid, rx_list) in &rx_owners {
+            let Some(&from) = tx_owner.get(cid) else {
+                continue;
+            };
+            let (capacity, bytes, girth, bundle_key) = meta
+                .get(cid)
+                .copied()
+                .unwrap_or((64, 512, 1, None));
+            for &to in rx_list {
+                if from == to {
+                    continue;
+                }
+                let bundle_family = if girth > 1 {
+                    bundle_key.map(|family_key| BundleFamily {
+                        producer: from,
+                        family_key,
+                    })
+                } else {
+                    None
+                };
+                edges.push(PackEdge {
+                    from,
+                    to,
+                    capacity,
+                    byte_footprint: bytes,
+                    bundle_family,
+                });
+            }
+        }
+        edges
     }
 
     /// Requests the shutdown of the graph, notifying all actors.
@@ -412,11 +648,35 @@ impl Graph {
             bundle_floor_size: builder.bundle_floor_size,
             test_pipeline_internal_names: Arc::new(builder.test_pipeline_internal_names.clone()),
             actor_catalog: actor_catalog.clone(),
+            pending_dynamic_troupes: Arc::new(parking_lot::Mutex::new(Vec::new())),
+            pack_slots: builder.pack_slots,
+            solo_thread_count: Arc::new(AtomicUsize::new(0)),
+            normal_troupe_thread_count: Arc::new(AtomicUsize::new(0)),
+            pack_incidence: Arc::new(parking_lot::Mutex::new(Vec::new())),
+            pack_ports: Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
+            channel_pack_meta: Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
+            strict_persist: builder.strict_persist,
         };
         if builder.telemetry_metric_features {
             telemetry::setup::build_telemetry_metric_features(&mut result);
         }
         result
+    }
+
+    /// Create a host bridge for warm request/response injects (Lambda Runtime API host thread).
+    ///
+    /// Not `testing_send_all` / StageManager. Host calls [`LambdaHost::inject`] /
+    /// [`LambdaHost::wait_output`]; actors use [`LambdaIngress::wait`] /
+    /// [`LambdaEgress::send`].
+    // ss[impl graph.lambda.host-bridge]
+    // ss[impl graph.lambda.host-not-executor]
+    // ss[impl graph.lambda.warm-graph]
+    pub fn lambda_bridge<In, Out>(&self) -> (LambdaHost<In, Out>, LambdaIngress<In, Out>, LambdaEgress<In, Out>)
+    where
+        In: Send + 'static,
+        Out: Send + 'static,
+    {
+        lambda_bridge::lambda_bridge()
     }
 
     /// Creates a new `ChannelBuilder` for constructing channels within the graph.
@@ -428,10 +688,18 @@ impl Graph {
     /// A new `ChannelBuilder` instance linked to this graph.
     // ss[related graph.for-testing]
     pub fn channel_builder(&mut self) -> ChannelBuilder {
-        ChannelBuilder::new(
+        let mut builder = ChannelBuilder::new(
             self.channel_count.clone(),
             self.oneshot_shutdown_vec.clone(),
             self.telemetry_production_rate_ms,
-        )
+        );
+        // ss[impl graph.pack.incidence-before-start]
+        builder.channel_pack_meta = Some(self.channel_pack_meta.clone());
+        builder
     }
 }
+
+#[cfg(test)]
+#[path = "pack_edges_proptest.rs"]
+// ss[related graph.pack.incidence-before-start]
+mod pack_edges_proptest;

@@ -7,8 +7,6 @@ use super::liveliness::GraphLiveliness;
 // ss[related graph.for-testing]
 use super::shutdown::watch_shutdown;
 // ss[related philosophy.structural-hierarchy]
-use super::state::GraphLivelinessState;
-// ss[related philosophy.structural-hierarchy]
 use log::{debug, trace, warn};
 
 /// Configures and builds a `Graph` instance with customizable options.
@@ -45,10 +43,20 @@ pub struct GraphBuilder {
     /// Minimum size for bundles.
     // ss[related philosophy.structural-hierarchy]
     pub(crate) bundle_floor_size: usize,
+    // ss[impl troupe.dynamic-slot-budget]
+    pub(crate) pack_slots: Option<usize>,
+    /// When true, dirty persistent state at park is a defect (`for_lambda` / tests).
+    // ss[impl graph.for-lambda]
+    // ss[impl state.dirty-at-park]
+    pub(crate) strict_persist: bool,
     /// Actor base names that use real `internal_behavior` in test graphs (StageManager on edges).
     // ss[related philosophy.structural-hierarchy]
     pub(crate) test_pipeline_internal_names: HashSet<&'static str>,
 }
+
+/// Default actor stack for [`GraphBuilder::for_lambda`] (256 KiB).
+// ss[impl graph.for-lambda]
+pub const LAMBDA_DEFAULT_STACK_SIZE: usize = 256 * 1024;
 
 // ss[related graph.for-testing]
 impl Default for GraphBuilder {
@@ -89,6 +97,41 @@ impl GraphBuilder {
             block_fail_fast: false,
             bundle_floor_size: 4,
             test_pipeline_internal_names: HashSet::new(),
+            pack_slots: None,
+            strict_persist: false,
+        }
+    }
+
+    /// Creates a `GraphBuilder` configured for AWS Lambda–style warm sandboxes.
+    ///
+    /// Telemetry metrics off, no fail-fast process exit, no StageManager backplane,
+    /// pack slots detected (cgroup / `SS_PACK_SLOTS`), smaller stacks, and **strict
+    /// persist**. Prefer [`Self::for_testing`] + [`Self::with_strict_persist`] in unit tests.
+    ///
+    /// # Panics
+    ///
+    /// Panics when called under `#[cfg(test)]` — use `for_testing().with_strict_persist()`.
+    // ss[impl graph.for-lambda]
+    // ss[impl graph.lambda.warm-graph]
+    // ss[impl graph.lambda.event-driven]
+    // ss[impl platform.lambda-no-tokio]
+    pub fn for_lambda() -> Self {
+        #[cfg(test)]
+        panic!("should not call for_lambda in tests; use for_testing().with_strict_persist()");
+        #[cfg(not(test))]
+        GraphBuilder {
+            is_for_testing: false,
+            telemetry_metric_features: false,
+            backplane: None,
+            telemtry_production_rate_ms: MIN_MS_RATE,
+            telemetry_colors: None,
+            shutdown_barrier: None,
+            default_stack_size: Some(LAMBDA_DEFAULT_STACK_SIZE),
+            block_fail_fast: false,
+            bundle_floor_size: 4,
+            test_pipeline_internal_names: HashSet::new(),
+            pack_slots: None,
+            strict_persist: true,
         }
     }
 
@@ -115,7 +158,33 @@ impl GraphBuilder {
             block_fail_fast: true,
             bundle_floor_size: 4,
             test_pipeline_internal_names: HashSet::new(),
+            // Tests must not inherit host core count (`troupe.dynamic-for-testing`).
+            pack_slots: Some(1),
+            strict_persist: false,
         }
+    }
+
+    /// Enable dirty-at-park checks for persistent state (Lambda / durable park contract).
+    ///
+    /// Prefer this on `for_testing()` graphs instead of calling [`Self::for_lambda`] in tests.
+    // ss[impl state.dirty-at-park]
+    // ss[impl graph.for-lambda]
+    pub fn with_strict_persist(&self) -> Self {
+        let mut result = self.clone();
+        result.strict_persist = true;
+        result
+    }
+
+    /// Pin the number of OS threads used when packing dynamic troupes.
+    ///
+    /// Required for deterministic tests; also useful for demos (`SS_PACK_SLOTS` env is an
+    /// alternate pin at detect time).
+    // ss[impl troupe.dynamic-slot-budget]
+    // ss[impl troupe.dynamic-for-testing]
+    pub fn with_pack_slots(&self, slots: usize) -> Self {
+        let mut result = self.clone();
+        result.pack_slots = Some(slots.max(1));
+        result
     }
 
     /// Replaces the set of actor base names that run real `internal_behavior` in **test** graphs
@@ -281,6 +350,7 @@ impl GraphBuilder {
         let ctrlc_runtime_state = g.runtime_state.clone();
         let tel_prod_rate = Duration::from_millis(g.telemetry_production_rate_ms);
         let result = ctrlc::set_handler(move || {
+            // ss[impl graph.lambda.shutdown-hook]
             println!("Ctrl-C received, initiating shutdown...");
             let now = Instant::now();
             let timeout = {

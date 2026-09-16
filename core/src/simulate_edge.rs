@@ -62,7 +62,7 @@ pub trait SimRunner<C: SteadyActor + ?Sized> {
     }
 
     // ss[impl testing.sim-producer-close]
-    /// After [`simulated_behavior`]'s loop exits successfully, mark this runner's simulated **outputs**
+    /// After `simulated_behavior`'s loop exits successfully, mark this runner's simulated **outputs**
     /// closed so downstream actors can satisfy shutdown vetoes (e.g. `rx.is_closed_and_empty()`).
     ///
     /// Default: no-op. Implemented for transmit-side runners (`SimTx`, `SimTxBundle`, `SimStreamTx`).

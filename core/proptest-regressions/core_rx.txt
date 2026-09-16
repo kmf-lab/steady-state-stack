@@ -7,3 +7,4 @@
 cc e0e57c9c7dd1293e9533ba8f7d9a2cd1fe47fb96f6ce44352bbe73d03fbfe109 # shrinks to cap = 1, messages = [0]
 cc 76939054db827df23741081e4387f96798533e756de10d3a1e1ff8c93cd3b0e9 # shrinks to cap = 1, messages = [0]
 cc 5b4d718ccaba2023806f46b308067f4a29da3b8ceb2e7c2b3e4d38913367840b # shrinks to cap = 1, messages = [0]
+cc 1b151520b2060f5f87cdaa30c2eaef1608c9268068b7b98f6120239b45efbc36 # shrinks to cap = 2, messages = [0, 0], take_count = 1

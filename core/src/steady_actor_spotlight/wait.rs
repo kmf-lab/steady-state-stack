@@ -12,7 +12,6 @@ use std::time::Duration;
 use crate::monitor::{CALL_OTHER, CALL_WAIT};
 use crate::{yield_now, RxCore, TxCore, RxCoreBundle, TxCoreBundle};
 use crate::steady_actor::{index_wait_avoid_repeat_lane, next_index_wait_start};
-use crate::graph_liveliness::GraphLivelinessState;
 
 // ss[related actor.shadow-spotlight]
 pub(super) async fn wait_avail<const RX_LEN: usize, const TX_LEN: usize, T: RxCore>(spotlight: &SteadyActorSpotlight<RX_LEN, TX_LEN>, this: &mut T, count: usize) -> bool {
