@@ -30,6 +30,7 @@ All notable changes to this project are documented in this file.
 
 - Targeted properties for telemetry `parse_host_port` / `process_msg` / `generate_reports`, pack-edge rebuild + Kruskal leftovers, persist dirty-bit / persist-hook errors, Lambda Runtime API env/error paths, and pack-port identity.
 - Follow-on: `DoubleSlice` / `QuadSlice` / `StreamQuadSliceCopy`, `SimIndexable` / `MetaIndexable`, shutdown `report_votes` veto dump, Tx/stream `one`/`log_perodic`/capacity predicates, and `GraphBuilder::default`/`for_production` test panics.
+- **Gate B (merged, 2026-09-17):** `scripts/run-llvm-cov-release.sh` → **86.3%** lines (21436 / 24835), **72.7%** functions (14812 / 20373). Default-feature `cargo llvm-cov nextest` the same day: **85.42%** lines.
 - **Gate B (merged, 2026-09-12):** `scripts/run-llvm-cov-release.sh` → **83.7%** lines (19720 / 23569), **70.7%** functions (13861 / 19606). Prior same-day remasure was 82.5% / 70.0%.
 
 ### Dynamic troupe packing (startup schedule)
