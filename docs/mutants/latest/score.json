@@ -1,0 +1,12 @@
+{
+  "scored_at": "2026-09-17T15:57:16Z",
+  "git_sha": "3fcdfd5",
+  "crate_version": "0.3.1",
+  "file": "core_tx_stream.rs",
+  "caught": 308,
+  "missed": 0,
+  "timeout": 8,
+  "unviable": 32,
+  "kill_rate_pct": 100.0,
+  "formula": "(caught + timeout) / (caught + timeout + missed)"
+}

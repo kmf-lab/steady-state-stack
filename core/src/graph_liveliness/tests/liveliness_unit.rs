@@ -1,6 +1,6 @@
 // ss[related graph.for-testing]
 use super::super::{
-    effective_block_until_stopped_timeout, ActorIdentity, GraphLiveliness,
+    effective_block_until_stopped_timeout, elapsed_exceeds, ActorIdentity, GraphLiveliness,
     GraphLivelinessState, ShutdownVote, VoterStatus,
 };
 // ss[related graph.liveliness-voters]
@@ -79,6 +79,114 @@ fn wait_for_registrations_waits_until_actor_count_matches() {
 }
 
 // ss[verify graph.liveliness-voters]
+#[test]
+#[should_panic(expected = "timeout on startup, not all actors registered")]
+// ss[verify verify.process.mutants]
+fn wait_for_registrations_panics_in_tests_when_nobody_registers() {
+    let (l, _, _) = new_liveliness(1);
+    l.write().wait_for_registrations(Duration::from_millis(80));
+}
+
+// ss[verify graph.liveliness-voters]
+#[test]
+// ss[verify verify.process.mutants]
+fn wait_for_registrations_empty_graph_goes_running() {
+    let (l, _, _) = new_liveliness(0);
+    l.write().wait_for_registrations(Duration::from_millis(80));
+    assert_eq!(l.read().state, GraphLivelinessState::Running);
+}
+
+// ss[verify graph.liveliness-voters]
+#[test]
+// ss[verify verify.process.mutants]
+fn wait_for_registrations_timeout_does_not_fire_at_t0() {
+    let (l, _, _) = new_liveliness(1);
+    let budget = Duration::from_millis(200); // multiple of the 40ms poll inside wait_for_registrations
+    let start = std::time::Instant::now();
+    let handle = std::thread::spawn(move || {
+        l.write().wait_for_registrations(budget);
+    });
+    std::thread::sleep(Duration::from_millis(80));
+    assert!(
+        !handle.is_finished(),
+        "elapsed > timeout must wait the budget; firing at t=0 is the < mutant"
+    );
+    let join = handle.join();
+    assert!(join.is_err(), "unregistered actors must still trip the timeout panic");
+    // `>` fires after the first poll past 200ms (~240ms). `>=` can fire at exactly 200ms.
+    assert!(
+        start.elapsed() > budget,
+        "strict elapsed > timeout; >= would trip on the 200ms poll"
+    );
+}
+
+// ss[verify graph.block-until-stopped]
+#[test]
+// ss[verify verify.process.mutants]
+fn check_is_stopped_none_while_votes_outstanding_within_timeout() {
+    let (l, _, _) = new_liveliness(0);
+    {
+        let mut w = l.write();
+        w.register_voter(ActorIdentity::new(0, "a", None));
+        w.register_voter(ActorIdentity::new(1, "b", None));
+        w.building_to_running();
+    }
+    core_exec::block_on(GraphLiveliness::internal_request_shutdown(l.clone()));
+    let got = l
+        .read()
+        .check_is_stopped(std::time::Instant::now(), Duration::from_secs(30));
+    assert_eq!(got, None);
+}
+
+// ss[verify graph.block-until-stopped]
+#[test]
+// ss[verify verify.process.mutants]
+fn check_is_stopped_unclean_when_timeout_expires_with_outstanding_votes() {
+    let (l, _, _) = new_liveliness(0);
+    {
+        let mut w = l.write();
+        w.register_voter(ActorIdentity::new(0, "a", None));
+        w.register_voter(ActorIdentity::new(1, "b", None));
+        w.building_to_running();
+    }
+    core_exec::block_on(GraphLiveliness::internal_request_shutdown(l.clone()));
+    let started = std::time::Instant::now() - Duration::from_secs(5);
+    let got = l.read().check_is_stopped(started, Duration::from_millis(1));
+    assert_eq!(got, Some(GraphLivelinessState::StoppedUncleanly));
+}
+
+// ss[verify graph.block-until-stopped]
+#[test]
+// ss[verify verify.process.mutants]
+fn check_is_stopped_clean_when_no_voters() {
+    let (l, _, _) = new_liveliness(0);
+    l.write().state = GraphLivelinessState::StopRequested;
+    let got = l
+        .read()
+        .check_is_stopped(std::time::Instant::now(), Duration::from_secs(1));
+    assert_eq!(got, Some(GraphLivelinessState::Stopped));
+}
+
+// ss[verify actor.is-running-loop]
+#[test]
+// ss[verify verify.process.mutants]
+fn is_running_matches_graph_state() {
+    let (l, _, _) = new_liveliness(0);
+    let ident = ActorIdentity::new(0, "r", None);
+    {
+        let mut w = l.write();
+        w.state = GraphLivelinessState::Building;
+        assert_eq!(w.is_running(ident, || true), None);
+        w.state = GraphLivelinessState::Running;
+        assert_eq!(w.is_running(ident, || true), Some(true));
+        w.state = GraphLivelinessState::Stopped;
+        assert_eq!(w.is_running(ident, || true), Some(false));
+        w.state = GraphLivelinessState::StoppedUncleanly;
+        assert_eq!(w.is_running(ident, || true), Some(false));
+    }
+}
+
+// ss[verify graph.liveliness-voters]
 
 // ss[verify graph.liveliness-voters]
 #[test]
@@ -133,11 +241,45 @@ fn is_shutdown_telemetry_complete_counts_non_telemetry_voters() {
         );
         w.vote_in_favor_total.store(3, Ordering::Relaxed);
     }
+        assert!(l.read().is_shutdown_telemetry_complete(2));
+    l.write()
+        .vote_in_favor_total
+        .store(4, Ordering::Relaxed);
     assert!(l.read().is_shutdown_telemetry_complete(2));
     l.write()
         .vote_in_favor_total
         .store(2, Ordering::Relaxed);
     assert!(!l.read().is_shutdown_telemetry_complete(2));
+}
+
+// ss[verify graph.shutdown.accept]
+#[test]
+// ss[verify verify.process.mutants]
+fn apply_shutdown_vote_matches_graph_state() {
+    let (l, _, _) = new_liveliness(0);
+    let ident = ActorIdentity::new(0, "v", None);
+    {
+        let mut w = l.write();
+        w.votes = Arc::new(
+            vec![FutMutex::new(ShutdownVote {
+                id: 0,
+                ..Default::default()
+            })]
+            .into_boxed_slice(),
+        );
+        w.state = GraphLivelinessState::Building;
+        assert_eq!(w.apply_shutdown_vote(ident, true), None);
+        w.state = GraphLivelinessState::Running;
+        assert_eq!(w.apply_shutdown_vote(ident, true), Some(true));
+        w.state = GraphLivelinessState::Stopped;
+        assert_eq!(w.apply_shutdown_vote(ident, true), Some(false));
+        w.state = GraphLivelinessState::StopRequested;
+        w.vote_in_favor_total.store(0, Ordering::SeqCst);
+        assert_eq!(w.apply_shutdown_vote(ident, true), Some(false));
+        assert_eq!(w.vote_in_favor_total.load(Ordering::SeqCst), 1);
+        assert_eq!(w.apply_shutdown_vote(ident, false), Some(true));
+        assert_eq!(w.vote_in_favor_total.load(Ordering::SeqCst), 1);
+    }
 }
 
 // ss[verify graph.shutdown.accept]
@@ -254,4 +396,14 @@ fn test_graph_liveliness_state_debug_output() {
     let building = GraphLivelinessState::Building;
     let debug_str = format!("{:?}", building);
     assert_eq!(debug_str, "Building");
+}
+
+#[test]
+// ss[verify graph.for-testing]
+// ss[verify verify.process.mutants]
+fn elapsed_exceeds_is_strict_at_the_budget() {
+    let budget = Duration::from_millis(200);
+    assert!(!elapsed_exceeds(budget, budget));
+    assert!(elapsed_exceeds(budget + Duration::from_millis(1), budget));
+    assert!(!elapsed_exceeds(Duration::ZERO, budget));
 }

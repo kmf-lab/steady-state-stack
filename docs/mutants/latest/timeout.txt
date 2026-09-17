@@ -1,0 +1,8 @@
+core/src/core_rx_stream.rs:171:12: delete ! in <impl RxCore for StreamRx<T>>::shared_wait_shutdown_or_avail_units
+core/src/core_tx_stream.rs:232:16: delete ! in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:269:12: delete ! in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_empty
+core/src/core_tx_stream.rs:660:16: delete ! in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:697:12: delete ! in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_empty
+core/src/graph/liveliness.rs:151:28: replace > with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:203:9: replace GraphLiveliness::internal_request_shutdown with ()
+core/src/graph/liveliness.rs:328:9: replace GraphLiveliness::is_in_state -> bool with true

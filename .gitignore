@@ -37,6 +37,8 @@ mutants.out/caught.txt
 mutants.out.old/
 **/mutants.out*
 **/mutants.out/
+cargo_mutants.txt
+docs/mutants/latest/outcomes.json
 
 
 

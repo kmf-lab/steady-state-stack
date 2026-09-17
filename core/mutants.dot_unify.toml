@@ -3,5 +3,5 @@
 #   cargo mutants --manifest-path core/Cargo.toml --config core/mutants.dot_unify.toml --cap-lints true -j 1
 test_tool = "nextest"
 test_workspace = false
-minimum_test_timeout = 120.0
+minimum_test_timeout = 30.0
 examine_globs = ["**/dot_unify.rs"]

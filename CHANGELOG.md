@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Mutants (cargo-mutants, Stage-1 core)
+
+- Resumable campaign: `scripts/run-mutants-iterate.sh` (fail-fast on miss, `--iterate`, nextest profile `mutants`) and `scripts/snapshot-mutants-score.sh`.
+- Stage-1 globs in `core/mutants.toml`: `dot_unify.rs`, `graph/liveliness.rs`, `core_rx_stream.rs`, `core_tx_stream.rs` (not the 8-line `graph_liveliness.rs` shim). Kill-rate in `docs/mutants.md`; `missed = 0`.
+- Local/pre-publish: file-scoped iterate (`SS_MUTANTS_FILE`, skip with `SS_SKIP_MUTANTS=1`). No GitHub PR mutants job.
+- Spec: `verify.process.mutants` waiver lifted.
+
 ### Fuzz (cargo-fuzz, parse/protocol)
 
 - `core/fuzz` libFuzzer targets: `aeron_channel_uri`, `fast_protocol_packed`, `cgroup_quota`, `pack_even_split`.

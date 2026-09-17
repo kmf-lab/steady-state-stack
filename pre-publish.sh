@@ -88,15 +88,17 @@ if [ $exit_code -ne 0 ]; then
     exit $exit_code
 fi
 
-#echo "---------------------------------------------------------------------------------"
-#echo "------------ scoped cargo-mutants (steady_state) -- see core/mutants.toml ---------"
-#echo "---------------------------------------------------------------------------------"
-#bash scripts/run-cargo-mutants.sh
-#exit_code=$?
-#if [ $exit_code -ne 0 ]; then
-#    echo "cargo-mutants failed with exit code $exit_code"
-#    exit $exit_code
-#fi
+echo "---------------------------------------------------------------------------------"
+echo "------------ scoped cargo-mutants — scripts/run-mutants-iterate.sh ---------------"
+echo "---------------------------------------------------------------------------------"
+echo "File-scoped (not whole crate). Default SS_MUTANTS_FILE=dot_unify.rs."
+echo "Skip with SS_SKIP_MUTANTS=1 if cargo-mutants is unavailable."
+bash scripts/run-mutants-iterate.sh -f "${SS_MUTANTS_FILE:-dot_unify.rs}"
+exit_code=$?
+if [ $exit_code -ne 0 ]; then
+    echo "cargo-mutants campaign failed with exit code $exit_code"
+    exit $exit_code
+fi
 
 # Build the workspace in offline mode, skipping tests and examples if not needed
 # If tests and examples are required for release, add --tests --examples back

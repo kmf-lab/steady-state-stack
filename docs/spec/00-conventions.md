@@ -57,9 +57,9 @@ Document waivers in this file or in the requirement’s **Acceptance** section:
 
 **Active Tier-2 integration waivers (rust-core):** `distributed.aeron-uri`, `distributed.aqueduct-stream`, `distributed.subscribe-publish`, `distributed.media-driver-testing` — verified by Gate C (`scripts/run-aeron-release-signoff.sh`, full matrix on self-hosted runner with `aeronmd`) plus unit/contract tests; soft-skip only when driver absent and `SS_AERON_REQUIRED` unset. **`platform.aeron-out-of-scope-coverage`** remains waived for llvm-cov line % on live driver paths (Gate B excludes live suite). `stream.control-payload` is Tier 1 and verified in channel/serialize unit tests.
 
-**Active Tier-1 process waivers:** `verify.process.mutants`, `verify.process.llvm-cov`, `verify.process.tracey-gate` — documented in `12-verification-stack.md`; `verify.process.nextest`, `verify.process.proptest`, and `verify.process.fuzz` covered by CI / `scripts/run-fuzz.sh` (fuzz is local/pre-publish, not a GitHub PR job).
+**Active Tier-1 process waivers:** `verify.process.llvm-cov`, `verify.process.tracey-gate` — documented in `12-verification-stack.md`; `verify.process.nextest`, `verify.process.proptest`, `verify.process.fuzz`, and `verify.process.mutants` covered by CI / `scripts/run-fuzz.sh` / `scripts/run-mutants-iterate.sh` (fuzz and mutants are local/pre-publish, not a GitHub PR job).
 | **temporary** | Tier 1 not yet testable | Issue URL, target release |
-| **process** | `12-verification-stack` (mutants / llvm-cov CI) | Spec defines target; impl follow-on |
+| **process** | `12-verification-stack` (llvm-cov CI) | Spec defines target; impl follow-on |
 
 Waivers do **not** remove requirements from the spec; they defer `ss[verify]` until infrastructure exists.
 

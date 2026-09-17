@@ -89,6 +89,39 @@ fn fuzz_crate_and_script_exist() {
     }
 }
 
-// ss[related verify.process.mutants]
+// ss[verify verify.process.mutants]
+#[test]
+fn mutants_campaign_script_globs_and_ledger_exist() {
+    let root = repo_root();
+    assert!(
+        root.join("scripts/run-mutants-iterate.sh").is_file(),
+        "scripts/run-mutants-iterate.sh must exist"
+    );
+    assert!(
+        root.join("scripts/snapshot-mutants-score.sh").is_file(),
+        "scripts/snapshot-mutants-score.sh must exist"
+    );
+    assert!(
+        root.join("docs/mutants.md").is_file(),
+        "docs/mutants.md must record kill-rate"
+    );
+    let toml = std::fs::read_to_string(root.join("core/mutants.toml")).expect("core/mutants.toml");
+    for glob in [
+        "**/graph/liveliness.rs",
+        "**/core_rx_stream.rs",
+        "**/core_tx_stream.rs",
+        "**/dot_unify.rs",
+    ] {
+        assert!(
+            toml.contains(glob),
+            "core/mutants.toml examine_globs must include {glob}"
+        );
+    }
+    assert!(
+        !toml.contains("graph_liveliness.rs"),
+        "examine_globs must target graph/liveliness.rs, not the 8-line graph_liveliness.rs shim"
+    );
+}
+
 // ss[related platform.aeron-out-of-scope-coverage]
-// Mutants remain a Tier-1 process waiver until a current kill-rate exists.
+// Live Aeron llvm-cov remains waived; see docs/spec/00-conventions.md.

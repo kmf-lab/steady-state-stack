@@ -14,11 +14,12 @@
 # Widen scope by editing examine_globs in core/mutants.toml or passing --file / --exclude via
 # EXTRA_CARGO_MUTANTS_ARGS. Expect long runtimes for full-crate mutation.
 #
+# Prefer the fail-fast iterate campaign:
+#   bash scripts/run-mutants-iterate.sh -f dot_unify.rs
+#   bash scripts/snapshot-mutants-score.sh
 # Dot telemetry edge merge (`core/src/dot_unify.rs`) is included in `mutants.toml` `examine_globs`.
 # For a quicker loop on that file only, use the dedicated config (does not apply other examine_globs):
-#   cargo mutants --manifest-path core/Cargo.toml --config core/mutants.dot_unify.toml --cap-lints true -j 4
-# Or combine glob + no config (see mutants.rs docs for `-f`):
-#   cargo mutants --manifest-path core/Cargo.toml --no-config --test-tool nextest -f "**/dot_unify.rs" --cap-lints true
+#   cargo mutants --manifest-path core/Cargo.toml --config core/mutants.dot_unify.toml --cap-lints true -j 1
 # For sharded CI: EXTRA_CARGO_MUTANTS_ARGS='--shard 1/4'
 #
 # Edge telemetry troubleshooting: STEADY_TELEMETRY_EDGE_DIAG / RUST_LOG — see docs/telemetry-edge-conflict.md
@@ -55,5 +56,5 @@ mut_args=(
 )
 
 # shellcheck disable=SC2086
-cargo mutants "${mut_args[@]}" ${EXTRA_CARGO_MUTANTS_ARGS:-} -- --test-threads "${NEXTEST_TEST_THREADS}" 2>&1 | tee "${LOG}"
+cargo mutants "${mut_args[@]}" ${EXTRA_CARGO_MUTANTS_ARGS:-} -- --profile mutants --test-threads "${NEXTEST_TEST_THREADS}" 2>&1 | tee "${LOG}"
 exit "${PIPESTATUS[0]}"

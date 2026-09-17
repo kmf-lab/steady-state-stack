@@ -33,6 +33,9 @@ pub(crate) const MERGED_LCOV_OUTPUT: &str = "merged.lcov";
 /// Bounded cargo-fuzz campaign script (parse/protocol targets under `core/fuzz`).
 pub(crate) const FUZZ_CAMPAIGN_SCRIPT: &str = "scripts/run-fuzz.sh";
 
-// ss[related verify.process.mutants]
+// ss[impl verify.process.mutants]
+/// Resumable file-scoped cargo-mutants campaign (Stage-1 globs in `core/mutants.toml`).
+pub(crate) const MUTANTS_CAMPAIGN_SCRIPT: &str = "scripts/run-mutants-iterate.sh";
+
 // ss[related platform.aeron-out-of-scope-coverage]
-// Waivers: docs/spec/00-conventions.md and docs/spec/12-verification-stack.md
+// Waiver: docs/spec/00-conventions.md (`platform.aeron-out-of-scope-coverage`)

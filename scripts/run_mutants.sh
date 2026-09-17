@@ -11,8 +11,8 @@
 # Override when you have spare capacity:
 #   CARGO_MUTANTS_JOBS=2 NEXTEST_TEST_THREADS=2 bash scripts/run_mutants.sh
 #
-# Narrow scope for a quick loop:
-#   EXTRA_CARGO_MUTANTS_ARGS='--file dot_unify.rs' bash scripts/run_mutants.sh
+# Prefer fail-fast iterate (one file, --iterate):
+#   bash scripts/run-mutants-iterate.sh -f dot_unify.rs
 
 set -euo pipefail
 

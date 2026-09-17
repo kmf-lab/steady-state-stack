@@ -41,7 +41,14 @@ pub struct GraphLiveliness {
     pub(crate) shutdown_timeout: Option<Duration>,
     /// Full catalog of all actors
     // ss[related philosophy.structural-hierarchy]
-    pub(crate) actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
+    pub(crate)     actor_catalog: Arc<RwLock<Vec<ActorIdentity>>>
+}
+
+/// True only after `elapsed` has gone strictly past `timeout`.
+/// Equality must not fire: a poll that lands on the budget is still inside the wait.
+// ss[related graph.for-testing]
+pub(crate) fn elapsed_exceeds(elapsed: Duration, timeout: Duration) -> bool {
+    elapsed > timeout
 }
 
 // ss[related graph.for-testing]
@@ -142,13 +149,13 @@ impl GraphLiveliness {
     // ss[related graph.for-testing]
     pub(crate) fn wait_for_registrations(&mut self, timeout: Duration) {
         let expected_count = self.actors_count.load(Ordering::SeqCst);
-        if expected_count > 0 {
+        if expected_count != 0 {
             trace!("waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
             let start = Instant::now();
             while self.registered_voter_count.load(Ordering::SeqCst) < self.actors_count.load(Ordering::SeqCst) {
                 trace!(" waiting for actors to register: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
                 let elapsed = start.elapsed();
-                if elapsed > timeout {
+                if elapsed_exceeds(elapsed, timeout) {
 
                     error!("timeout on startup, not all actors registered: {:?} vs {:?}", self.registered_voter_count.load(Ordering::SeqCst), self.actors_count.load(Ordering::SeqCst));
                     error!("if you need more startup time than {:?} use start_with_timeout",timeout);
@@ -165,6 +172,13 @@ impl GraphLiveliness {
 
                     error!("missing actors: {:?}",missing);
 
+                    #[cfg(test)]
+                    panic!(
+                        "timeout on startup, not all actors registered: {:?} vs {:?}",
+                        self.registered_voter_count.load(Ordering::SeqCst),
+                        self.actors_count.load(Ordering::SeqCst)
+                    );
+                    #[cfg(not(test))]
                     std::process::exit(1); //exit, we did not start up in a reasonable way
                 }
                 thread::sleep(Duration::from_millis(40));
@@ -283,10 +297,10 @@ impl GraphLiveliness {
             let voters_count = self.votes.len();
             if self.vote_in_favor_total.load(Ordering::SeqCst) == voters_count {
                 Some(GraphLivelinessState::Stopped)
-            } else if (voters_count>0) && (now.elapsed()>timeout) {
+            } else if (voters_count != 0) && elapsed_exceeds(now.elapsed(), timeout) {
                 Some(GraphLivelinessState::StoppedUncleanly)
             } else {
-                if voters_count>0 {
+                if voters_count != 0 {
                     None
                 } else {
                     assert_eq!(0,voters_count);

@@ -1,0 +1,308 @@
+core/src/core_rx_stream.rs:112:9: replace <impl RxCore for StreamRx<T>>::shared_peek_async_timeout -> Option<Self::MsgPeek<'_>> with None
+core/src/core_rx_stream.rs:113:12: delete ! in <impl RxCore for StreamRx<T>>::shared_peek_async_timeout
+core/src/core_rx_stream.rs:126:34: replace != with == in <impl RxCore for StreamRx<T>>::shared_peek_async_timeout
+core/src/core_rx_stream.rs:134:50: replace - with + in <impl RxCore for StreamRx<T>>::shared_peek_async_timeout
+core/src/core_rx_stream.rs:134:50: replace - with / in <impl RxCore for StreamRx<T>>::shared_peek_async_timeout
+core/src/core_rx_stream.rs:144:9: replace <impl RxCore for StreamRx<T>>::shared_capacity -> Self::MsgSize with Default::default()
+core/src/core_rx_stream.rs:149:9: replace <impl RxCore for StreamRx<T>>::shared_capacity_for -> bool with false
+core/src/core_rx_stream.rs:149:9: replace <impl RxCore for StreamRx<T>>::shared_capacity_for -> bool with true
+core/src/core_rx_stream.rs:150:13: replace <= with > in <impl RxCore for StreamRx<T>>::shared_capacity_for
+core/src/core_rx_stream.rs:155:9: replace <impl RxCore for StreamRx<T>>::shared_is_empty -> bool with false
+core/src/core_rx_stream.rs:155:9: replace <impl RxCore for StreamRx<T>>::shared_is_empty -> bool with true
+core/src/core_rx_stream.rs:160:9: replace <impl RxCore for StreamRx<T>>::shared_avail_units -> Self::MsgSize with Default::default()
+core/src/core_rx_stream.rs:164:9: replace <impl RxCore for StreamRx<T>>::shared_avail_units_for -> bool with false
+core/src/core_rx_stream.rs:164:9: replace <impl RxCore for StreamRx<T>>::shared_avail_units_for -> bool with true
+core/src/core_rx_stream.rs:165:16: replace >= with < in <impl RxCore for StreamRx<T>>::shared_avail_units_for
+core/src/core_rx_stream.rs:170:9: replace <impl RxCore for StreamRx<T>>::shared_wait_shutdown_or_avail_units -> bool with false
+core/src/core_rx_stream.rs:170:9: replace <impl RxCore for StreamRx<T>>::shared_wait_shutdown_or_avail_units -> bool with true
+core/src/core_rx_stream.rs:175:39: replace >= with < in <impl RxCore for StreamRx<T>>::shared_wait_shutdown_or_avail_units
+core/src/core_rx_stream.rs:181:9: replace <impl RxCore for StreamRx<T>>::shared_wait_closed_or_avail_units -> bool with false
+core/src/core_rx_stream.rs:181:9: replace <impl RxCore for StreamRx<T>>::shared_wait_closed_or_avail_units -> bool with true
+core/src/core_rx_stream.rs:185:16: delete ! in <impl RxCore for StreamRx<T>>::shared_wait_closed_or_avail_units
+core/src/core_rx_stream.rs:197:9: replace <impl RxCore for StreamRx<T>>::shared_wait_avail_units -> bool with false
+core/src/core_rx_stream.rs:197:9: replace <impl RxCore for StreamRx<T>>::shared_wait_avail_units -> bool with true
+core/src/core_rx_stream.rs:209:9: replace <impl RxCore for StreamRx<T>>::shared_try_take -> Option<(RxDone, Self::MsgOut)> with None
+core/src/core_rx_stream.rs:210:30: replace <= with > in <impl RxCore for StreamRx<T>>::shared_try_take
+core/src/core_rx_stream.rs:240:29: replace < with <= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:29: replace < with == in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:29: replace < with > in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:41: replace && with || in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:65: replace + with * in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:65: replace + with - in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:240:76: replace <= with > in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:242:30: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:242:30: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:243:38: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:243:38: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:29: replace < with <= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:29: replace < with == in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:29: replace < with > in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:41: replace && with || in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:65: replace + with * in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:65: replace + with - in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:250:76: replace <= with > in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:252:30: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:252:30: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:253:38: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:253:38: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:262:14: replace != with == in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:264:28: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:264:28: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:266:27: replace != with == in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:267:62: replace - with + in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:267:62: replace - with / in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:268:18: replace != with == in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:269:63: replace + with * in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:269:63: replace + with - in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:270:32: replace += with *= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:270:32: replace += with -= in <impl RxCore for StreamRx<T>>::shared_take_slice
+core/src/core_rx_stream.rs:287:9: replace <impl RxCore for StreamRx<T>>::shared_peek_slice -> Self::SliceSource<'_> with Default::default()
+core/src/core_rx_stream.rs:294:8: replace <impl RxCore for StreamRx<T>>::one -> Self::MsgSize with Default::default()
+core/src/core_rx_stream.rs:53:9: replace <impl RxCore for StreamRx<T>>::telemetry_inc with ()
+core/src/core_rx_stream.rs:67:9: replace <impl RxCore for StreamRx<T>>::monitor_not with ()
+core/src/core_rx_stream.rs:73:9: replace <impl RxCore for StreamRx<T>>::log_periodic -> bool with false
+core/src/core_rx_stream.rs:73:9: replace <impl RxCore for StreamRx<T>>::log_periodic -> bool with true
+core/src/core_rx_stream.rs:78:9: replace <impl RxCore for StreamRx<T>>::shared_validate_capacity_items -> usize with 0
+core/src/core_rx_stream.rs:78:9: replace <impl RxCore for StreamRx<T>>::shared_validate_capacity_items -> usize with 1
+core/src/core_rx_stream.rs:83:9: replace <impl RxCore for StreamRx<T>>::shared_avail_items_count -> usize with 0
+core/src/core_rx_stream.rs:83:9: replace <impl RxCore for StreamRx<T>>::shared_avail_items_count -> usize with 1
+core/src/core_rx_stream.rs:88:52: replace && with || in <impl RxCore for StreamRx<T>>::is_closed_and_empty
+core/src/core_rx_stream.rs:88:9: replace <impl RxCore for StreamRx<T>>::is_closed_and_empty -> bool with false
+core/src/core_rx_stream.rs:88:9: replace <impl RxCore for StreamRx<T>>::is_closed_and_empty -> bool with true
+core/src/core_rx_stream.rs:95:20: replace <= with > in <impl RxCore for StreamRx<T>>::shared_advance_index
+core/src/core_rx_stream.rs:95:37: replace && with || in <impl RxCore for StreamRx<T>>::shared_advance_index
+core/src/core_rx_stream.rs:95:48: replace <= with > in <impl RxCore for StreamRx<T>>::shared_advance_index
+core/src/core_tx_stream.rs:110:45: replace / with % in <impl TxCore for StreamTx<StreamIngress>>::one
+core/src/core_tx_stream.rs:110:45: replace / with * in <impl TxCore for StreamTx<StreamIngress>>::one
+core/src/core_tx_stream.rs:110:9: replace <impl TxCore for StreamTx<StreamIngress>>::one -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:119:69: replace < with <= in <impl TxCore for StreamTx<StreamIngress>>::log_perodic
+core/src/core_tx_stream.rs:119:69: replace < with == in <impl TxCore for StreamTx<StreamIngress>>::log_perodic
+core/src/core_tx_stream.rs:119:69: replace < with > in <impl TxCore for StreamTx<StreamIngress>>::log_perodic
+core/src/core_tx_stream.rs:119:9: replace <impl TxCore for StreamTx<StreamIngress>>::log_perodic -> bool with false
+core/src/core_tx_stream.rs:119:9: replace <impl TxCore for StreamTx<StreamIngress>>::log_perodic -> bool with true
+core/src/core_tx_stream.rs:134:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full -> usize with 0
+core/src/core_tx_stream.rs:134:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full -> usize with 1
+core/src/core_tx_stream.rs:141:30: replace > with < in <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:141:30: replace > with == in <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:141:30: replace > with >= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:147:19: replace += with *= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:147:19: replace += with -= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:158:9: replace <impl TxCore for StreamTx<StreamIngress>>::telemetry_inc with ()
+core/src/core_tx_stream.rs:176:9: replace <impl TxCore for StreamTx<StreamIngress>>::monitor_not with ()
+core/src/core_tx_stream.rs:184:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_capacity -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:188:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_capacity_for -> bool with false
+core/src/core_tx_stream.rs:188:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_capacity_for -> bool with true
+core/src/core_tx_stream.rs:189:14: replace <= with > in <impl TxCore for StreamTx<StreamIngress>>::shared_capacity_for
+core/src/core_tx_stream.rs:196:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_is_full -> bool with false
+core/src/core_tx_stream.rs:196:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_is_full -> bool with true
+core/src/core_tx_stream.rs:203:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_is_empty -> bool with false
+core/src/core_tx_stream.rs:203:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_is_empty -> bool with true
+core/src/core_tx_stream.rs:210:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_vacant_units -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:214:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_vacant_units_for -> bool with false
+core/src/core_tx_stream.rs:214:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_vacant_units_for -> bool with true
+core/src/core_tx_stream.rs:215:16: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_vacant_units_for
+core/src/core_tx_stream.rs:225:100: replace && with || in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:225:48: replace || with && in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:225:88: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:225:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units -> bool with false
+core/src/core_tx_stream.rs:225:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units -> bool with true
+core/src/core_tx_stream.rs:226:49: replace || with && in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:226:89: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:252:49: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:252:60: replace && with || in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:252:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_vacant_units -> bool with false
+core/src/core_tx_stream.rs:252:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_vacant_units -> bool with true
+core/src/core_tx_stream.rs:253:50: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:268:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_empty -> bool with false
+core/src/core_tx_stream.rs:268:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_wait_empty -> bool with true
+core/src/core_tx_stream.rs:273:54: replace == with != in <impl TxCore for StreamTx<StreamIngress>>::shared_wait_empty
+core/src/core_tx_stream.rs:287:12: delete ! in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:31: replace + with * in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:31: replace + with - in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:37: replace > with < in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:37: replace > with == in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:37: replace > with >= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:59: replace || with && in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:73: replace + with * in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:73: replace + with - in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:79: replace > with < in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:79: replace > with == in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:292:79: replace > with >= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:295:75: replace + with * in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:295:75: replace + with - in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:297:27: replace != with == in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:303:28: replace += with *= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:303:28: replace += with -= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:304:28: replace += with *= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:304:28: replace += with -= in <impl TxCore for StreamTx<StreamIngress>>::shared_send_slice
+core/src/core_tx_stream.rs:316:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_poke_slice -> Self::SliceTarget<'_> with Default::default()
+core/src/core_tx_stream.rs:332:49: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_try_send
+core/src/core_tx_stream.rs:332:75: replace && with || in <impl TxCore for StreamTx<StreamIngress>>::shared_try_send
+core/src/core_tx_stream.rs:333:50: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_try_send
+core/src/core_tx_stream.rs:355:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_core -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:362:40: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_core
+core/src/core_tx_stream.rs:362:66: replace && with || in <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_core
+core/src/core_tx_stream.rs:362:90: replace >= with < in <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_core
+core/src/core_tx_stream.rs:401:20: delete ! in <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_core
+core/src/core_tx_stream.rs:438:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_send_async -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:453:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_send_async_timeout -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:497:20: replace <= with > in <impl TxCore for StreamTx<StreamEgress>>::shared_advance_index
+core/src/core_tx_stream.rs:497:37: replace && with || in <impl TxCore for StreamTx<StreamEgress>>::shared_advance_index
+core/src/core_tx_stream.rs:497:48: replace <= with > in <impl TxCore for StreamTx<StreamEgress>>::shared_advance_index
+core/src/core_tx_stream.rs:522:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_mark_closed with ()
+core/src/core_tx_stream.rs:541:45: replace / with % in <impl TxCore for StreamTx<StreamEgress>>::one
+core/src/core_tx_stream.rs:541:45: replace / with * in <impl TxCore for StreamTx<StreamEgress>>::one
+core/src/core_tx_stream.rs:541:9: replace <impl TxCore for StreamTx<StreamEgress>>::one -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:550:69: replace < with <= in <impl TxCore for StreamTx<StreamEgress>>::log_perodic
+core/src/core_tx_stream.rs:550:69: replace < with == in <impl TxCore for StreamTx<StreamEgress>>::log_perodic
+core/src/core_tx_stream.rs:550:69: replace < with > in <impl TxCore for StreamTx<StreamEgress>>::log_perodic
+core/src/core_tx_stream.rs:550:9: replace <impl TxCore for StreamTx<StreamEgress>>::log_perodic -> bool with false
+core/src/core_tx_stream.rs:550:9: replace <impl TxCore for StreamTx<StreamEgress>>::log_perodic -> bool with true
+core/src/core_tx_stream.rs:564:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full -> usize with 0
+core/src/core_tx_stream.rs:564:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full -> usize with 1
+core/src/core_tx_stream.rs:570:30: replace > with < in <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:570:30: replace > with == in <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:570:30: replace > with >= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:576:19: replace += with *= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:576:19: replace += with -= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_iter_until_full
+core/src/core_tx_stream.rs:587:9: replace <impl TxCore for StreamTx<StreamEgress>>::telemetry_inc with ()
+core/src/core_tx_stream.rs:604:9: replace <impl TxCore for StreamTx<StreamEgress>>::monitor_not with ()
+core/src/core_tx_stream.rs:612:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_capacity -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:616:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_capacity_for -> bool with false
+core/src/core_tx_stream.rs:616:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_capacity_for -> bool with true
+core/src/core_tx_stream.rs:617:14: replace <= with > in <impl TxCore for StreamTx<StreamEgress>>::shared_capacity_for
+core/src/core_tx_stream.rs:624:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_is_full -> bool with false
+core/src/core_tx_stream.rs:624:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_is_full -> bool with true
+core/src/core_tx_stream.rs:631:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_is_empty -> bool with false
+core/src/core_tx_stream.rs:631:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_is_empty -> bool with true
+core/src/core_tx_stream.rs:638:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_vacant_units -> Self::MsgSize with Default::default()
+core/src/core_tx_stream.rs:642:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_vacant_units_for -> bool with false
+core/src/core_tx_stream.rs:642:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_vacant_units_for -> bool with true
+core/src/core_tx_stream.rs:643:16: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_vacant_units_for
+core/src/core_tx_stream.rs:653:100: replace && with || in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:653:48: replace || with && in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:653:88: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:653:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units -> bool with false
+core/src/core_tx_stream.rs:653:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units -> bool with true
+core/src/core_tx_stream.rs:654:49: replace || with && in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:654:89: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_shutdown_or_vacant_units
+core/src/core_tx_stream.rs:680:49: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:680:60: replace && with || in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:680:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_vacant_units -> bool with false
+core/src/core_tx_stream.rs:680:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_vacant_units -> bool with true
+core/src/core_tx_stream.rs:681:50: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_vacant_units
+core/src/core_tx_stream.rs:696:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_empty -> bool with false
+core/src/core_tx_stream.rs:696:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_wait_empty -> bool with true
+core/src/core_tx_stream.rs:701:54: replace == with != in <impl TxCore for StreamTx<StreamEgress>>::shared_wait_empty
+core/src/core_tx_stream.rs:715:12: delete ! in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:31: replace + with * in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:31: replace + with - in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:37: replace > with < in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:37: replace > with == in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:37: replace > with >= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:59: replace || with && in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:73: replace + with * in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:73: replace + with - in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:79: replace > with < in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:79: replace > with == in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:720:79: replace > with >= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:723:75: replace + with * in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:723:75: replace + with - in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:725:27: replace != with == in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:731:28: replace += with *= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:731:28: replace += with -= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:732:28: replace += with *= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:732:28: replace += with -= in <impl TxCore for StreamTx<StreamEgress>>::shared_send_slice
+core/src/core_tx_stream.rs:74:20: replace <= with > in <impl TxCore for StreamTx<StreamIngress>>::shared_advance_index
+core/src/core_tx_stream.rs:74:37: replace && with || in <impl TxCore for StreamTx<StreamIngress>>::shared_advance_index
+core/src/core_tx_stream.rs:74:48: replace <= with > in <impl TxCore for StreamTx<StreamIngress>>::shared_advance_index
+core/src/core_tx_stream.rs:744:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_poke_slice -> Self::SliceTarget<'_> with Default::default()
+core/src/core_tx_stream.rs:758:49: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_try_send
+core/src/core_tx_stream.rs:758:66: replace && with || in <impl TxCore for StreamTx<StreamEgress>>::shared_try_send
+core/src/core_tx_stream.rs:759:50: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_try_send
+core/src/core_tx_stream.rs:781:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_core -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:786:40: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_core
+core/src/core_tx_stream.rs:786:57: replace && with || in <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_core
+core/src/core_tx_stream.rs:786:81: replace >= with < in <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_core
+core/src/core_tx_stream.rs:825:20: delete ! in <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_core
+core/src/core_tx_stream.rs:862:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_send_async -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:877:9: replace <impl TxCore for StreamTx<StreamEgress>>::shared_send_async_timeout -> SendOutcome<Self::MsgOut> with SendOutcome::from(Default::default())
+core/src/core_tx_stream.rs:91:9: replace <impl TxCore for StreamTx<StreamIngress>>::shared_mark_closed with ()
+core/src/dot_unify.rs:112:5: replace log_endpoint_conflict with ()
+core/src/dot_unify.rs:184:5: replace apply_channel_to_unified_edges -> Option<EdgeEndpointConflict> with None
+core/src/dot_unify.rs:187:43: replace + with * in apply_channel_to_unified_edges
+core/src/dot_unify.rs:187:43: replace + with - in apply_channel_to_unified_edges
+core/src/dot_unify.rs:202:23: delete ! in apply_channel_to_unified_edges
+core/src/dot_unify.rs:223:23: delete ! in apply_channel_to_unified_edges
+core/src/dot_unify.rs:243:12: delete ! in apply_channel_to_unified_edges
+core/src/dot_unify.rs:243:46: replace && with || in apply_channel_to_unified_edges
+core/src/dot_unify.rs:243:49: delete ! in apply_channel_to_unified_edges
+core/src/dot_unify.rs:253:45: replace == with != in apply_channel_to_unified_edges
+core/src/dot_unify.rs:60:9: replace ChannelEdgeRole::as_endpoint_str -> &'static str with ""
+core/src/dot_unify.rs:60:9: replace ChannelEdgeRole::as_endpoint_str -> &'static str with "xyzzy"
+core/src/dot_unify.rs:91:5: replace placeholder_edge_slot -> Edge with Default::default()
+core/src/dot_unify.rs:92:9: delete field id from struct Edge expression in placeholder_edge_slot
+core/src/dot_unify.rs:93:9: delete field color from struct Edge expression in placeholder_edge_slot
+core/src/dot_unify.rs:94:9: delete field pen_width from struct Edge expression in placeholder_edge_slot
+core/src/graph/liveliness.rs:103:9: replace GraphLiveliness::building_to_running with ()
+core/src/graph/liveliness.rs:112:9: replace GraphLiveliness::remove_voter with ()
+core/src/graph/liveliness.rs:119:9: replace GraphLiveliness::remove_voter with ()
+core/src/graph/liveliness.rs:126:21: replace >= with < in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:126:9: replace GraphLiveliness::register_voter with ()
+core/src/graph/liveliness.rs:127:52: replace + with * in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:127:52: replace + with - in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:133:21: replace >= with < in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:133:9: replace GraphLiveliness::register_voter with ()
+core/src/graph/liveliness.rs:134:52: replace + with * in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:134:52: replace + with - in GraphLiveliness::register_voter
+core/src/graph/liveliness.rs:144:9: replace GraphLiveliness::wait_for_registrations with ()
+core/src/graph/liveliness.rs:145:27: replace != with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:145:27: replace > with < in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:145:27: replace > with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:148:70: replace < with <= in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:148:70: replace < with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:148:70: replace < with > in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:151:28: replace > with < in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:151:9: replace GraphLiveliness::wait_for_registrations with ()
+core/src/graph/liveliness.rs:152:27: replace != with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:155:70: replace < with <= in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:155:70: replace < with == in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:155:70: replace < with > in GraphLiveliness::wait_for_registrations
+core/src/graph/liveliness.rs:244:9: replace GraphLiveliness::vote_for_the_dead with ()
+core/src/graph/liveliness.rs:249:24: delete ! in GraphLiveliness::vote_for_the_dead
+core/src/graph/liveliness.rs:262:12: delete ! in GraphLiveliness::vote_for_the_dead
+core/src/graph/liveliness.rs:292:9: replace GraphLiveliness::check_is_stopped -> Option<GraphLivelinessState> with None
+core/src/graph/liveliness.rs:298:64: replace == with != in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:300:36: replace > with < in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:300:36: replace > with == in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:300:37: replace != with == in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:300:40: replace && with || in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:300:43: replace && with || in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:303:33: replace != with == in GraphLiveliness::check_is_stopped
+core/src/graph/liveliness.rs:328:9: replace GraphLiveliness::is_in_state -> bool with false
+core/src/graph/liveliness.rs:340:9: replace GraphLiveliness::is_shutdown_telemetry_complete -> bool with false
+core/src/graph/liveliness.rs:340:9: replace GraphLiveliness::is_shutdown_telemetry_complete -> bool with true
+core/src/graph/liveliness.rs:343:19: replace >= with < in GraphLiveliness::is_shutdown_telemetry_complete
+core/src/graph/liveliness.rs:343:28: replace - with + in GraphLiveliness::is_shutdown_telemetry_complete
+core/src/graph/liveliness.rs:343:28: replace - with / in GraphLiveliness::is_shutdown_telemetry_complete
+core/src/graph/liveliness.rs:364:9: replace GraphLiveliness::is_running -> Option<bool> with None
+core/src/graph/liveliness.rs:364:9: replace GraphLiveliness::is_running -> Option<bool> with Some(false)
+core/src/graph/liveliness.rs:364:9: replace GraphLiveliness::is_running -> Option<bool> with Some(true)
+core/src/graph/liveliness.rs:382:9: replace GraphLiveliness::apply_shutdown_vote -> Option<bool> with None
+core/src/graph/liveliness.rs:382:9: replace GraphLiveliness::apply_shutdown_vote -> Option<bool> with Some(false)
+core/src/graph/liveliness.rs:382:9: replace GraphLiveliness::apply_shutdown_vote -> Option<bool> with Some(true)
+core/src/graph/liveliness.rs:391:33: replace && with || in GraphLiveliness::apply_shutdown_vote
+core/src/graph/liveliness.rs:391:36: delete ! in GraphLiveliness::apply_shutdown_vote
+core/src/graph/liveliness.rs:407:26: delete ! in GraphLiveliness::apply_shutdown_vote
+core/src/graph/liveliness.rs:51:13: replace > with < in elapsed_exceeds
+core/src/graph/liveliness.rs:51:13: replace > with == in elapsed_exceeds
+core/src/graph/liveliness.rs:51:13: replace > with >= in elapsed_exceeds
+core/src/graph/liveliness.rs:51:5: replace elapsed_exceeds -> bool with false
+core/src/graph/liveliness.rs:51:5: replace elapsed_exceeds -> bool with true
+core/src/graph/liveliness.rs:83:8: replace GraphLiveliness::actor_by_id -> Option<ActorIdentity> with None
+core/src/graph/liveliness.rs:83:8: replace GraphLiveliness::actor_by_id -> Option<ActorIdentity> with Some(Default::default())
+core/src/graph/liveliness.rs:84:32: replace == with != in GraphLiveliness::actor_by_id
+core/src/graph/liveliness.rs:90:8: replace GraphLiveliness::actor_by_id -> Option<ActorIdentity> with None
+core/src/graph/liveliness.rs:90:8: replace GraphLiveliness::actor_by_id -> Option<ActorIdentity> with Some(Default::default())
+core/src/graph/liveliness.rs:91:32: replace == with != in GraphLiveliness::actor_by_id
+core/src/graph/liveliness.rs:96:9: replace GraphLiveliness::building_to_running with ()

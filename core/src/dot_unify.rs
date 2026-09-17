@@ -31,8 +31,6 @@ use log::debug;
 
 // ss[related telemetry.dot-export]
 use crate::ActorName;
-// ss[related telemetry.dot-export]
-use crate::channel_stats::ChannelStatsComputer;
 // ss[related philosophy.structural-hierarchy]
 use crate::dot::DotState;
 // ss[related philosophy.structural-hierarchy]
@@ -87,20 +85,13 @@ pub(crate) struct EdgeEndpointConflict {
 #[inline]
 // ss[related telemetry.dot-export]
 fn placeholder_edge_slot() -> Edge {
+    // Only fields that differ from `Edge::default()`: id is a sentinel, color/pen_width
+    // must stay visible on a black telemetry background. Listing Default-equal fields
+    // here creates equivalent cargo-mutants (delete field → still Default).
     Edge {
         id: usize::MAX,
-        from: None,
-        to: None,
-        sidecar: false,
-        stats_computer: ChannelStatsComputer::default(),
-        ctl_labels: Vec::new(),
         color: "grey",
         pen_width: EDGE_PEN_WIDTH.to_string(),
-        saturation_score: 0.0,
-        display_label: String::new(),
-        metric_text: String::new(),
-        partner: None,
-        bundle_index: None,
         ..Default::default()
     }
 }
@@ -247,12 +238,12 @@ pub(crate) fn apply_channel_to_unified_edges(
         }
     }
 
-    let labels_to_add: Vec<&'static str> = meta
-        .labels
-        .iter()
-        .copied()
-        .filter(|f| !edge.ctl_labels.contains(f))
-        .collect();
+    let mut labels_to_add: Vec<&'static str> = Vec::new();
+    for label in meta.labels.iter().copied() {
+        if !edge.ctl_labels.contains(&label) && !labels_to_add.contains(&label) {
+            labels_to_add.push(label);
+        }
+    }
     for label in labels_to_add {
         edge.ctl_labels.push(label);
     }
@@ -327,6 +318,91 @@ mod unify_edge_tests {
     use proptest::prelude::*;
 
     ss_proptest! {
+
+        /// Property: conflict endpoint labels are the DOT `to` / `from` strings, not empty placeholders.
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        // ss[verify verify.process.mutants]
+        fn proptest_channel_edge_role_endpoint_str(is_to in prop::bool::ANY) {
+            let role = if is_to {
+                ChannelEdgeRole::SetsEdgeTo
+            } else {
+                ChannelEdgeRole::SetsEdgeFrom
+            };
+            let expected = if is_to { "to" } else { "from" };
+            prop_assert_eq!(role.as_endpoint_str(), expected);
+        }
+
+        /// Property: placeholder slots are unused sentinels with visible grey ink (not Edge::default).
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        // ss[verify verify.process.mutants]
+        fn proptest_placeholder_edge_slot_is_unused_grey(_unit in Just(())) {
+            let e = placeholder_edge_slot();
+            prop_assert_eq!(e.id, usize::MAX);
+            prop_assert_eq!(e.from, None);
+            prop_assert_eq!(e.to, None);
+            prop_assert!(!e.sidecar);
+            prop_assert_eq!(e.color, "grey");
+            prop_assert_eq!(e.pen_width, EDGE_PEN_WIDTH.to_string());
+            prop_assert_eq!(e.saturation_score, 0.0);
+            prop_assert!(e.display_label.is_empty());
+            prop_assert!(e.metric_text.is_empty());
+            prop_assert_eq!(e.partner, None);
+            prop_assert_eq!(e.bundle_index, None);
+        }
+
+        /// Property: stats init runs once both endpoints exist (`capacity == 0` is the uninitialized sentinel).
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        // ss[verify verify.process.mutants]
+        fn proptest_stats_init_when_both_endpoints_exist(channel_id in 0usize..8) {
+            let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
+            let mut st = DotState::default();
+            let tx = ActorIdentity::new(11, "tx", None);
+            let rx = ActorIdentity::new(12, "rx", None);
+            let meta = meta_with_id_labels(channel_id, vec!["wire"]);
+            let _ = apply_channel_to_unified_edges(&mut st, tx, &meta, ChannelEdgeRole::SetsEdgeFrom, 1000);
+            let _ = apply_channel_to_unified_edges(&mut st, rx, &meta, ChannelEdgeRole::SetsEdgeTo, 1000);
+            let edge = &st.edges[channel_id];
+            prop_assert_eq!(edge.stats_computer.capacity, 8);
+            prop_assert_eq!(edge.from, Some(tx.label));
+            prop_assert_eq!(edge.to, Some(rx.label));
+            prop_assert_eq!(edge.partner, Some("partner_x"));
+            prop_assert_eq!(edge.bundle_index, Some(2));
+        }
+
+        /// Property: channel labels merge by first-seen identity; the `!contains` filter must keep new tags.
+        #[test]
+        // ss[verify telemetry.dot-export]
+        // ss[verify verify.process.proptest]
+        // ss[verify verify.process.mutants]
+        fn proptest_ctl_labels_merged_uniquely(
+            first_idx in prop::collection::vec(0usize..4, 0..6),
+            second_idx in prop::collection::vec(0usize..4, 0..6),
+        ) {
+            const POOL: [&'static str; 4] = ["alpha", "beta", "gamma", "delta"];
+            let first: Vec<&'static str> = first_idx.iter().map(|&i| POOL[i]).collect();
+            let second: Vec<&'static str> = second_idx.iter().map(|&i| POOL[i]).collect();
+            let _lock = EDGE_DIAG_MUTEX.lock().expect("edge diag mutex poisoned");
+            let mut st = DotState::default();
+            let actor = ActorIdentity::new(1, "labeller", None);
+            let m1 = meta_with_id_labels(3, first.clone());
+            let m2 = meta_with_id_labels(3, second.clone());
+            let _ = apply_channel_to_unified_edges(&mut st, actor, &m1, ChannelEdgeRole::SetsEdgeTo, 1000);
+            let _ = apply_channel_to_unified_edges(&mut st, actor, &m2, ChannelEdgeRole::SetsEdgeTo, 1000);
+            let edge = &st.edges[3];
+            let mut seen = std::collections::HashSet::new();
+            for lab in &edge.ctl_labels {
+                prop_assert!(seen.insert(*lab), "duplicate ctl_label {}", lab);
+            }
+            for lab in first.iter().chain(second.iter()) {
+                prop_assert!(edge.ctl_labels.contains(lab));
+            }
+        }
 
         /// Property: at most one SetsEdgeTo and one SetsEdgeFrom claimant per channel id.
         #[test]
@@ -406,6 +482,8 @@ mod unify_edge_tests {
         let c = apply_channel_to_unified_edges(&mut st, bob, &m2, ChannelEdgeRole::SetsEdgeTo, 1);
         assert!(c.is_some());
         assert_eq!(EDGE_CONFLICT_DIAG_COUNT.load(Ordering::Relaxed), 1);
-        assert_eq!(c.unwrap().channel_id, 0);
+        let c = c.unwrap();
+        assert_eq!(c.channel_id, 0);
+        assert_eq!(c.endpoint, "to");
     }
 }

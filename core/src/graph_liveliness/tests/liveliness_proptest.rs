@@ -3,10 +3,12 @@
 use proptest::prelude::*;
 // ss[related philosophy.structural-hierarchy]
 use super::super::{
-    effective_block_until_stopped_timeout, ActorIdentity, GraphLiveliness, GraphLivelinessState,
+    effective_block_until_stopped_timeout, elapsed_exceeds, ActorIdentity, GraphLiveliness,
+    GraphLivelinessState,
 };
 // ss[related graph.block-until-stopped]
 use crate::core_exec;
+use crate::ss_proptest;
 // ss[related philosophy.structural-hierarchy]
 use std::sync::atomic::{AtomicUsize, Ordering};
 // ss[related philosophy.structural-hierarchy]
@@ -249,5 +251,19 @@ proptest! {
             let got = l.read().check_is_stopped(Instant::now(), Duration::from_secs(1));
             prop_assert_eq!(got, None);
         }
+    }
+}
+
+ss_proptest! {
+    /// Property: startup/shutdown budgets fire only after elapsed strictly exceeds the timeout.
+    #[test]
+    // ss[verify graph.for-testing]
+    // ss[verify verify.process.proptest]
+    // ss[verify verify.process.mutants]
+    fn proptest_elapsed_exceeds_is_strict(elapsed_ms in 0u64..2_000, timeout_ms in 0u64..2_000) {
+        let elapsed = Duration::from_millis(elapsed_ms);
+        let timeout = Duration::from_millis(timeout_ms);
+        prop_assert_eq!(elapsed_exceeds(elapsed, timeout), elapsed > timeout);
+        prop_assert!(!elapsed_exceeds(timeout, timeout));
     }
 }
