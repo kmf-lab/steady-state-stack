@@ -433,8 +433,6 @@ impl<T, const GIRTH: usize> LazySteadyRxBundleClone<T, GIRTH> for LazySteadyRxBu
 // ss[related channel.lazy.establish-on-clone]
 mod steady_lazy_tests {
     // ss[related philosophy.structural-hierarchy]
-    use super::*;
-    // ss[related philosophy.structural-hierarchy]
     use crate::channel_builder::ChannelBuilder;
     // ss[related channel.lazy.establish-on-clone]
     use crate::*;

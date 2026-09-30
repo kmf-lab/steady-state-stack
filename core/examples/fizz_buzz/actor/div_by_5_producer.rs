@@ -58,7 +58,6 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
 pub(crate) mod tests {
     use std::thread::sleep;
     use std::time::Duration;
-    use steady_state::*;
     use super::*;
 
     #[test]

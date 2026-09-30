@@ -11,3 +11,23 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+# biggest win: no DWARF for registry deps
+[profile.dev.package."*"]
+debug = false
+
+# cargo test / llvm-cov use test, which does not inherit package overrides
+[profile.test.package."*"]
+debug = false
+
+# full symbols only when you need a debugger
+[profile.debugging]
+inherits = "dev"
+debug = true
+
+[profile.debugging.package."*"]
+debug = true
+

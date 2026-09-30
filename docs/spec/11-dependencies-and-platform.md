@@ -8,7 +8,7 @@
 
 ss[platform.ringbuf-pin]
 
-`ringbuf` MUST stay on 0.4.x alongside `async-ringbuf` 0.3.5; bumping one without the other is MUST NOT in a single change.
+`ringbuf` MUST stay aligned with `async-ringbuf` (currently `ringbuf` 0.5.2 + `async-ringbuf` 0.3.9); bumping one without the other is MUST NOT in a single change.
 
 **Tier:** 0
 

@@ -4,7 +4,7 @@
 
 ---
 
-## Unreleased (current branch)
+## 0.3.1
 
 ### Lambda warm graph
 
@@ -26,16 +26,16 @@
 
 - Remove Cargo features `exec_async_std`, `proactor_nuclei`, and `proactor_tokio`. The default crate uses OS-thread `block_on`.
 - Remove public `ProactorConfig` and `GraphBuilder::with_iouring_queue_length`.
-- To use Tokio I/O in an actor: `steady_state = { version = "0.2", features = ["tokio"] }`. That is a current-thread reactor on the actor's OS thread, not a Tokio pool.
+- To use Tokio I/O in an actor: `steady_state = { version = "0.3.1", features = ["tokio"] }`. That is a current-thread reactor on the actor's OS thread, not a Tokio pool.
 
 ### Dependencies
 
-- Keep **`ringbuf` 0.4.x** aligned with **`async-ringbuf` 0.3.5** — do not bump one without the other (`platform.ringbuf-pin`).
+- Keep **`ringbuf` 0.5.x** aligned with **`async-ringbuf` 0.3.9** — do not bump one without the other (`platform.ringbuf-pin`; addresses RUSTSEC-2026-0293).
 
 ### Actor index waits
 
 - Prefer `wait_avail_index` / `wait_vacant_index` / `wait_avail_vacant_index` over deprecated `wait_*_bundle` when a single winning lane is enough.  
-- Index waits are truthful (no spurious index), round-robin, with repeat-index bypass — see CHANGELOG Unreleased and [04-bundle-and-index](spec/04-bundle-and-index.md).
+- Index waits are truthful (no spurious index), round-robin, with repeat-index bypass — see CHANGELOG **0.3.1** and [04-bundle-and-index](spec/04-bundle-and-index.md).
 
 ### Testing
 

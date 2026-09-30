@@ -65,6 +65,8 @@ core/fuzz/corpus/**
 # Session / pre-publish dumps (never git add .)
 .cursor/
 pre-publish-*.txt
+pre-publish-run*.log
+steady_state.long-type-*.txt
 core/pre-publish-*.txt
 llvm-cov-*.txt
 cargo_rustdoc.txt

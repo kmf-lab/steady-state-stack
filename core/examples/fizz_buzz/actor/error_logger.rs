@@ -50,7 +50,6 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
 #[cfg(test)]
 pub(crate) mod tests {
     use std::time::Duration;
-    use steady_state::*;
     use super::*;
 
     #[test]

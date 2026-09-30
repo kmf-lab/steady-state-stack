@@ -2,7 +2,7 @@
 
 **Who should read this:** Contributors to the CLI/codegen crate.
 
-**See also:** `cargo-steady-state/src/`, CHANGELOG Unreleased tooling section.
+**See also:** `cargo-steady-state/src/`, CHANGELOG **0.3.1** tooling section.
 
 ---
 

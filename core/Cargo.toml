@@ -74,8 +74,8 @@ no-default-features = true
 cargo-args = ["-Zunstable-options", "-Zrustdoc-scrape-examples"]
 
 [dependencies]
-ringbuf          = "0.4"  # MUST stay on 0.4.x while async-ringbuf = 0.3.5 (same trait graph); do not bump to 0.5 without upgrading async-ringbuf in the same PR
-async-ringbuf    = "=0.3.5"  # pinned: 0.3.6+ may pull ringbuf 0.5 and break AsyncWrap trait coherence with sync channels
+ringbuf          = "0.5.2"  # keep aligned with async-ringbuf (RUSTSEC-2026-0293 fixed in >=0.5.2)
+async-ringbuf    = "0.3.9"  # pulls ringbuf 0.5.x; upgrade both together (platform.ringbuf-pin)
 log              = "0.4"  # common logging traits
 flexi_logger     = { version="0.31", features=["colors", "async"] }  # default flexable logging implementation
 futures-timer    = "3.0"   # for async Delay::new(check_rate).await used places where we poll
