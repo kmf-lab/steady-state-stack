@@ -1,2 +1,0 @@
-ringbuf::storage::Heap<std::boxed::Box<(dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static)>>
-ringbuf::storage::Heap<std::boxed::Box<(dyn std::any::Any + std::marker::Send + std::marker::Sync + 'static)>>: ringbuf::storage::Storage

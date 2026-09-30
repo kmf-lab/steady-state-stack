@@ -70,7 +70,7 @@ Waivers do **not** remove requirements from the spec; they defer `ss[verify]` un
 When narrative docs disagree:
 
 1. **`docs/spec/`** (this tree) — normative requirements
-2. **CHANGELOG (Unreleased)** — API semantics for in-flight work
+2. **CHANGELOG (0.3.1)** — API semantics for the current release line
 3. **Lessons / `docs/*.md`** — teaching; link to spec, do not duplicate MUST text
 4. **`steady_state_manifesto.md`** — philosophy; encoded as `philosophy.*` reqs
 

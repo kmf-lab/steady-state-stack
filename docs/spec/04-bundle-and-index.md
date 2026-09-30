@@ -2,7 +2,7 @@
 
 **Who should read this:** Authors of multi-lane actors and bundle macros.
 
-**See also:** [lesson-on-bundles.md](../../lesson-on-bundles.md), CHANGELOG Unreleased, `steady_actor_shadow.rs`.
+**See also:** [lesson-on-bundles.md](../../lesson-on-bundles.md), CHANGELOG **0.3.1**, `steady_actor_shadow.rs`.
 
 ---
 
