@@ -1,6 +1,6 @@
 # steady_state
 
-[![Leaderboard](https://my.kmf-lab.com/leaderboard/static/badge/kmf-lab.svg)](https://my.kmf-lab.com/leaderboard/kmf-lab/steady-state-stack)
+[![Leaderboard](https://my.kmf-lab.com/leaderboard/static/badge/leaderboard/kmf-lab/steady-state-stack.svg)](https://my.kmf-lab.com/leaderboard/kmf-lab/steady-state-stack)
 
 Framework for building long-running, low-latency actor-based services on Linux. Isolated actors, non-blocking async ring buffers, Erlang-style supervisors, and built-in visual telemetry.
 
