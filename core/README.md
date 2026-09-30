@@ -8,7 +8,7 @@ Framework for building long-running, low-latency actor-based services on Linux. 
 
 ```toml
 [dependencies]
-steady_state = "0.2"
+steady_state = "0.3"
 ```
 
 ```bash
