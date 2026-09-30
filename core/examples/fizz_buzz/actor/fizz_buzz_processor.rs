@@ -174,7 +174,6 @@ async fn internal_behavior<A: SteadyActor,const NUMBERS_RX_GIRTH: usize>(
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use steady_state::*;
     use steady_state::state_management::new_state;
     use super::*;
 

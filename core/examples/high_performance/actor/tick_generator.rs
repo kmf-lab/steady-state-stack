@@ -55,7 +55,6 @@ async fn internal_behavior<const TICKS_TX_GIRTH:usize,C: SteadyActor>(mut actor:
 pub(crate) mod actor_tests {
     use std::thread::sleep;
     use std::time::Duration;
-    use steady_state::*;
     use super::*;
 
     #[test]

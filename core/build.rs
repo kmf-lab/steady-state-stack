@@ -1,6 +1,6 @@
 // ss[impl platform.ringbuf-pin]
 //! Build script for the `steady_state` crate: prepares telemetry web assets for **compile-time**
-//! Ringbuf stays on 0.4.x with async-ringbuf 0.3.5 (see `core/Cargo.toml` comments).
+//! Ringbuf stays aligned with async-ringbuf (see `core/Cargo.toml` / `platform.ringbuf-pin`).
 //! embedding via `include_bytes!` / `include_str!`.
 //!
 //! ## Critical: `OUT_DIR` vs `CARGO_TARGET_DIR` (do not regress)

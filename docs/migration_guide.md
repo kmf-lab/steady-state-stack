@@ -30,7 +30,7 @@
 
 ### Dependencies
 
-- Keep **`ringbuf` 0.4.x** aligned with **`async-ringbuf` 0.3.5** — do not bump one without the other (`platform.ringbuf-pin`).
+- Keep **`ringbuf` 0.5.x** aligned with **`async-ringbuf` 0.3.9** — do not bump one without the other (`platform.ringbuf-pin`; addresses RUSTSEC-2026-0293).
 
 ### Actor index waits
 
