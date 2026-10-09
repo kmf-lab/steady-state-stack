@@ -127,6 +127,10 @@ pub struct SteadyTelemetryActorSend {
     pub(crate) hot_profile_await_ns_unit: AtomicU64,
     // ss[related philosophy.structural-hierarchy]
     pub(crate) hot_profile: AtomicU64,
+    /// `instant_start` elapsed (ns) when the outermost profile guard opened.
+    /// Used so a still-open wait counts as await in `status_message`.
+    // ss[related telemetry.dot-export]
+    pub(crate) hot_profile_unit_origin: AtomicU64,
     // ss[related philosophy.structural-hierarchy]
     pub(crate) hot_profile_concurrent: AtomicU16,
     // ss[related philosophy.structural-hierarchy]
@@ -142,6 +146,11 @@ impl SteadyTelemetryActorSend {
     pub(crate) fn status_reset(&mut self, iteration_index: u64) {
         self.hot_profile_await_ns_unit = AtomicU64::new(0);
         self.instant_start = Instant::now();
+        // An open wait spans the new window. Origin 0 makes the whole window await.
+        // ss[impl telemetry.dot-export]
+        if self.hot_profile_concurrent.load(Ordering::Relaxed) > 0 {
+            self.hot_profile_unit_origin.store(0, Ordering::Relaxed);
+        }
         self.calls
             .iter()
             .for_each(|f| f.store(0, Ordering::Relaxed));
@@ -167,7 +176,15 @@ impl SteadyTelemetryActorSend {
 
         let total_ns = self.instant_start.elapsed().as_nanos() as u64;
 
-        let hot = self.hot_profile_await_ns_unit.load(Ordering::Relaxed);
+        let mut hot = self.hot_profile_await_ns_unit.load(Ordering::Relaxed);
+        // A live profile guard has not dropped yet, so closed await omits the park.
+        // Count the open interval on the same clock as `unit_total_ns`.
+        // ss[impl telemetry.dot-export]
+        if self.hot_profile_concurrent.load(Ordering::Relaxed) > 0 {
+            let origin = self.hot_profile_unit_origin.load(Ordering::Relaxed);
+            let inflight = total_ns.saturating_sub(origin);
+            hot = hot.saturating_add(inflight).min(total_ns);
+        }
         debug_assert!(total_ns >= hot, "should be: {} >= {}", total_ns, hot);
         // trace!("status ratio {} over {} mCPU {}", hot, total_ns, (1024*hot)/total_ns );
 

@@ -214,6 +214,11 @@ impl<const RXL: usize, const TXL: usize> SteadyActorSpotlight<RXL, TXL> {
             self.telemetry.dirty.store(true, Ordering::Relaxed);
             if st.hot_profile_concurrent.fetch_add(1, Ordering::SeqCst).is_zero() {
                 st.hot_profile.store(self.actor_start_time.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                // ss[impl telemetry.dot-export]
+                st.hot_profile_unit_origin.store(
+                    st.instant_start.elapsed().as_nanos() as u64,
+                    Ordering::Relaxed,
+                );
             }
             Some(FinallyRollupProfileGuard { st, start: self.actor_start_time })
         } else {

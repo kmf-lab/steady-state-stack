@@ -153,6 +153,7 @@ pub(crate) fn construct_telemetry_channels<const RX_LEN: usize, const TX_LEN: us
         iteration_index_start: 0,
         hot_profile_await_ns_unit: AtomicU64::new(0),
         hot_profile: AtomicU64::new(0),
+        hot_profile_unit_origin: AtomicU64::new(0),
         hot_profile_concurrent: Default::default(),
         calls,
         regeneration: that.regeneration,

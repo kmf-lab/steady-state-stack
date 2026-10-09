@@ -398,6 +398,7 @@ mod monitor_telemetry_tests {
             show_thread_info: true,
             hot_profile_await_ns_unit: AtomicU64::new(50),
             hot_profile: AtomicU64::new(0),
+            hot_profile_unit_origin: AtomicU64::new(0),
             hot_profile_concurrent: Default::default(),
             calls: Default::default(),
             dot_subtitle_mailbox: Some(mailbox.clone()),
@@ -441,6 +442,7 @@ mod monitor_telemetry_tests {
             show_thread_info: false,
             hot_profile_await_ns_unit: AtomicU64::new(0),
             hot_profile: AtomicU64::new(0),
+            hot_profile_unit_origin: AtomicU64::new(0),
             hot_profile_concurrent: Default::default(),
             calls: Default::default(),
             dot_subtitle_mailbox: None,
@@ -448,6 +450,69 @@ mod monitor_telemetry_tests {
         let status = actor_send.status_message(5);
         assert!(status.thread_info.is_none());
         assert_eq!(status.iteration_sum, 3);
+    }
+
+    #[test]
+    // ss[verify telemetry.dot-export]
+    fn test_open_profile_guard_counts_as_await() {
+        // ss[related philosophy.structural-hierarchy]
+        use crate::graph_liveliness::ActorIdentity;
+        // ss[related philosophy.structural-hierarchy]
+        use crate::monitor::{ActorStatus, FinallyRollupProfileGuard};
+        // ss[impl telemetry.dot-export]
+        use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+        // ss[related philosophy.structural-hierarchy]
+        use std::thread;
+        // ss[related philosophy.structural-hierarchy]
+        use std::time::Duration;
+
+        let builder = ChannelBuilder::test_channel_builder().with_capacity(4);
+        let (act_tx, _act_rx) = builder.eager_build::<ActorStatus>();
+        let ident = ActorIdentity::new(12, "open_wait", None);
+        let actor_send = SteadyTelemetryActorSend {
+            tx: act_tx,
+            ident,
+            last_telemetry_error: Instant::now(),
+            instant_start: Instant::now(),
+            iteration_index_start: 0,
+            regeneration: 0,
+            bool_stop: false,
+            bool_blocking: false,
+            show_thread_info: false,
+            hot_profile_await_ns_unit: AtomicU64::new(0),
+            hot_profile: AtomicU64::new(0),
+            hot_profile_unit_origin: AtomicU64::new(0),
+            hot_profile_concurrent: AtomicU16::new(0),
+            calls: Default::default(),
+            dot_subtitle_mailbox: None,
+        };
+        // Same stores as `start_profile` when the first guard opens.
+        if actor_send
+            .hot_profile_concurrent
+            .fetch_add(1, Ordering::SeqCst)
+            == 0
+        {
+            actor_send.hot_profile_unit_origin.store(
+                actor_send.instant_start.elapsed().as_nanos() as u64,
+                Ordering::Relaxed,
+            );
+        }
+        let _guard = FinallyRollupProfileGuard {
+            st: &actor_send,
+            start: actor_send.instant_start,
+        };
+        thread::sleep(Duration::from_millis(20));
+        let status = actor_send.status_message(1);
+        assert!(status.unit_total_ns > 0);
+        assert!(status.await_total_ns <= status.unit_total_ns);
+        let busy = status.unit_total_ns - status.await_total_ns;
+        let mcpu = (1024u128 * busy as u128) / status.unit_total_ns as u128;
+        assert!(
+            mcpu < 64,
+            "open wait must read near 0 mCPU, got {mcpu} await {} unit {}",
+            status.await_total_ns,
+            status.unit_total_ns
+        );
     }
 
     #[test]

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Telemetry: open-wait mCPU
+
+- `status_message` counts an open profile guard as await on the current window clock. A parked `wait_shutdown` no longer looks fully busy in a snapshot taken while that guard is open.
+- A status reset during an open wait treats the new window as all await.
+- The diagram still keeps the last sample until the next `status_message`. `wait_shutdown` does not send a sample while it is parked.
+
 ## 0.3.1
 
 ### Dynamic troupe packing (startup schedule)

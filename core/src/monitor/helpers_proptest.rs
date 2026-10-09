@@ -38,6 +38,7 @@ fn minimal_actor_send() -> SteadyTelemetryActorSend {
         show_thread_info: false,
         hot_profile_await_ns_unit: AtomicU64::new(0),
         hot_profile: AtomicU64::new(50),
+        hot_profile_unit_origin: AtomicU64::new(0),
         hot_profile_concurrent: AtomicU16::new(1),
         calls: Default::default(),
         dot_subtitle_mailbox: None,
