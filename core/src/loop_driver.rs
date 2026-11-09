@@ -992,4 +992,27 @@ mod loop_driver_tests {
         assert!(!result);
         });
 }
+
+    /// A dirty wake (`false`) must stop the consolidated wait. Later conditions
+    /// are not polled, so a shutdown interrupt cannot be papered over by a
+    /// sibling that would have returned ready.
+    #[test]
+    // ss[verify philosophy.single-wake-up]
+    fn await_for_all_short_circuits_on_dirty_wake() {
+        crate::core_exec::block_on(async {
+            let polled = AtomicBool::new(false);
+            let result = await_for_all!(
+                ready(false),
+                async {
+                    polled.store(true, Ordering::SeqCst);
+                    true
+                }
+            );
+            assert!(!result);
+            assert!(
+                !polled.load(Ordering::SeqCst),
+                "dirty wake must not poll later await_for_all conditions"
+            );
+        });
+    }
 }

@@ -121,20 +121,23 @@ impl<T: StreamControlItem> RxCore for StreamRx<T> {
         }
         let result = self.control_channel.rx.first();
         if let Some(item) = result {
-            let take_count = self.control_channel.take_count.load(std::sync::atomic::Ordering::Relaxed);
-            let cached_take_count = self.control_channel.cached_take_count.load(std::sync::atomic::Ordering::Relaxed);
-            if cached_take_count != take_count {
-                self.control_channel.peek_repeats.store(0, std::sync::atomic::Ordering::Relaxed);
-                self.control_channel.cached_take_count.store(take_count, std::sync::atomic::Ordering::Relaxed);
-            } else {
-                self.control_channel.peek_repeats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
+            crate::core_rx::note_peek_repeat(
+                &self.control_channel.peek_repeats,
+                &self.control_channel.take_count,
+                &self.control_channel.cached_take_count,
+                true,
+            );
             let (a, b) = self.payload_channel.rx.as_slices();
             let count_a = a.len().min(item.length() as usize);
             let count_b = item.length() as usize - count_a;
             Some((item, &a[0..count_a], &b[0..count_b]))
         } else {
-            self.control_channel.peek_repeats.store(0, std::sync::atomic::Ordering::Relaxed);
+            crate::core_rx::note_peek_repeat(
+                &self.control_channel.peek_repeats,
+                &self.control_channel.take_count,
+                &self.control_channel.cached_take_count,
+                false,
+            );
             None
         }
     }
@@ -1041,8 +1044,8 @@ mod core_rx_stream_tests {
                     .control_channel
                     .peek_repeats
                     .load(std::sync::atomic::Ordering::Relaxed),
-                0,
-                "take changes take_count so != resets peek_repeats"
+                1,
+                "first peek after take_count changes counts as one, same as the first message"
             );
         });
     }

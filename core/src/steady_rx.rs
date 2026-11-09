@@ -152,19 +152,12 @@ impl<T> Rx<T> {
         T: Copy,
     {
         let count: usize = self.rx.peek_slice(elems);
-
-        if count > 0 {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if cached_take_count != take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
+        crate::core_rx::note_peek_repeat(
+            &self.peek_repeats,
+            &self.take_count,
+            &self.cached_take_count,
+            count > 0,
+        );
         count
     }
 
@@ -181,18 +174,12 @@ impl<T> Rx<T> {
     // ss[related philosophy.zero-copy-discipline]
     pub(crate) fn shared_try_peek(&self) -> Option<&T> {
         let result = self.rx.try_peek();
-        if result.is_some() {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if cached_take_count != take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
+        crate::core_rx::note_peek_repeat(
+            &self.peek_repeats,
+            &self.take_count,
+            &self.cached_take_count,
+            result.is_some(),
+        );
         result
     }
 

@@ -134,6 +134,11 @@ pub(crate) use abstract_executor::core_exec;
 // ss[related philosophy.structural-hierarchy]
 mod test_panic_capture;
 
+#[cfg(test)]
+// ss[related philosophy.zero-copy-discipline]
+#[path = "risk_coverage_tests.rs"]
+mod risk_coverage_tests;
+
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
 // ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;

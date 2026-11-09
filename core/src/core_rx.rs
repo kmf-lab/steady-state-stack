@@ -5,7 +5,7 @@ use log::*;
 // ss[related philosophy.structural-hierarchy]
 use futures_util::{select, task};
 // ss[related philosophy.zero-copy-discipline]
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 // ss[related philosophy.structural-hierarchy]
 use std::time::{Duration, Instant};
 // ss[related philosophy.structural-hierarchy]
@@ -30,6 +30,34 @@ use crate::steady_rx::RxDone;
 use futures_util::FutureExt;
 // ss[related philosophy.zero-copy-discipline]
 use crate::yield_now;
+
+/// Count one peek of the current head so every message hits `is_showstopper`
+/// after the same number of peeks.
+///
+/// The first peek after `take_count` changes is the first look at the new head
+/// and counts as one. Later peeks of that same head increment. An empty peek
+/// clears the counter. Resetting to zero on the transition peek made later
+/// messages need one extra peek before showstopper detection.
+// ss[impl philosophy.zero-copy-discipline]
+pub(crate) fn note_peek_repeat(
+    peek_repeats: &AtomicUsize,
+    take_count: &AtomicU32,
+    cached_take_count: &AtomicU32,
+    saw_item: bool,
+) {
+    if !saw_item {
+        peek_repeats.store(0, Ordering::Relaxed);
+        return;
+    }
+    let take = take_count.load(Ordering::Relaxed);
+    let cached = cached_take_count.load(Ordering::Relaxed);
+    if cached != take {
+        peek_repeats.store(1, Ordering::Relaxed);
+        cached_take_count.store(take, Ordering::Relaxed);
+    } else {
+        peek_repeats.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 /// Trait providing an interface for working with a pair of slices as a unified data source.
 ///
@@ -490,18 +518,12 @@ impl<T> RxCore for Rx<T> {
             }
         }
         let result = self.rx.first();
-        if result.is_some() {
-            let take_count = self.take_count.load(Ordering::Relaxed);
-            let cached_take_count = self.cached_take_count.load(Ordering::Relaxed);
-            if cached_take_count != take_count {
-                self.peek_repeats.store(0, Ordering::Relaxed);
-                self.cached_take_count.store(take_count, Ordering::Relaxed);
-            } else {
-                self.peek_repeats.fetch_add(1, Ordering::Relaxed);
-            }
-        } else {
-            self.peek_repeats.store(0, Ordering::Relaxed);
-        }
+        note_peek_repeat(
+            &self.peek_repeats,
+            &self.take_count,
+            &self.cached_take_count,
+            result.is_some(),
+        );
         result
     }
 
