@@ -139,6 +139,11 @@ mod test_panic_capture;
 #[path = "risk_coverage_tests.rs"]
 mod risk_coverage_tests;
 
+#[cfg(test)]
+// ss[related actor.index-wait-round-robin]
+#[path = "round2_coverage_tests.rs"]
+mod round2_coverage_tests;
+
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
 // ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;

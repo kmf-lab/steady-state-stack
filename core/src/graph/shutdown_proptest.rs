@@ -331,4 +331,36 @@ mod report_votes_tests {
             report_votes(&mut w);
         }
     }
+
+    /// `debug!` bodies run only when the log max level allows them. Gate B sets
+    /// `RUST_LOG=warn`, so a plain `report_votes` call never enters the formatter.
+    /// `Backtrace::force_capture` fills the frame parser (`telemetry.shutdown-complete`).
+    #[test]
+    // ss[verify telemetry.shutdown-complete]
+    // ss[verify graph.shutdown.veto]
+    fn report_votes_formats_forced_backtrace_at_trace_level() {
+        let rs = new_liveliness(0);
+        let previous = log::max_level();
+        log::set_max_level(log::LevelFilter::Trace);
+        {
+            let mut w = rs.write();
+            w.votes = Arc::new(
+                vec![FutMutex::new(ShutdownVote {
+                    id: 0,
+                    in_favor: false,
+                    signature: Some(ActorIdentity::new(0, "worker", None)),
+                    voter_status: VoterStatus::Registered(ActorIdentity::new(0, "worker", None)),
+                    veto_backtrace: Some(Backtrace::force_capture()),
+                    veto_reason: Some(Eye {
+                        expression: "rx.is_closed_and_empty()",
+                        file: "shutdown.rs",
+                        line: 64,
+                    }),
+                })]
+                .into_boxed_slice(),
+            );
+            report_votes(&mut w);
+        }
+        log::set_max_level(previous);
+    }
 }

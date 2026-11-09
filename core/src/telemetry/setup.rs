@@ -812,6 +812,61 @@ mod tests {
         assert_eq!(reg.len(), 1);
         assert_eq!(reg[0].telemetry_take.len(), 1);
     }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    // ss[verify telemetry.prometheus-metrics]
+    fn try_send_local_telemetry_happy_path_and_full_channel() {
+        use crate::GraphBuilder;
+        use crate::monitor::ChannelMetaData;
+        use std::sync::Arc;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("telemetry_send");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 11,
+            capacity: 8,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 12,
+            capacity: 8,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [11],
+            vec![tx_meta],
+            [12],
+        );
+        let (user_tx, user_rx) = graph.channel_builder().build::<u8>();
+        let user_tx = user_tx.clone();
+        let user_rx = user_rx.clone();
+        let mut spot = shadow.into_spotlight([&user_rx], [&user_tx]);
+        spot.telemetry.send_rx = send_rx;
+        spot.telemetry.send_tx = send_tx;
+        spot.telemetry.state = state;
+        spot.frame_rate_ms = 1;
+        spot.is_running_iteration_count = 4;
+        try_send_all_local_telemetry(&mut spot, Some(0));
+        if let Some(actor_status) = spot.telemetry.state.as_ref() {
+            let rewound = actor_status.status_message(0);
+            assert_eq!(
+                rewound.iteration_sum, 0,
+                "a rewind of the iteration counter must not overflow"
+            );
+        }
+
+        if let Some(actor_status) = spot.telemetry.state.as_mut() {
+            let mut guard = actor_status.tx.try_lock().expect("actor telemetry tx");
+            let status = actor_status.status_message(spot.is_running_iteration_count);
+            while !guard.shared_is_full() {
+                let _ = guard.shared_try_send(status);
+            }
+        }
+        try_send_all_local_telemetry(&mut spot, Some(u64::MAX));
+    }
 }
 
 #[cfg(test)]

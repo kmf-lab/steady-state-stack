@@ -699,4 +699,110 @@ mod tests {
             assert!(g.is_closed_and_empty());
         });
     }
+
+    /// The simulation puppet answers every `SteadyActor` method. Slice APIs that
+    /// the puppet does not implement panic instead of pretending to move bytes.
+    #[test]
+    // ss[verify testing.sim-producer-close]
+    // ss[verify actor.shadow-spotlight]
+    fn test_actor_puppet_answers_steady_actor_surface() {
+        let builder = ChannelBuilder::default().with_capacity(4);
+        let (mut tx, mut rx) = builder.eager_build_internal::<u8>();
+        assert_eq!(tx.shared_try_send(7u8).map(|_| ()), Ok(()));
+
+        let mut actor = TestActor::new();
+        assert_eq!(actor.frame_rate_ms(), 100);
+        assert_eq!(actor.regeneration(), 0);
+        assert!(actor.aeron_media_driver().is_none());
+        assert!(!actor.relay_stats_smartly());
+        actor.relay_stats();
+        assert!(!actor.is_liveliness_in(&[GraphLivelinessState::Running]));
+        assert!(!actor.is_liveliness_building());
+        assert!(!actor.is_liveliness_running());
+        assert!(!actor.is_liveliness_stop_requested());
+        assert!(actor.is_liveliness_shutdown_timeout().is_none());
+        assert!(actor.try_peek(&mut rx).is_none());
+        assert_eq!(actor.try_peek_iter(&mut rx).count(), 0);
+        assert!(actor.is_empty(&mut rx));
+        assert!(actor.is_showstopper(&mut rx, 2) == false);
+        assert!(!actor.is_full(&mut tx));
+        assert_eq!(actor.send_iter_until_full(&mut tx, std::iter::empty()), 0);
+        assert!(matches!(actor.try_send(&mut tx, 8u8), SendOutcome::Success));
+        assert_eq!(actor.try_take(&mut rx), Some(7));
+        assert!(actor.take_into_iter(&mut rx).next().is_none());
+        actor.set_dot_display_text(Some("sim"));
+        actor.loglevel(crate::LogLevel::Error);
+        assert!(actor.args::<()>().is_none());
+        assert_eq!(actor.identity().label.name, "test");
+        assert!(actor.sidechannel_responder().is_none());
+        assert!(actor.is_running(|| true));
+
+        core_exec::block_on(async {
+            assert!(actor.wait_periodic(Duration::from_millis(0)).await);
+            assert!(actor.wait_timeout(Duration::from_millis(0)).await);
+            actor.wait(Duration::from_millis(0)).await;
+            assert!(actor.wait_shutdown().await);
+            assert!(actor.wait_future_void(futures_util::future::ready(())).await);
+            assert!(actor.relay_stats_periodic(Duration::from_millis(0)).await);
+            assert!(actor.peek_async(&mut rx).await.is_none());
+            assert!(actor.send_async(&mut tx, 1u8, SendSaturation::AwaitForRoom).await.is_sent());
+            assert!(actor.take_async(&mut rx).await.is_none());
+            assert!(actor.take_async_with_timeout(&mut rx, Duration::from_millis(0)).await.is_none());
+            assert!(actor.call_async(futures_util::future::ready(3u8)).await.is_none());
+            let mut blocking = actor.call_blocking(|| 11u8);
+            assert_eq!(blocking.fetch(Duration::from_secs(2)).await, Some(11));
+            actor.yield_now().await;
+            let mut empty_rx: RxCoreBundle<Rx<u8>> = Vec::new();
+            let mut empty_tx: TxCoreBundle<Tx<u8>> = Vec::new();
+            let _ = actor.wait_avail(&mut rx, 1).await;
+            let _ = actor.wait_vacant(&mut tx, 1).await;
+            let _ = actor.wait_avail_bundle(&mut empty_rx, 1, 0).await;
+            let _ = actor.wait_vacant_bundle(&mut empty_tx, 1, 0).await;
+            assert!(actor.wait_avail_index(&mut empty_rx, &[]).await.is_none());
+            assert!(actor.wait_vacant_index(&mut empty_tx, &[]).await.is_none());
+            assert!(actor
+                .wait_avail_vacant_index(&mut empty_rx, &mut empty_tx, &[], &[])
+                .await
+                .is_none());
+            let _ = actor.wait_empty(&mut tx).await;
+            actor.request_shutdown().await;
+            assert!(!actor.is_running(|| true));
+            actor.simulated_behavior(Vec::new()).await.expect("sim");
+        });
+
+        let mut actor = TestActor::new();
+        let (mut tx, mut rx) = ChannelBuilder::default()
+            .with_capacity(2)
+            .eager_build_internal::<u8>();
+        for call in [
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.peek_slice(&mut rx);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.advance_take_index(&mut rx, 1);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut buf = [0u8; 1];
+                let _ = actor.take_slice(&mut rx, &mut buf);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.send_slice(&mut tx, &[1u8][..]);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.poke_slice(&mut tx);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.advance_send_index(&mut tx, 1);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.avail_units(&mut rx);
+            })),
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = actor.vacant_units(&mut tx);
+            })),
+        ] {
+            assert!(call.is_err(), "puppet slice APIs panic instead of moving bytes");
+        }
+        let _ = (tx, rx);
+    }
 }

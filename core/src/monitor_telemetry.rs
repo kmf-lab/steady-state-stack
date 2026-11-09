@@ -195,7 +195,7 @@ impl SteadyTelemetryActorSend {
             ident: self.ident,
             total_count_restarts: self.regeneration,
             iteration_start: iteration_index,
-            iteration_sum: (iteration_index - self.iteration_index_start),
+            iteration_sum: iteration_index.saturating_sub(self.iteration_index_start),
             bool_stop: self.bool_stop,
             is_quiet: false,
             bool_blocking: self.bool_blocking,

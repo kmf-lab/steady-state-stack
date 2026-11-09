@@ -728,3 +728,27 @@ fn async_take_timeout_and_slice_preserve_order() {
     assert_eq!(drained, vec![9, 8]);
 }
 
+/// Vacancy wait parks while the ring is full, then completes when one slot opens.
+/// A shutdown that has already fired does not report the full channel as vacant.
+#[test]
+// ss[verify channel.backpressure-never-drop]
+// ss[verify actor.wait-avail-vacant]
+fn wait_vacant_blocks_until_take_and_shutdown_wins_when_full() {
+    let (mut tx, mut rx, _graph, keep_shutdown) = new_tx_with_rx();
+    let cap = tx.shared_capacity();
+    let _ = tx.shared_send_iter_until_full((0..cap as u8).into_iter());
+    assert!(tx.shared_is_full());
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(20));
+        let _ = rx.shared_try_take();
+    });
+    assert!(block_on(tx.shared_wait_vacant_units(1)));
+
+    let (mut tx, _rx, _graph, sender) = new_tx_with_rx();
+    let cap = tx.shared_capacity();
+    let _ = tx.shared_send_iter_until_full((0..cap as u8).into_iter());
+    drop(sender);
+    assert!(!block_on(tx.shared_wait_shutdown_or_vacant_units(1)));
+    drop(keep_shutdown);
+}
+
