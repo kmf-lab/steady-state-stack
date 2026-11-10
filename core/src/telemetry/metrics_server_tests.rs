@@ -592,6 +592,7 @@ mod handle_request_logic_tests {
     }
 
     #[test]
+    #[cfg(any(feature = "telemetry_server_builtin", feature = "telemetry_server_cdn"))]
     // ss[verify telemetry.builtin-server]
     fn handle_request_config_and_set_query_return_contract_status() {
         let state = Arc::new(RwLock::new(MetricState {
