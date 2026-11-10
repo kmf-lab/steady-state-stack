@@ -1,0 +1,919 @@
+// ss[related philosophy.structural-hierarchy]
+use std::time::Duration;
+// ss[related philosophy.structural-hierarchy]
+use async_ringbuf::traits::Producer;
+// ss[related channel.stream-dual-buffer]
+use crate::{
+    GraphBuilder, MONITOR_NOT, RxCore, RxDone, ScheduleAs, SteadyActor, StreamEgress,
+    StreamIngress, core_exec, steady_rx::RxMetaDataProvider,
+};
+use crate::channel_builder::ChannelBuilder;
+use crate::core_tx::TxCore;
+use crate::monitor_telemetry::SteadyTelemetrySend;
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_general() -> Result<(),Box<dyn std::error::Error>> {
+    let mut graph = GraphBuilder::for_testing().build(());
+
+    let bytes_per_item = 128;
+    let mut channel_builder = graph.channel_builder();
+    channel_builder = channel_builder.with_capacity(100);
+    channel_builder = channel_builder.with_type();
+    let (_tx, _rx) = channel_builder.build_stream::<StreamEgress>(bytes_per_item);
+
+    graph.actor_builder().with_name("unit_test").build(
+        move |mut actor| {
+            Box::pin(async move {
+                while actor.is_running(|| true) {
+                    actor.wait_periodic(Duration::from_millis(1)).await;
+                }
+                Ok::<(), Box<dyn std::error::Error>>(())
+            })
+        },
+        ScheduleAs::SoloAct,
+    );
+
+    graph.start();
+    graph.request_shutdown();
+    graph.block_until_stopped(Duration::from_secs(5))?;
+    Ok(())
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_core_basics() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph.channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamIngress>(100);
+        
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        // Test shared_capacity
+        let cap = rx_guard.shared_capacity();
+        assert!(cap.0 >= 10);
+        assert!(cap.1 >= 1000);
+
+        // Test shared_is_empty
+        assert!(rx_guard.shared_is_empty());
+
+        // Test shared_avail_units
+        assert_eq!(rx_guard.shared_avail_units(), (0, 0));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_shared_capacity_for_bounds() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph
+            .channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamIngress>(100);
+
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let cap = rx_guard.shared_capacity();
+        assert!(rx_guard.shared_capacity_for(cap));
+        assert!(!rx_guard.shared_capacity_for((cap.0.saturating_add(1), cap.1)));
+        assert!(!rx_guard.shared_avail_units_for((1, 1)));
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_monitor_log_and_empty() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(16);
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert_eq!(rx_guard.shared_validate_capacity_items(3), 3);
+        assert_eq!(rx_guard.shared_validate_capacity_items(10_000), rx_guard.shared_capacity().0);
+        assert_eq!(rx_guard.shared_avail_items_count(), 0);
+        assert!(!rx_guard.is_closed_and_empty());
+        rx_guard.monitor_not();
+        assert_eq!(rx_guard.control_channel.local_monitor_index, MONITOR_NOT);
+        assert_eq!(rx_guard.payload_channel.local_monitor_index, MONITOR_NOT);
+        rx_guard.control_channel.last_error_send = std::time::Instant::now()
+            - Duration::from_secs(30);
+        assert!(rx_guard.log_periodic());
+        assert!(!rx_guard.log_periodic());
+        drop(tx);
+        let meta = rx_guard.control_channel.channel_meta_data.meta_data.clone();
+        let mut actor = graph.new_testing_test_monitor("stream_rx_tel")
+            .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
+        if let Some(ref mut tel) = actor.telemetry.send_rx {
+            rx_guard.telemetry_inc(RxDone::Stream(1, 2), tel);
+        }
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_peek_async_timeout() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph.channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamIngress>(100);
+        
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        let start = std::time::Instant::now();
+        let peeked = rx_guard.shared_peek_async_timeout(Some(Duration::from_millis(50))).await;
+        assert!(peeked.is_none());
+        assert!(start.elapsed() >= Duration::from_millis(50));
+        
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_take_slice_logic() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamEgress>(100);
+        
+        let tx_clone = tx.clone();
+        let mut tx_guard = tx_clone.lock().await;
+        tx_guard.shared_try_send(&[1, 2, 3][..]).unwrap();
+        tx_guard.shared_try_send(&[4, 5][..]).unwrap();
+        drop(tx_guard);
+
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        let mut item_target = [StreamEgress::default(); 2];
+        let mut payload_target = [0u8; 10];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        
+        assert!(matches!(done, RxDone::Stream(2, 5)));
+        assert_eq!(&payload_target[0..5], &[1, 2, 3, 4, 5]);
+        
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_telemetry_normal() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph.channel_builder()
+            .with_capacity(5)
+            .build_stream::<StreamIngress>(10);
+        
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        let meta = rx_guard.control_channel.channel_meta_data.meta_data.clone();
+        let mut actor = graph.new_testing_test_monitor("test")
+            .into_spotlight([&meta as &dyn RxMetaDataProvider], []);
+
+        if let Some(ref mut tel) = actor.telemetry.send_rx {
+            rx_guard.telemetry_inc(RxDone::Normal(1), tel);
+        }
+    });
+}
+
+fn dummy_tel() -> SteadyTelemetrySend<4> {
+    let (dummy_tx, _dummy_rx) = ChannelBuilder::default()
+        .with_capacity(1)
+        .eager_build::<[usize; 4]>();
+    SteadyTelemetrySend::new(dummy_tx, [0; 4], [0; 4], std::time::Instant::now())
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_telemetry_inc_updates_control_and_payload_counts() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(32);
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let mut tel = dummy_tel();
+        rx_guard.control_channel.local_monitor_index = 0;
+        rx_guard.payload_channel.local_monitor_index = 1;
+        rx_guard.telemetry_inc(RxDone::Stream(3, 7), &mut tel);
+        assert_eq!(tel.count[0], 3);
+        assert_eq!(tel.count[1], 7);
+        rx_guard.telemetry_inc(RxDone::Normal(4), &mut tel);
+        assert_eq!(tel.count[0], 7);
+        assert_eq!(tel.count[1], 7);
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_one_peek_slice_avail_and_closed() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(64);
+        let rx_idle = rx.clone();
+        let mut idle = rx_idle.lock().await;
+        assert_eq!(idle.one(), (1, 1));
+        assert!(idle.shared_is_empty());
+        assert_eq!(idle.shared_avail_items_count(), 0);
+        drop(idle);
+
+        let tx_clone = tx.clone();
+        let mut tx_guard = tx_clone.lock().await;
+        tx_guard.shared_try_send(&[1u8, 2, 3][..]).unwrap();
+        tx_guard.shared_try_send(&[4u8, 5][..]).unwrap();
+        tx_guard.shared_try_send(&[6u8][..]).unwrap();
+        drop(tx_guard);
+
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert!(!rx_guard.shared_is_empty());
+        assert_eq!(rx_guard.shared_avail_items_count(), 3);
+        assert!(rx_guard.shared_avail_units_for((1, 1)));
+        assert!(!rx_guard.shared_avail_units_for((100, 1000)));
+        let (ia, _ib, pa, _pb) = rx_guard.shared_peek_slice();
+        assert!(!ia.is_empty());
+        assert!(pa.len() >= 3);
+        let peeked = rx_guard
+            .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+            .await;
+        assert!(peeked.is_some());
+        assert!(
+            rx_guard
+                .shared_wait_avail_units((1, 1))
+                .await
+        );
+        assert!(
+            rx_guard
+                .shared_wait_closed_or_avail_units(1)
+                .await
+        );
+        assert!(
+            rx_guard
+                .shared_wait_shutdown_or_avail_units((1, 1))
+                .await
+        );
+        let mut item_target = [StreamEgress::default(); 2];
+        let mut payload_target = [0u8; 10];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        assert_eq!(done, RxDone::Stream(2, 5));
+        assert_eq!(&payload_target[..5], &[1, 2, 3, 4, 5]);
+        assert_eq!(
+            rx_guard.shared_advance_index((1, 1)),
+            RxDone::Stream(1, 1)
+        );
+        assert_eq!(
+            rx_guard.shared_advance_index((100, 1000)),
+            RxDone::Stream(0, 0)
+        );
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(64);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[1u8, 2, 3][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert_eq!(
+            rx_guard.shared_advance_index((1, 100)),
+            RxDone::Stream(0, 0),
+            "control room without payload room must not advance (AND, not OR)"
+        );
+        assert_eq!(
+            rx_guard.shared_advance_index((100, 3)),
+            RxDone::Stream(0, 0)
+        );
+        assert_eq!(
+            rx_guard.shared_advance_index((1, 3)),
+            RxDone::Stream(1, 3)
+        );
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(64);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[1u8; 4][..]).unwrap();
+            tx_guard.shared_try_send(&[2u8; 3][..]).unwrap();
+            tx_guard.shared_try_send(&[3u8; 1][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let mut item_target = [StreamEgress::default(); 3];
+        let mut payload_target = [0u8; 10];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        assert_eq!(
+            done,
+            RxDone::Stream(3, 8),
+            "payload_bytes_needed + item_len must not become * or the second frame is dropped"
+        );
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(32);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            for b in [1u8, 2, 3, 4] {
+                tx_guard.shared_try_send(&[b][..]).unwrap();
+            }
+        }
+        {
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let mut item_target = [StreamEgress::default(); 3];
+            let mut payload_target = [0u8; 8];
+            let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+            assert_eq!(done, RxDone::Stream(3, 3));
+        }
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[5u8][..]).unwrap();
+            tx_guard.shared_try_send(&[6u8][..]).unwrap();
+            tx_guard.shared_try_send(&[7u8][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let mut item_target = [StreamEgress::default(); 4];
+        let mut payload_target = [0u8; 3];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        assert_eq!(
+            done,
+            RxDone::Stream(3, 3),
+            "item_b payload_bytes_needed + item_len must stop at max_payload"
+        );
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(2);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            for b in [1u8, 2, 3, 4] {
+                tx_guard.shared_try_send(&[b, b][..]).unwrap();
+            }
+        }
+        {
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let mut item_target = [StreamEgress::default(); 1];
+            let mut payload_target = [0u8; 4];
+            let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+            assert_eq!(done, RxDone::Stream(1, 2));
+        }
+        {
+            let tx_clone = tx.clone();
+            tx_clone.lock().await.shared_try_send(&[9u8, 9][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let mut item_target = [StreamEgress::default(); 4];
+        let mut payload_target = [0u8; 16];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        assert_eq!(done, RxDone::Stream(4, 8));
+        assert_eq!(&payload_target[..8], &[2, 2, 3, 3, 4, 4, 9, 9]);
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(2);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            for b in [1u8, 2, 3, 4] {
+                tx_guard.shared_try_send(&[b, b][..]).unwrap();
+            }
+        }
+        {
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let mut item_target = [StreamEgress::default(); 3];
+            let mut payload_target = [0u8; 8];
+            let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+            assert_eq!(done, RxDone::Stream(3, 6));
+        }
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&[7u8, 7][..]).unwrap();
+            tx_guard.shared_try_send(&[8u8, 8][..]).unwrap();
+            tx_guard.shared_try_send(&[9u8, 9][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let mut item_target = [StreamEgress::default(); 3];
+        let mut payload_target = [0u8; 8];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        assert_eq!(
+            done,
+            RxDone::Stream(3, 6),
+            "payload_b copy length is needed-copied, not needed+copied"
+        );
+        assert_eq!(&payload_target[..6], &[4, 4, 7, 7, 8, 8]);
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_closed_and_empty_requires_both_sides() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(32);
+        {
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.payload_channel.tx.push_slice(&[9u8; 4]);
+            tx_guard.shared_mark_closed();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert!(
+            !rx_guard.is_closed_and_empty(),
+            "payload still holds bytes so AND must be false"
+        );
+    });
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(32);
+        {
+            let tx_clone = tx.clone();
+            tx_clone.lock().await.shared_mark_closed();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert!(rx_guard.is_closed_and_empty());
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_shutdown_wait_returns_false_when_empty() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(16);
+        {
+            let tx_clone = tx.clone();
+            tx_clone.lock().await.shared_mark_closed();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        assert!(
+            !rx_guard.shared_wait_closed_or_avail_units(1).await,
+            "closed empty stream must not report occupancy"
+        );
+        rx_guard.control_channel.oneshot_shutdown =
+            futures::channel::oneshot::channel::<()>().1;
+        assert!(
+            !rx_guard
+                .shared_wait_shutdown_or_avail_units((1, 1))
+                .await,
+            "terminated shutdown with no occupancy must return false"
+        );
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_wait_avail_does_not_return_immediately_when_empty() {
+    let mut graph = GraphBuilder::for_testing().build(());
+    let (_tx, rx) = graph
+        .channel_builder()
+        .with_capacity(4)
+        .build_stream::<StreamEgress>(16);
+    let handle = std::thread::spawn(move || {
+        core_exec::block_on(async {
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            rx_guard.shared_wait_avail_units((1, 1)).await
+        })
+    });
+    std::thread::sleep(Duration::from_millis(40));
+    assert!(
+        !handle.is_finished(),
+        "wait_avail on an empty stream must block; returning true immediately is the mutant"
+    );
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_wait_closed_does_not_return_immediately_when_open_and_empty() {
+    let mut graph = GraphBuilder::for_testing().build(());
+    let (_tx, rx) = graph
+        .channel_builder()
+        .with_capacity(4)
+        .build_stream::<StreamEgress>(16);
+    let handle = std::thread::spawn(move || {
+        core_exec::block_on(async {
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            rx_guard.shared_wait_closed_or_avail_units(1).await
+        })
+    });
+    std::thread::sleep(Duration::from_millis(40));
+    assert!(
+        !handle.is_finished(),
+        "open empty wait_closed must block; deleting !is_terminated returns immediately"
+    );
+}
+
+// #[test]
+// fn test_stream_rx_peek_repeats_logic() -> Result<(), Box<dyn std::error::Error>> {
+//     core_exec::block_on(async {
+//         let mut graph = GraphBuilder::for_testing().build(());
+//         let (tx, rx) = graph.channel_builder()
+//             .with_capacity(10)
+//             .build_stream::<StreamIngress>(10);
+//         
+//         let tx_clone = tx.clone();
+//         let mut tx_guard = tx_clone.lock().await;
+//         let now = std::time::Instant::now();
+//         tx_guard.shared_try_send((StreamIngress::new(5, 0, now, now), &[0u8; 5][..])).unwrap();
+//         drop(tx_guard);
+// 
+//         let rx_clone = rx.clone();
+//         let mut rx_guard = rx_clone.lock().await;
+//         
+//         // First peek
+//         rx_guard.shared_peek_async_timeout(None).await;
+//         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 0);
+//         
+//         // Second peek (same take_count)
+//         rx_guard.shared_peek_async_timeout(None).await;
+//         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 1);
+//         
+//         // Take it
+//         rx_guard.shared_try_take().unwrap();
+//         
+//         // Peek again (empty)
+//         rx_guard.shared_peek_async_timeout(None).await;
+//         assert_eq!(rx_guard.control_channel.peek_repeats.load(std::sync::atomic::Ordering::Relaxed), 0);
+//         
+//         Ok::<(), Box<dyn std::error::Error>>(())
+//     })
+// }
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_take_slice_wrap_around() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder()
+            .with_capacity(4) // Small capacity
+            .build_stream::<StreamEgress>(1); // 4 bytes total
+        
+        let tx_clone = tx.clone();
+        let mut tx_guard = tx_clone.lock().await;
+        
+        // Fill and empty to move indices
+        tx_guard.shared_try_send(&[1, 2][..]).unwrap();
+        tx_guard.shared_try_send(&[3, 4][..]).unwrap();
+        drop(tx_guard);
+        
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        rx_guard.shared_try_take().unwrap();
+        rx_guard.shared_try_take().unwrap();
+        drop(rx_guard);
+        
+        // Now indices are at the end. Push more to wrap.
+        let mut tx_guard = tx_clone.lock().await;
+        tx_guard.shared_try_send(&[5, 6][..]).unwrap();
+        tx_guard.shared_try_send(&[7, 8][..]).unwrap();
+        drop(tx_guard);
+        
+        let mut rx_guard = rx_clone.lock().await;
+        let mut item_target = [StreamEgress::default(); 2];
+        let mut payload_target = [0u8; 4];
+        let done = rx_guard.shared_take_slice((&mut item_target, &mut payload_target));
+        
+        assert_eq!(done, RxDone::Stream(2, 4));
+        assert_eq!(&payload_target, &[5, 6, 7, 8]);
+        
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_advance_fail() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (_tx, rx) = graph.channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamIngress>(100);
+        
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        let done = rx_guard.shared_advance_index((20, 2000));
+        assert_eq!(done, RxDone::Stream(0, 0));
+        
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+fn test_stream_rx_try_take_partial_payload() -> Result<(), Box<dyn std::error::Error>> {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph.channel_builder()
+            .with_capacity(10)
+            .build_stream::<StreamIngress>(10);
+        
+        let tx_clone = tx.clone();
+        let mut tx_guard = tx_clone.lock().await;
+        
+        // Manually push an item to control but NOT enough to payload
+        let now = std::time::Instant::now();
+        tx_guard.control_channel.tx.try_push(StreamIngress::new(10, 0, now, now)).unwrap();
+        // Payload needs 10, but we push 5
+        tx_guard.payload_channel.tx.push_slice(&[0u8; 5]);
+        drop(tx_guard);
+
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        
+        let result = rx_guard.shared_try_take();
+        assert!(result.is_none()); // Should fail because payload is incomplete
+        
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+// ss[verify philosophy.zero-copy-discipline]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify verify.process.mutants]
+fn stream_rx_peek_repeats_increment_until_take() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, rx) = graph
+            .channel_builder()
+            .with_capacity(8)
+            .build_stream::<StreamEgress>(32);
+        {
+            let tx_clone = tx.clone();
+            tx_clone.lock().await.shared_try_send(&[1u8, 2, 3][..]).unwrap();
+            tx_clone.lock().await.shared_try_send(&[4u8][..]).unwrap();
+        }
+        let rx_clone = rx.clone();
+        let mut rx_guard = rx_clone.lock().await;
+        let _ = rx_guard
+            .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+            .await;
+        let first = rx_guard
+            .control_channel
+            .peek_repeats
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let _ = rx_guard
+            .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+            .await;
+        let second = rx_guard
+            .control_channel
+            .peek_repeats
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            second > first,
+            "cached_take_count == take_count must increment peek_repeats"
+        );
+        let _ = rx_guard.shared_try_take();
+        let peeked_after_take = rx_guard
+            .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+            .await;
+        assert!(peeked_after_take.is_some(), "second item still queued");
+        assert_eq!(
+            rx_guard
+                .control_channel
+                .peek_repeats
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "first peek after take_count changes counts as one, same as the first message"
+        );
+    });
+}
+
+// ss[related channel.stream-dual-buffer]
+use proptest::prelude::*;
+// ss[related philosophy.structural-hierarchy]
+use crate::proptest_support::capacity;
+
+ss_proptest! {
+
+    /// Property: stream rx avail control and payload units never exceed capacity.
+    #[test]
+    // ss[verify channel.stream-dual-buffer]
+    // ss[verify channel.backpressure-never-drop]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_rx_avail_le_capacity(
+        cap in 2usize..32,
+        payload_len in 1usize..8,
+        send_count in 1usize..6,
+    ) {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(cap)
+                .build_stream::<StreamEgress>(cap * 16);
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            for _ in 0..send_count.min(cap) {
+                let payload = vec![0u8; payload_len];
+                if tx_guard.shared_try_send(payload.as_slice()).is_err() {
+                    break;
+                }
+            }
+            drop(tx_guard);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let (ctrl_avail, payload_avail) = rx_guard.shared_avail_units();
+            let (ctrl_cap, payload_cap) = rx_guard.shared_capacity();
+            prop_assert!(ctrl_avail <= ctrl_cap);
+            prop_assert!(payload_avail <= payload_cap);
+            Ok::<(), TestCaseError>(())
+        })
+        .expect("async property");
+    }
+
+    /// Property: stream rx peek leaves avail unchanged.
+    #[test]
+    // ss[verify philosophy.zero-copy-discipline]
+    // ss[verify channel.stream-dual-buffer]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_rx_peek_preserves_avail(
+        cap in 2usize..16,
+        payload_len in 1usize..8,
+    ) {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(cap)
+                .build_stream::<StreamEgress>(cap * 16);
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&vec![0u8; payload_len]).unwrap();
+            drop(tx_guard);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let avail_before = rx_guard.shared_avail_units();
+            let _ = rx_guard
+                .shared_peek_async_timeout(Some(Duration::from_millis(1)))
+                .await;
+            prop_assert_eq!(rx_guard.shared_avail_units(), avail_before);
+            Ok::<(), TestCaseError>(())
+        })
+        .expect("async property");
+    }
+
+    /// Property: stream rx advance_index on empty channel returns zero.
+    #[test]
+    // ss[verify channel.stream-dual-buffer]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_rx_advance_empty_zero(
+        cap in capacity(),
+        overshoot in 1usize..16,
+    ) {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (_tx, rx) = graph.channel_builder()
+                .with_capacity(cap)
+                .build_stream::<StreamIngress>(cap * 8);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let done = rx_guard.shared_advance_index((overshoot, overshoot * 8));
+            prop_assert_eq!(done, RxDone::Stream(0, 0));
+            Ok::<(), TestCaseError>(())
+        })
+        .expect("async property");
+    }
+
+    /// Property: stream egress sent payload bytes equal received bytes.
+    #[test]
+    // ss[verify channel.backpressure-never-drop]
+    // ss[verify channel.stream-dual-buffer]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_egress_no_silent_drop(
+        cap in 2usize..16,
+        payloads in prop::collection::vec(prop::collection::vec(any::<u8>(), 1..8), 1..4),
+    ) {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(cap)
+                .build_stream::<StreamEgress>(cap * 32);
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            let mut sent_bytes = 0usize;
+            for p in &payloads {
+                if tx_guard.shared_try_send(p.as_slice()).is_ok() {
+                    sent_bytes += p.len();
+                } else {
+                    break;
+                }
+            }
+            drop(tx_guard);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let mut taken_bytes = 0usize;
+            while let Some((done, (_item, payload))) = rx_guard.shared_try_take() {
+                let payload: &Box<[u8]> = &payload;
+                if let RxDone::Stream(_, b) = done {
+                    prop_assert_eq!(b, payload.len());
+                    taken_bytes += b;
+                }
+            }
+            prop_assert_eq!(taken_bytes, sent_bytes);
+            Ok::<(), TestCaseError>(())
+        })
+        .expect("async property");
+    }
+
+    /// Property: stream rx advance_index never exceeds available control/payload units.
+    #[test]
+    // ss[verify channel.stream-dual-buffer]
+    // ss[verify channel.backpressure-never-drop]
+    // ss[verify verify.process.proptest]
+    fn proptest_stream_rx_advance_index_bounded(
+        cap in 2usize..16,
+        payload_len in 1usize..8,
+        overshoot in 1usize..16,
+    ) {
+        core_exec::block_on(async {
+            let mut graph = GraphBuilder::for_testing().build(());
+            let (tx, rx) = graph.channel_builder()
+                .with_capacity(cap)
+                .build_stream::<StreamEgress>(cap * 16);
+            let tx_clone = tx.clone();
+            let mut tx_guard = tx_clone.lock().await;
+            tx_guard.shared_try_send(&vec![0u8; payload_len]).unwrap();
+            drop(tx_guard);
+            let rx_clone = rx.clone();
+            let mut rx_guard = rx_clone.lock().await;
+            let (ctrl_avail, payload_avail) = rx_guard.shared_avail_units();
+            let done = rx_guard.shared_advance_index((
+                ctrl_avail + overshoot,
+                payload_avail + overshoot * payload_len,
+            ));
+            if let RxDone::Stream(ctrl, payload) = done {
+                prop_assert!(ctrl <= ctrl_avail);
+                prop_assert!(payload <= payload_avail);
+            }
+            Ok::<(), TestCaseError>(())
+        })
+        .expect("async property");
+    }
+}
