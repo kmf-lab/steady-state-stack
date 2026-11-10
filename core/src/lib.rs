@@ -149,6 +149,11 @@ mod round2_coverage_tests;
 #[path = "round3_coverage_tests.rs"]
 mod round3_coverage_tests;
 
+#[cfg(test)]
+// ss[related graph.liveliness-voters]
+#[path = "round5_coverage_tests.rs"]
+mod round5_coverage_tests;
+
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
 // ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;

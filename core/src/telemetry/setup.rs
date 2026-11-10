@@ -961,6 +961,60 @@ mod tests {
         );
         drain.join().expect("telemetry drain");
     }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn full_collector_channel_logs_overload_and_skips_the_sample() {
+        use crate::GraphBuilder;
+        use crate::monitor::ChannelMetaData;
+        use std::sync::Arc;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("telemetry_full");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 31,
+            capacity: 4,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 32,
+            capacity: 4,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [31],
+            vec![tx_meta],
+            [32],
+        );
+        let (user_tx, user_rx) = graph.channel_builder().build::<u8>();
+        let user_tx = user_tx.clone();
+        let user_rx = user_rx.clone();
+        let mut spot = shadow.into_spotlight([&user_rx], [&user_tx]);
+        spot.telemetry.send_rx = send_rx;
+        spot.telemetry.send_tx = send_tx;
+        spot.telemetry.state = state;
+        spot.frame_rate_ms = 1;
+        let status = spot
+            .telemetry
+            .state
+            .as_ref()
+            .expect("actor telemetry")
+            .status_message(1);
+        {
+            let actor_status = spot.telemetry.state.as_mut().expect("actor telemetry");
+            let mut guard = actor_status.tx.try_lock().expect("actor tx");
+            while guard.vacant_units() > 0 {
+                guard
+                    .shared_try_send(status)
+                    .expect("collector channel accepts until vacant is zero");
+            }
+            assert_eq!(guard.vacant_units(), 0);
+            assert!(guard.shared_is_full());
+        }
+        try_send_all_local_telemetry(&mut spot, Some(0));
+    }
 }
 
 #[cfg(test)]
