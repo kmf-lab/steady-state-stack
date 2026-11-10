@@ -232,6 +232,20 @@ mod tests {
     // ss[related philosophy.structural-hierarchy]
     use super::PollScheduler;
 
+    #[test]
+    // ss[verify distributed.media-driver-testing]
+    fn default_scheduler_getters_match_the_values_that_were_set() {
+        let mut scheduler = PollScheduler::default();
+        scheduler.set_expected_moment_ns(9);
+        scheduler.set_std_dev_ns(8);
+        scheduler.set_min_delay_ns(7);
+        scheduler.set_max_delay_ns(6);
+        assert_eq!(scheduler.get_expected_moment_ns(), 9);
+        assert_eq!(scheduler.get_std_dev_ns(), 8);
+        assert_eq!(scheduler.get_min_delay_ns(), 7);
+        assert_eq!(scheduler.get_max_delay_ns(), 6);
+    }
+
     /// Checks the delay when the current time is exactly at the expected moment.
     #[test]
     // ss[verify distributed.media-driver-testing]

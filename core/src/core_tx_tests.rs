@@ -661,3 +661,94 @@ ss_proptest! {
     }
 }
 
+/// An open, full channel must hand the unsent message back as a timeout.
+/// Queued messages stay in order. Dropping the receiver is a different
+/// outcome (`Closed`); this test keeps the receiver alive.
+#[test]
+// ss[verify channel.backpressure-never-drop]
+// ss[verify philosophy.pull-reactor]
+fn full_open_channel_timeout_preserves_queue_order() {
+    let (mut tx, mut rx, _graph, _keep_shutdown) = new_tx_with_rx();
+    let cap = tx.shared_capacity();
+    let queued: Vec<u8> = (0..cap as u8).collect();
+    let sent = tx.shared_send_iter_until_full(queued.iter().copied());
+    assert_eq!(sent, cap);
+    assert!(tx.shared_is_full());
+
+    let ident = ActorIdentity::new(1, "backpressure", None);
+    let outcome = block_on(tx.shared_send_async_core(
+        255u8,
+        ident,
+        SendSaturation::AwaitForRoom,
+        Some(Duration::from_millis(40)),
+    ));
+    assert!(
+        matches!(outcome, SendOutcome::Timeout(255)),
+        "open full channel must time out and return the message, got {outcome:?}"
+    );
+
+    let mut drained = Vec::new();
+    while let Some((_, value)) = rx.shared_try_take() {
+        drained.push(value);
+    }
+    assert_eq!(drained, queued);
+    assert!(tx.shared_try_send(255u8).is_ok());
+    assert_eq!(rx.shared_try_take().map(|(_, value)| value), Some(255));
+}
+
+/// Async take, timed take, and slice take keep FIFO order and do not invent
+/// a message when the open channel is empty.
+#[test]
+// ss[verify philosophy.zero-copy-discipline]
+// ss[verify channel.backpressure-never-drop]
+fn async_take_timeout_and_slice_preserve_order() {
+    let (mut tx, mut rx, _graph, _keep_shutdown) = new_tx_with_rx();
+    assert_eq!(tx.shared_send_iter_until_full([1u8, 2, 3, 4].into_iter()), 4);
+
+    let _ = rx.tx_instance_changed();
+    assert!(!rx.tx_instance_changed());
+    rx.tx_instance_reset();
+    assert!(!rx.tx_instance_changed());
+
+    assert_eq!(block_on(rx.shared_take_async()), Some(1));
+    assert_eq!(
+        block_on(rx.shared_take_async_timeout(Some(Duration::from_millis(20)))),
+        Some(2)
+    );
+    let mut slice = [0u8; 2];
+    assert_eq!(rx.deprecated_shared_take_slice(&mut slice), 2);
+    assert_eq!(slice, [3, 4]);
+    assert_eq!(
+        block_on(rx.shared_take_async_timeout(Some(Duration::from_millis(15)))),
+        None
+    );
+
+    assert_eq!(tx.shared_send_iter_until_full([9u8, 8].into_iter()), 2);
+    let drained: Vec<u8> = rx.shared_take_into_iter().collect();
+    assert_eq!(drained, vec![9, 8]);
+}
+
+/// Vacancy wait parks while the ring is full, then completes when one slot opens.
+/// A shutdown that has already fired does not report the full channel as vacant.
+#[test]
+// ss[verify channel.backpressure-never-drop]
+// ss[verify actor.wait-avail-vacant]
+fn wait_vacant_blocks_until_take_and_shutdown_wins_when_full() {
+    let (mut tx, mut rx, _graph, keep_shutdown) = new_tx_with_rx();
+    let cap = tx.shared_capacity();
+    let _ = tx.shared_send_iter_until_full((0..cap as u8).into_iter());
+    assert!(tx.shared_is_full());
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(20));
+        let _ = rx.shared_try_take();
+    });
+    assert!(block_on(tx.shared_wait_vacant_units(1)));
+
+    let (mut tx, _rx, _graph, sender) = new_tx_with_rx();
+    let cap = tx.shared_capacity();
+    let _ = tx.shared_send_iter_until_full((0..cap as u8).into_iter());
+    drop(sender);
+    assert!(!block_on(tx.shared_wait_shutdown_or_vacant_units(1)));
+    drop(keep_shutdown);
+}
+

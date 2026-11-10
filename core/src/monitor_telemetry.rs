@@ -195,7 +195,7 @@ impl SteadyTelemetryActorSend {
             ident: self.ident,
             total_count_restarts: self.regeneration,
             iteration_start: iteration_index,
-            iteration_sum: (iteration_index - self.iteration_index_start),
+            iteration_sum: iteration_index.saturating_sub(self.iteration_index_start),
             bool_stop: self.bool_stop,
             is_quiet: false,
             bool_blocking: self.bool_blocking,
@@ -408,39 +408,24 @@ impl<const RXL: usize, const TXL: usize> RxTel for SteadyTelemetryRx<RXL, TXL> {
             if unit_total_ns == 0 {
                 None
             } else {
-                assert!(unit_total_ns > 0);
-                if count_of_actor_status_events > 0 {
-                    Some(ActorStatus {
-                        ident: buffer[0].ident,
-                        iteration_start: buffer[0].iteration_start, //always the starting iterator count
-                        iteration_sum,
-                        //we just use the last event for these two, no need to check the others.
-                        total_count_restarts: buffer[count_of_actor_status_events - 1]
-                            .total_count_restarts,
-                        bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
-                        is_quiet: buffer[count_of_actor_status_events - 1].is_quiet,
-                        bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
-                        await_total_ns,
-                        unit_total_ns,
-                        thread_info,
-                        calls,
-                    })
-                } else {
-                    Some(ActorStatus {
-                        ident: buffer[0].ident,
-                        iteration_start: buffer[0].iteration_start, //always the starting iterator count
-                        iteration_sum,
-                        total_count_restarts: 0,
-                        bool_stop: false,
-                        is_quiet: false,
-                        bool_blocking: false,
-                        await_total_ns,
-                        unit_total_ns,
-                        thread_info,
-                        calls,
-                    })
-                    //HACK TESTFOR ZERO  None
-                }
+                // unit_total_ns grows only inside the take loop, and each event
+                // asserts unit_total_ns > 0, so a positive sum means count > 0.
+                assert!(count_of_actor_status_events > 0);
+                Some(ActorStatus {
+                    ident: buffer[0].ident,
+                    iteration_start: buffer[0].iteration_start, //always the starting iterator count
+                    iteration_sum,
+                    //we just use the last event for these two, no need to check the others.
+                    total_count_restarts: buffer[count_of_actor_status_events - 1]
+                        .total_count_restarts,
+                    bool_stop: buffer[count_of_actor_status_events - 1].bool_stop,
+                    is_quiet: buffer[count_of_actor_status_events - 1].is_quiet,
+                    bool_blocking: buffer[count_of_actor_status_events - 1].bool_blocking,
+                    await_total_ns,
+                    unit_total_ns,
+                    thread_info,
+                    calls,
+                })
             }
         } else {
             None

@@ -480,4 +480,23 @@ mod pack_unit {
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0], vec![0, 1, 2], "producer→consumer linedance order");
     }
+
+    #[test]
+    // ss[verify troupe.dynamic-kruskal-capacity]
+    // ss[verify troupe.dynamic-no-incidence-fallback]
+    // ss[verify philosophy.startup-schedule]
+    fn kruskal_zero_slots_ignores_edges_outside_the_actor_set() {
+        // Edges that name actors the packer was not given must not create
+        // clusters, and a zero slot budget still means one OS thread.
+        let edges = vec![PackEdge {
+            from: 99,
+            to: 100,
+            capacity: 1,
+            byte_footprint: 8,
+            bundle_family: None,
+        }];
+        let clusters = pack_kruskal(&[1, 2, 3], &edges, 0);
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].len(), 3);
+    }
 }

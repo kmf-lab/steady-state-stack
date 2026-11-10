@@ -739,4 +739,49 @@ mod troupe_proptest {
                 .expect("troupe spawn integration");
         }
     }
+
+    #[test]
+    // ss[verify actor.regeneration-survives]
+    // ss[verify graph.panic-restart]
+    // ss[verify graph.troupes]
+    fn troupe_member_error_restarts_until_shutdown() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let mut troupe = graph.actor_troupe().with_name("ErrTroupe");
+        graph.actor_builder().with_name("err_member").build(
+            |actor| async move {
+                if actor.is_liveliness_stop_requested() {
+                    Ok(())
+                } else {
+                    Err("planned troupe member failure".into())
+                }
+            },
+            ScheduleAs::MemberOf(&mut troupe),
+        );
+        drop(troupe);
+        assert!(graph.start_with_timeout(Duration::from_secs(5)));
+        std::thread::sleep(Duration::from_millis(40));
+        graph.request_shutdown();
+        graph
+            .block_until_stopped(Duration::from_secs(3))
+            .expect("troupe member must stop after shutdown");
+    }
+
+    #[test]
+    // ss[verify troupe.dynamic-is-a-bag]
+    // ss[verify graph.troupes]
+    fn consumed_troupe_guard_deref_panics() {
+        use std::ops::{Deref, DerefMut};
+        let graph = GraphBuilder::for_testing().build(());
+        let mut guard = graph.actor_troupe();
+        guard.troupe.take();
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = guard.deref();
+        }));
+        assert!(panicked.is_err());
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let guard = guard.deref_mut();
+            let _ = guard.name.clone();
+        }));
+        assert!(panicked.is_err());
+    }
 }

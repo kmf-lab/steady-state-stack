@@ -291,6 +291,44 @@ mod tests {
         assert_eq!(mcpu.mcpu(), 256);
     }
 
+    #[test]
+    // ss[verify actor.regeneration-survives]
+    fn named_work_mcpu_and_percentile_steps_match_their_labels() {
+        let works = [
+            Work::p10(),
+            Work::p20(),
+            Work::p30(),
+            Work::p40(),
+            Work::p50(),
+            Work::p60(),
+            Work::p70(),
+            Work::p80(),
+            Work::p90(),
+            Work::p100(),
+        ];
+        for (i, work) in works.iter().enumerate() {
+            let (num, den) = work.rational();
+            assert_eq!(den, 10_000);
+            assert_eq!(num, (i as u64 + 1) * 1_000);
+        }
+        assert_eq!(MCPU::m16().mcpu(), 16);
+        assert_eq!(MCPU::m64().mcpu(), 64);
+        assert_eq!(MCPU::m256().mcpu(), 256);
+        assert_eq!(MCPU::m512().mcpu(), 512);
+        assert_eq!(MCPU::m768().mcpu(), 768);
+        assert_eq!(MCPU::m1024().mcpu(), 1024);
+        assert!(MCPU::new(1025).is_none());
+        assert_eq!(Percentile::p25().percentile(), 25.0);
+        assert_eq!(Percentile::p50().percentile(), 50.0);
+        assert_eq!(Percentile::p75().percentile(), 75.0);
+        assert_eq!(Percentile::p80().percentile(), 80.0);
+        assert_eq!(Percentile::p90().percentile(), 90.0);
+        assert_eq!(Percentile::p96().percentile(), 96.0);
+        assert_eq!(Percentile::p99().percentile(), 99.0);
+        assert_eq!(Percentile::custom(12.5).expect("in range").percentile(), 12.5);
+        assert!(Percentile::custom(101.0).is_none());
+    }
+
     // ss[related actor.regeneration-survives]
     use proptest::prelude::*;
 

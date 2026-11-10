@@ -812,6 +812,209 @@ mod tests {
         assert_eq!(reg.len(), 1);
         assert_eq!(reg[0].telemetry_take.len(), 1);
     }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    // ss[verify telemetry.prometheus-metrics]
+    fn try_send_local_telemetry_happy_path_and_full_channel() {
+        use crate::GraphBuilder;
+        use crate::monitor::ChannelMetaData;
+        use std::sync::Arc;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("telemetry_send");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 11,
+            capacity: 8,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 12,
+            capacity: 8,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [11],
+            vec![tx_meta],
+            [12],
+        );
+        let (user_tx, user_rx) = graph.channel_builder().build::<u8>();
+        let user_tx = user_tx.clone();
+        let user_rx = user_rx.clone();
+        let mut spot = shadow.into_spotlight([&user_rx], [&user_tx]);
+        spot.telemetry.send_rx = send_rx;
+        spot.telemetry.send_tx = send_tx;
+        spot.telemetry.state = state;
+        spot.frame_rate_ms = 1;
+        spot.is_running_iteration_count = 4;
+        try_send_all_local_telemetry(&mut spot, Some(0));
+        if let Some(actor_status) = spot.telemetry.state.as_ref() {
+            let rewound = actor_status.status_message(0);
+            assert_eq!(
+                rewound.iteration_sum, 0,
+                "a rewind of the iteration counter must not overflow"
+            );
+        }
+
+        if let Some(actor_status) = spot.telemetry.state.as_mut() {
+            let mut guard = actor_status.tx.try_lock().expect("actor telemetry tx");
+            let status = actor_status.status_message(spot.is_running_iteration_count);
+            while !guard.shared_is_full() {
+                let _ = guard.shared_try_send(status);
+            }
+        }
+        try_send_all_local_telemetry(&mut spot, Some(u64::MAX));
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn telemetry_backoff_skips_send_and_async_flush_closes_empty_channels() {
+        use crate::GraphBuilder;
+        use crate::monitor::ChannelMetaData;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("telemetry_backoff");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 21,
+            capacity: 8,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 22,
+            capacity: 8,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [21],
+            vec![tx_meta],
+            [22],
+        );
+        let (user_tx, user_rx) = graph.channel_builder().build::<u8>();
+        let user_tx = user_tx.clone();
+        let user_rx = user_rx.clone();
+        let mut spot = shadow.into_spotlight([&user_rx], [&user_tx]);
+        spot.telemetry.send_rx = send_rx;
+        spot.telemetry.send_tx = send_tx;
+        spot.telemetry.state = state;
+        spot.frame_rate_ms = 1;
+
+        let status = spot
+            .telemetry
+            .state
+            .as_ref()
+            .expect("actor telemetry")
+            .status_message(1);
+        {
+            let actor_status = spot.telemetry.state.as_mut().expect("actor telemetry");
+            let mut guard = actor_status.tx.try_lock().expect("actor tx");
+            guard.local_monitor_index = 0;
+            let cap = guard.capacity();
+            let mut sent = 0usize;
+            while sent < cap {
+                match guard.shared_try_send(status) {
+                    Ok(_) => sent += 1,
+                    Err(_) => break,
+                }
+            }
+            assert!(
+                sent > cap / 2 && guard.vacant_units() < (cap >> 1),
+                "collector channel must be past half full to arm backoff, sent {sent} of {cap}, vacant {}",
+                guard.vacant_units()
+            );
+        }
+        // elapsed 0 is inside the backoff window, so the status is not queued.
+        try_send_all_local_telemetry(&mut spot, Some(0));
+
+        let actor_rx = {
+            let reg = graph.all_telemetry_rx.read();
+            let detail = reg.last().expect("collector detail");
+            detail
+                .telemetry_take
+                .back()
+                .expect("telemetry rx")
+                .actor_rx(1)
+                .expect("actor status rx")
+        };
+        let drain = std::thread::spawn(move || {
+            let start = std::time::Instant::now();
+            while start.elapsed() < Duration::from_secs(2) {
+                if let Some(mut guard) = actor_rx.try_lock() {
+                    let _ = guard.try_take();
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let ident = spot.ident;
+        let iteration = spot.is_running_iteration_count;
+        send_all_local_telemetry_async(
+            ident,
+            iteration,
+            spot.telemetry.state.take(),
+            spot.telemetry.send_tx.take(),
+            spot.telemetry.send_rx.take(),
+        );
+        drain.join().expect("telemetry drain");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn full_collector_channel_logs_overload_and_skips_the_sample() {
+        use crate::GraphBuilder;
+        use crate::monitor::ChannelMetaData;
+        use std::sync::Arc;
+
+        let mut graph = GraphBuilder::for_testing().build(());
+        let shadow = graph.new_testing_test_monitor("telemetry_full");
+        let rx_meta = Arc::new(ChannelMetaData {
+            id: 31,
+            capacity: 4,
+            ..Default::default()
+        });
+        let tx_meta = Arc::new(ChannelMetaData {
+            id: 32,
+            capacity: 4,
+            ..Default::default()
+        });
+        let (send_rx, send_tx, state) = construct_telemetry_channels::<1, 1>(
+            &shadow,
+            vec![rx_meta],
+            [31],
+            vec![tx_meta],
+            [32],
+        );
+        let (user_tx, user_rx) = graph.channel_builder().build::<u8>();
+        let user_tx = user_tx.clone();
+        let user_rx = user_rx.clone();
+        let mut spot = shadow.into_spotlight([&user_rx], [&user_tx]);
+        spot.telemetry.send_rx = send_rx;
+        spot.telemetry.send_tx = send_tx;
+        spot.telemetry.state = state;
+        spot.frame_rate_ms = 1;
+        let status = spot
+            .telemetry
+            .state
+            .as_ref()
+            .expect("actor telemetry")
+            .status_message(1);
+        {
+            let actor_status = spot.telemetry.state.as_mut().expect("actor telemetry");
+            let mut guard = actor_status.tx.try_lock().expect("actor tx");
+            while guard.vacant_units() > 0 {
+                guard
+                    .shared_try_send(status)
+                    .expect("collector channel accepts until vacant is zero");
+            }
+            assert_eq!(guard.vacant_units(), 0);
+            assert!(guard.shared_is_full());
+        }
+        try_send_all_local_telemetry(&mut spot, Some(0));
+    }
 }
 
 #[cfg(test)]

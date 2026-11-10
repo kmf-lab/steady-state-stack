@@ -134,6 +134,26 @@ pub(crate) use abstract_executor::core_exec;
 // ss[related philosophy.structural-hierarchy]
 mod test_panic_capture;
 
+#[cfg(test)]
+// ss[related philosophy.zero-copy-discipline]
+#[path = "risk_coverage_tests.rs"]
+mod risk_coverage_tests;
+
+#[cfg(test)]
+// ss[related actor.index-wait-round-robin]
+#[path = "round2_coverage_tests.rs"]
+mod round2_coverage_tests;
+
+#[cfg(test)]
+// ss[related actor.shadow-spotlight]
+#[path = "round3_coverage_tests.rs"]
+mod round3_coverage_tests;
+
+#[cfg(test)]
+// ss[related graph.liveliness-voters]
+#[path = "round5_coverage_tests.rs"]
+mod round5_coverage_tests;
+
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
 // ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;

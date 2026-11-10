@@ -378,7 +378,7 @@ mod handle_request_logic_tests {
     struct MockStream {
         read_data: Vec<u8>,
         read_pos: usize,
-        write_data: Vec<u8>,
+        write_data: Arc<Mutex<Vec<u8>>>,
     }
 
     // ss[impl telemetry.builtin-server]
@@ -388,7 +388,7 @@ mod handle_request_logic_tests {
             MockStream {
                 read_data: data.as_bytes().to_vec(),
                 read_pos: 0,
-                write_data: Vec::new(),
+                write_data: Arc::new(Mutex::new(Vec::new())),
             }
         }
     }
@@ -408,8 +408,8 @@ mod handle_request_logic_tests {
     // ss[impl telemetry.builtin-server]
     impl AsyncWrite for MockStream {
         // ss[related philosophy.structural-hierarchy]
-        fn poll_write(mut self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
-            self.write_data.extend_from_slice(buf);
+        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+            self.write_data.lock().expect("mock write").extend_from_slice(buf);
             Poll::Ready(Ok(buf.len()))
         }
         // ss[impl telemetry.builtin-server]
@@ -589,6 +589,34 @@ mod handle_request_logic_tests {
         }));
         let stream = MockStream::new("GET /metrics HTTP/1.1\r\n\r\n");
         futures::executor::block_on(handle_request(stream, state)).expect("metrics response");
+    }
+
+    #[test]
+    // ss[verify telemetry.builtin-server]
+    fn handle_request_config_and_set_query_return_contract_status() {
+        let state = Arc::new(RwLock::new(MetricState {
+            doc: Bytes::from_static(b"digraph {}"),
+            metric: Bytes::new(),
+            config: Bytes::from_static(b"{\"rankdir\":\"LR\"}"),
+            last_disk_write: Arc::new(AtomicU64::new(0)),
+            start_time: Instant::now(),
+        }));
+        let config = MockStream::new("GET /config HTTP/1.1\r\n\r\n");
+        let config_bytes = config.write_data.clone();
+        futures::executor::block_on(handle_request(config, state.clone())).expect("config");
+        let config_body = String::from_utf8_lossy(&config_bytes.lock().expect("config bytes")).to_string();
+        assert!(
+            config_body.contains("200") && config_body.contains("rankdir"),
+            "config document must be returned, got {config_body}"
+        );
+        let set = MockStream::new("GET /set?rankdir=LR&show=a&hide=b HTTP/1.1\r\n\r\n");
+        let set_bytes = set.write_data.clone();
+        futures::executor::block_on(handle_request(set, state)).expect("set");
+        let body = String::from_utf8_lossy(&set_bytes.lock().expect("set bytes")).to_string();
+        assert!(
+            body.contains("400"),
+            "unapplied /set query must stay a bad request, got {body}"
+        );
     }
 
     #[test]

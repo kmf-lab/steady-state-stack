@@ -334,3 +334,33 @@ impl FrameHistory {
         metrics_server::async_write_all(data, flush, file).await
     }
 }
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    #[test]
+    // ss[verify telemetry.dot-export]
+    fn span_detects_when_the_next_record_crosses_a_block() {
+        let mut history = FrameHistory::new(40);
+        let path = history.build_history_path();
+        assert!(
+            path.to_string_lossy().contains(&history.guid),
+            "history file name must include the run guid"
+        );
+        let again = history.build_history_path();
+        assert_eq!(path, again, "the same utc day must keep the same history file");
+
+        history
+            .file_bytes_written
+            .store(HISTORY_WRITE_BLOCK_SIZE - 8, Ordering::SeqCst);
+        history.buffer_bytes_count = 0;
+        history.history_buffer.resize(16, 0);
+        assert!(
+            history.will_span_into_next_block(),
+            "16 bytes past a block boundary must span"
+        );
+        history.history_buffer.clear();
+        assert!(!history.will_span_into_next_block());
+    }
+}

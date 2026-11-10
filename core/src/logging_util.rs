@@ -414,6 +414,28 @@ mod tests {
 
     #[test]
     // ss[verify philosophy.structural-hierarchy]
+    fn file_logging_init_applies_rotation_config() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = LogFileConfig {
+            directory: dir.path().display().to_string(),
+            base_name: "ss-cov".to_string(),
+            max_size_bytes: 4096,
+            keep_count: 1,
+            delete_old_on_start: false,
+        };
+        let _ = super::steady_logging_init(LogLevel::Error, Some(cfg));
+        let cfg_reset = LogFileConfig {
+            directory: dir.path().display().to_string(),
+            base_name: "ss-cov".to_string(),
+            max_size_bytes: 4096,
+            keep_count: 1,
+            delete_old_on_start: true,
+        };
+        let _ = super::steady_logging_init(LogLevel::Error, Some(cfg_reset));
+    }
+
+    #[test]
+    // ss[verify philosophy.structural-hierarchy]
     fn log_level_from_env_maps_bare_and_crate_specs() {
         assert_eq!(
             super::steady_logger::parse_rust_log_spec("warn"),

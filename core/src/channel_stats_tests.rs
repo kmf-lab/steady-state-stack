@@ -604,4 +604,97 @@ mod channel_stats_tests {
             prop_assert!(!suppressed.contains("Avg filled:"));
         }
     }
+
+    #[test]
+    // ss[verify telemetry.channel-labels]
+    fn zero_capacity_filled_histogram_is_rejected_and_labels_render() {
+        // init rejects capacity 0, so the percent denominator is checked on a
+        // computer whose capacity was cleared after a valid window was built.
+        let mut meta = (*mock_meta()).clone();
+        meta.max_filled = true;
+        meta.display_labels = true;
+        meta.labels = vec!["lane"];
+        meta.show_type = Some("u8");
+        let mut computer = ChannelStatsComputer::default();
+        computer.init(
+            &Arc::new(meta),
+            ActorName::new("src", Some(1)),
+            ActorName::new("dst", Some(2)),
+            40,
+        );
+        assert!(computer.build_filled_histogram);
+        computer.capacity = 0;
+        computer.show_avg_filled = true;
+        computer.current_filled = Some(ChannelBlock {
+            histogram: None,
+            runner: 80,
+            sum_of_squares: 0,
+        });
+        assert_eq!(
+            computer.avg_filled_whole_percent(),
+            None,
+            "zero capacity has no percent denominator"
+        );
+
+        let mut rate_meta = (*mock_meta()).clone();
+        rate_meta.percentiles_rate.push(crate::Percentile::p50());
+        rate_meta.refresh_rate_in_bits = 0;
+        rate_meta.window_bucket_in_bits = 0;
+        rate_meta.display_labels = true;
+        rate_meta.labels = vec!["bytes"];
+        let mut rate_computer = ChannelStatsComputer::default();
+        rate_computer.init(
+            &Arc::new(rate_meta),
+            ActorName::new("src", None),
+            ActorName::new("dst", None),
+            40,
+        );
+        assert!(rate_computer.build_rate_histogram);
+        rate_computer.accumulate_data_frame(4, 4);
+        rate_computer.accumulate_data_frame(8, 8);
+        let mut label = String::new();
+        let mut metric = String::new();
+        rate_computer.append_visual_metric_lines(&mut label, &mut metric, FilledVisualMode::Full);
+        assert!(
+            label.contains("bytes"),
+            "display labels must be written onto the DOT label, got {label}"
+        );
+    }
+
+    #[test]
+    // ss[verify telemetry.channel-labels]
+    fn every_trigger_arm_is_evaluated_on_a_fresh_computer() {
+        use crate::{Percentile, StdDev};
+        let computer = fresh_computer();
+        let rate = Rate::per_seconds(1);
+        let p = Percentile::p50();
+        let sd = StdDev::one();
+        let _ = computer.triggered_rate(&Trigger::AvgAbove(rate));
+        let _ = computer.triggered_rate(&Trigger::AvgBelow(rate));
+        let _ = computer.triggered_rate(&Trigger::StdDevsAbove(sd, rate));
+        let _ = computer.triggered_rate(&Trigger::StdDevsBelow(sd, rate));
+        let _ = computer.triggered_rate(&Trigger::PercentileAbove(p, rate));
+        let _ = computer.triggered_rate(&Trigger::PercentileBelow(p, rate));
+        let filled_pct = Filled::percentage(50.0).expect("pct");
+        let filled_exact = Filled::exact(10);
+        let _ = computer.triggered_filled(&Trigger::AvgAbove(filled_pct));
+        let _ = computer.triggered_filled(&Trigger::AvgBelow(filled_pct));
+        let _ = computer.triggered_filled(&Trigger::AvgAbove(filled_exact));
+        let _ = computer.triggered_filled(&Trigger::AvgBelow(filled_exact));
+        let _ = computer.triggered_filled(&Trigger::StdDevsAbove(sd, filled_pct));
+        let _ = computer.triggered_filled(&Trigger::StdDevsBelow(sd, filled_pct));
+        let _ = computer.triggered_filled(&Trigger::StdDevsAbove(sd, filled_exact));
+        let _ = computer.triggered_filled(&Trigger::StdDevsBelow(sd, filled_exact));
+        let _ = computer.triggered_filled(&Trigger::PercentileAbove(p, filled_pct));
+        let _ = computer.triggered_filled(&Trigger::PercentileBelow(p, filled_pct));
+        let _ = computer.triggered_filled(&Trigger::PercentileAbove(p, filled_exact));
+        let _ = computer.triggered_filled(&Trigger::PercentileBelow(p, filled_exact));
+        let latency = Duration::from_millis(5);
+        let _ = computer.triggered_latency(&Trigger::AvgAbove(latency));
+        let _ = computer.triggered_latency(&Trigger::AvgBelow(latency));
+        let _ = computer.triggered_latency(&Trigger::StdDevsAbove(sd, latency));
+        let _ = computer.triggered_latency(&Trigger::StdDevsBelow(sd, latency));
+        let _ = computer.triggered_latency(&Trigger::PercentileAbove(p, latency));
+        let _ = computer.triggered_latency(&Trigger::PercentileBelow(p, latency));
+    }
 }

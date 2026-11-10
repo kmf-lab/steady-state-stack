@@ -8,8 +8,10 @@
 //!
 //! To run manually: `cargo test test_panic_graph -- --ignored`
 
-// llvm-cov exclude-start (advanced panic integration; not part of Phase 1 unit coverage)
-// coverage:off — advanced panic integration; not part of Phase 1 unit coverage
+// The only test is #[ignore], so Gate B (`cargo llvm-cov` / nextest) never executes it
+// and this file stays at 0%. `// coverage:off` is not a marker cargo-llvm-cov 0.9 honors,
+// and `#[coverage(off)]` is still experimental on stable (E0658), so the lines stay in the report.
+// Run manually: `cargo test test_panic_graph -- --ignored`
 #[cfg(test)]
 // ss[related testing.never-run-in-unit]
 mod simple_graph_test {
