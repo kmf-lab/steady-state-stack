@@ -883,3 +883,8 @@ impl TxCore for StreamTx<StreamEgress> {
 // ss[related channel.stream-dual-buffer]
 #[path = "core_tx_stream_tests.rs"]
 mod core_tx_stream_tests;
+
+#[cfg(test)]
+// ss[related channel.stream-dual-buffer]
+#[path = "core_tx_stream_defrag_tests.rs"]
+mod core_tx_stream_defrag_tests;
