@@ -144,6 +144,11 @@ mod risk_coverage_tests;
 #[path = "round2_coverage_tests.rs"]
 mod round2_coverage_tests;
 
+#[cfg(test)]
+// ss[related actor.shadow-spotlight]
+#[path = "round3_coverage_tests.rs"]
+mod round3_coverage_tests;
+
 /// Property-test case count (shared with `proptest_support::SS_PROPCASES`).
 // ss[related philosophy.structural-hierarchy]
 pub const SS_PROPCASES: u32 = 2048;

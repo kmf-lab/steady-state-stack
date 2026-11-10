@@ -471,4 +471,42 @@ pub(crate) mod test_builder {
     fn create_test_channel_builder() -> ChannelBuilder {
         ChannelBuilder::test_channel_builder()
     }
+
+    #[test]
+    // ss[verify channel.memory-usage-telemetry]
+    // ss[verify channel.dynamic-payload-estimate]
+    // ss[verify telemetry.channel-labels]
+    fn display_builders_are_stored_on_channel_metadata() {
+        let scaled = 64usize.saturating_mul(1024).saturating_mul(64);
+        let builder = create_test_channel_builder()
+            .with_memory_usage()
+            .with_dynamic_payload_estimate(scaled)
+            .with_line_expansion(1.5)
+            .with_partner("peer")
+            .with_filled_max()
+            .with_filled_min()
+            .with_latency_max()
+            .with_latency_min()
+            .with_rate_max()
+            .with_rate_min()
+            .connects_sidecar()
+            .with_type()
+            .with_rate_trigger(Trigger::AvgAbove(Rate::per_seconds(1)), AlertColor::Red);
+        assert!(builder.show_memory);
+        assert!(builder.max_filled && builder.min_filled);
+        assert!(builder.max_latency && builder.min_latency);
+        assert!(builder.max_rate && builder.min_rate);
+        assert!(builder.connects_sidecar);
+        assert_eq!(builder.partner, Some("peer"));
+        assert!((builder.line_expansion - 1.5).abs() < f32::EPSILON);
+        assert_eq!(builder.trigger_rate.len(), 1);
+
+        let (_tx, rx) = builder.build::<u64>();
+        let meta = rx.clone().meta_data();
+        assert_eq!(meta.show_type, Some("u64"));
+        assert_eq!(meta.partner, Some("peer"));
+        assert!(meta.show_memory);
+        assert_eq!(meta.dynamic_per_slot_estimate, Some(scaled));
+        assert!(meta.connects_sidecar);
+    }
 }

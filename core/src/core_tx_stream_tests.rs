@@ -1763,6 +1763,117 @@ ss_proptest! {
     }
 }
 
+#[test]
+// ss[verify distributed.aqueduct-stream]
+fn missing_defrag_session_is_skipped() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let (tx, _rx) = graph
+            .channel_builder()
+            .with_capacity(4)
+            .build_stream::<StreamEgress>(8);
+        let established = tx.clone();
+        let mut guard = established.lock().await;
+        guard.ready_msg_session.push_back(99);
+        let mut actor = graph
+            .new_testing_test_monitor("flush_missing")
+            .into_spotlight([], []);
+        let (msgs, bytes) = guard.fragment_flush_ready(&mut actor);
+        assert_eq!((msgs, bytes), (0, 0));
+        assert!(guard.ready_msg_session.is_empty());
+    });
+}
+
+#[test]
+// ss[verify channel.stream-dual-buffer]
+// ss[verify channel.backpressure-never-drop]
+fn stream_send_async_waits_for_room_then_succeeds_or_times_out() {
+    core_exec::block_on(async {
+        let mut graph = GraphBuilder::for_testing().build(());
+        let ident = ActorIdentity::new(0, "stream_wait", None);
+        let now = Instant::now();
+
+        let (in_tx, in_rx) = graph
+            .channel_builder()
+            .with_capacity(1)
+            .build_stream::<StreamIngress>(8);
+        let in_tx_held = in_tx.clone();
+        let mut ingress = in_tx_held.lock().await;
+        ingress
+            .shared_try_send((StreamIngress::new(1, 0, now, now), &[1u8][..]))
+            .expect("fill ingress");
+        assert!(ingress.shared_is_full());
+        let timed = ingress
+            .shared_send_async_timeout(
+                (StreamIngress::new(1, 0, now, now), &[2u8][..]),
+                ident,
+                SendSaturation::AwaitForRoom,
+                Some(Duration::from_millis(15)),
+            )
+            .await;
+        assert!(
+            matches!(timed, SendOutcome::Timeout(_)),
+            "a full stream with no consumer must time out, got {timed:?}"
+        );
+        let rx_held = in_rx.clone();
+        core_exec::spawn_detached(async move {
+            std::thread::sleep(Duration::from_millis(20));
+            let mut rx = rx_held.lock().await;
+            let _ = rx.shared_try_take();
+        });
+        let sent = ingress
+            .shared_send_async(
+                (StreamIngress::new(1, 0, now, now), &[3u8][..]),
+                ident,
+                SendSaturation::AwaitForRoom,
+            )
+            .await;
+        assert!(
+            matches!(sent, SendOutcome::Success),
+            "room after a take must complete the parked send, got {sent:?}"
+        );
+        drop(ingress);
+
+        let (eg_tx, eg_rx) = graph
+            .channel_builder()
+            .with_capacity(1)
+            .build_stream::<StreamEgress>(8);
+        let eg_held = eg_tx.clone();
+        let mut egress = eg_held.lock().await;
+        egress.shared_try_send(&[4u8][..]).expect("fill egress");
+        assert!(egress.shared_is_full());
+        let eg_rx_held = eg_rx.clone();
+        core_exec::spawn_detached(async move {
+            std::thread::sleep(Duration::from_millis(20));
+            let mut rx = eg_rx_held.lock().await;
+            let _ = rx.shared_try_take();
+        });
+        let sent = egress
+            .shared_send_async(&[5u8][..], ident, SendSaturation::AwaitForRoom)
+            .await;
+        assert!(
+            matches!(sent, SendOutcome::Success),
+            "egress must publish once a control slot is free, got {sent:?}"
+        );
+        let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
+        drop(shutdown_tx);
+        egress.control_channel.oneshot_shutdown = shutdown_rx;
+        egress.shared_try_send(&[6u8][..]).ok();
+        let closed = egress
+            .shared_send_async_timeout(
+                &[7u8][..],
+                ident,
+                SendSaturation::AwaitForRoom,
+                Some(Duration::from_millis(30)),
+            )
+            .await;
+        assert!(
+            matches!(closed, SendOutcome::Closed(_)),
+            "a terminated shutdown must close the parked egress send, got {closed:?}"
+        );
+    });
+}
+
 // #[test]
 // fn test_stream_ingress_tx_core_send_iter_payload_full() {
 //     core_exec::block_on(async {
